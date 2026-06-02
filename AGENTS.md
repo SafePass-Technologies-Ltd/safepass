@@ -133,6 +133,7 @@ safepass/
 | **API routes** | `/v1/<plural-noun>` | `/v1/users`, `/v1/trips`, `/v1/auth/token-exchange` |
 | **Database tables** | snake_case | `users`, `user_vehicles`, `emergency_events` |
 | **DB columns** | camelCase (Drizzle default) | `fullName`, `authProviderId`, `createdAt` |
+| **Git branches** | `feature/<id>-<desc>` | `feature/m-01-auth-screens`, `fix/m-02-phone-validation` |
 
 ---
 
