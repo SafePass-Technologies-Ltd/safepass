@@ -1,0 +1,34 @@
+# Flutter build output
+/build/
+
+# Android
+android/app/build/
+android/.gradle/
+android/local.properties
+android/key.properties
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+
+# Flutter tooling
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+
+# IDEs
+*.iml
+.idea/
+.vscode/
+
+# Generated code (committed after build_runner, ignored here for clean start)
+lib/**.g.dart
+lib/**.freezed.dart
+
+# Pub
+.pub-cache/
+.pub/

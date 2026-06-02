@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "1019146773543",
+    "project_id": "safepass-d5403",
+    "storage_bucket": "safepass-d5403.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1019146773543:android:3a55b400ef96c326091a02",
+        "android_client_info": {
+          "package_name": "com.safepasstech.safepass_mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1019146773543-97nvou7p04ne01e4iqrlplik0mvmm7v0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6apmmu-7SLac4tm326mQY5L8iArOoYTE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1019146773543-97nvou7p04ne01e4iqrlplik0mvmm7v0.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1019146773543-iaruebgvebdk0tg4epfmsk4o4o84hok0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.safepass-tech.safepassMobile"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

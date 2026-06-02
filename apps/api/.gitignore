@@ -1,0 +1,9 @@
+# Build output
+dist/
+
+# Drizzle migrations folder is committed — it's source of truth
+# but ignore the meta journal if Drizzle generates one
+# drizzle/meta/
+
+# Test coverage
+coverage/

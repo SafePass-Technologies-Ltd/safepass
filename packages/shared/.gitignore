@@ -1,0 +1,3 @@
+# Shared package build output
+dist/
+*.tsbuildinfo

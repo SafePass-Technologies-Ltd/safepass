@@ -1,0 +1,27 @@
+node_modules/
+dist/
+.next/
+build/
+.dart_tool/
+.packages
+*.log
+.env
+.env.local
+.env.*.local
+*.tsbuildinfo
+coverage/
+
+# Turborepo
+.turbo/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Docs should not be pushed because it contains business strategy.
+docs/SafePass
