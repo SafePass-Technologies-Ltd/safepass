@@ -89,4 +89,5 @@ class DefaultFirebaseOptions {
     storageBucket: 'safepass-d5403.firebasestorage.app',
     measurementId: 'G-QZZBE7DB27',
   );
+
 }

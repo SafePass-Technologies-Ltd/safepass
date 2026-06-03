@@ -30,3 +30,21 @@ const String kGoogleWebClientId = String.fromEnvironment(
   'GOOGLE_WEB_CLIENT_ID',
   defaultValue: '',
 );
+
+/// Facebook App ID — required by `flutter_facebook_auth`.
+///
+/// Find this in Meta for Developers → My Apps → App Settings → App ID.
+///
+/// Set via `--dart-define=FACEBOOK_APP_ID=XXXXXXXXXXXXXXX`
+const String kFacebookAppId = String.fromEnvironment(
+  'FACEBOOK_APP_ID',
+  defaultValue: '',
+);
+
+/// Facebook Client Token — optional, used for Graph API calls.
+///
+/// Set via `--dart-define=FACEBOOK_CLIENT_TOKEN=XXXXXXXXXXXXXXX`
+const String kFacebookClientToken = String.fromEnvironment(
+  'FACEBOOK_CLIENT_TOKEN',
+  defaultValue: '',
+);

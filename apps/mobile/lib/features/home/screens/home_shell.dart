@@ -2,12 +2,12 @@
 ///
 /// Provides a persistent bottom navigation bar with tabs:
 /// Home (Map), Trips, Wallet, Profile.
-/// The panic button (emergency red FAB) is always visible during an active trip.
-library home_shell;
+///
+/// Panic button (emergency red FAB) will be added in Week 2-3
+/// once trip state tracking is implemented (M-09, M-10).
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../../app/theme.dart';
 import '../../../app/router.dart';
 
 class HomeShell extends StatelessWidget {
@@ -49,9 +49,6 @@ class HomeShell extends StatelessWidget {
           ),
         ],
       ),
-      // Panic button — always visible during active trip
-      // floatingActionButton: _buildPanicButton(context),
-      // floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
@@ -69,46 +66,14 @@ class HomeShell extends StatelessWidget {
         context.go(AppRoutes.home);
         break;
       case 1:
-        // TODO: Navigate to trip history
+        // TODO: Navigate to trip history (M-15, Week 4)
         break;
       case 2:
-        // TODO: Navigate to wallet
+        // TODO: Navigate to wallet (M-04, Week 2)
         break;
       case 3:
         context.go(AppRoutes.profile);
         break;
     }
-  }
-
-  /// Builds the emergency panic button FAB.
-  /// Only shown during active trips.
-  Widget _buildPanicButton(BuildContext context) {
-    // TODO: Check if trip is active
-    const isTripActive = false;
-
-    if (!isTripActive) return const SizedBox.shrink();
-
-    return GestureDetector(
-      onLongPress: () {
-        // Trigger panic — requires long press to prevent accidental activation
-        // TODO: Implement panic trigger via EmergencyCubit
-      },
-      child: Container(
-        width: 64,
-        height: 64,
-        decoration: const BoxDecoration(
-          color: AppColors.emergencyRed,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Color(0x40D93025),
-              blurRadius: 12,
-              offset: Offset(0, 4),
-            ),
-          ],
-        ),
-        child: const Icon(Icons.warning_rounded, color: Colors.white, size: 32),
-      ),
-    );
   }
 }

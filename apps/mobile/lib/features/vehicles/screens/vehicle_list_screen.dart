@@ -1,5 +1,6 @@
 /// Vehicle List Screen — Manage saved personal vehicles.
-library vehicle_list_screen;
+
+import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -122,6 +123,9 @@ class _VehicleListScreenState extends State<VehicleListScreen> {
 
   Future<void> _confirmDelete(
       BuildContext context, VehicleModel vehicle) async {
+    // Capture the cubit before the async gap to avoid use_build_context_synchronously.
+    final cubit = context.read<VehicleCubit>();
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -144,7 +148,8 @@ class _VehicleListScreenState extends State<VehicleListScreen> {
     );
 
     if (confirmed == true && mounted) {
-      context.read<VehicleCubit>().deleteVehicle(vehicle.id);
+      // deleteVehicle is fire-and-forget; the cubit handles its own loading state.
+      unawaited(cubit.deleteVehicle(vehicle.id));
     }
   }
 }

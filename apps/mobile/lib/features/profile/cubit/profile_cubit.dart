@@ -61,6 +61,7 @@ class ProfileCubit extends Cubit<ProfileState> {
 
   /// Save profile changes via PATCH /v1/users/me.
   Future<void> saveProfile({
+    String? fullName,
     String? phone,
     List<Map<String, dynamic>>? contacts,
     bool? pushEnabled,
@@ -70,6 +71,7 @@ class ProfileCubit extends Cubit<ProfileState> {
 
     try {
       final body = <String, dynamic>{};
+      if (fullName != null) body['fullName'] = fullName;
       if (phone != null) body['phone'] = phone;
       if (contacts != null) body['emergencyContacts'] = contacts;
       if (pushEnabled != null || emailEnabled != null) {
@@ -132,5 +134,12 @@ class ProfileCubit extends Cubit<ProfileState> {
   /// Toggle email notifications in local state.
   void setEmailEnabled(bool enabled) {
     emit(state.copyWith(emailEnabled: enabled));
+  }
+
+  /// Clear the error status and return to loaded state (preserving data).
+  void clearError() {
+    if (state.status == ProfileStatus.error) {
+      emit(state.copyWith(status: ProfileStatus.loaded, errorMessage: null));
+    }
   }
 }

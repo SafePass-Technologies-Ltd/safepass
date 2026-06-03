@@ -27,9 +27,9 @@
 | **Mobile Routing** | go_router | 17.2 | Declarative, typed routes |
 | **Mobile Models** | equatable | 2.0 | Value equality for Bloc states/events |
 | **Mobile HTTP** | dio | 5.9 | HTTP client with interceptors |
-| **Mobile Auth SDKs** | google_sign_in / sign_in_with_apple / firebase_auth | 7.2 / 8.1 / latest | Native social auth + Firebase Auth |
+| **Mobile Auth SDKs** | google_sign_in / sign_in_with_apple / firebase_auth | 7.2 / 8.1 / latest | Native social auth + Firebase Auth (social + phone) |
 | **Admin Dashboard** | Next.js (App Router) | 16.2 | SSR + Edge |
-| **Dashboard Auth** | firebase (Firebase Auth Web SDK) | latest | Client-side social sign-in |
+| **Dashboard Auth** | firebase (Firebase Auth Web SDK) | latest | Client-side social + phone sign-in |
 | **Backend Auth** | firebase-admin | latest | Firebase ID token verification |
 | **Dashboard UI** | Tailwind CSS + shadcn/ui | 4.3 / latest | Utility-first CSS |
 | **Database** | PostgreSQL | 16 | AWS RDS in production |
@@ -49,17 +49,20 @@ SafePass uses a **single unified auth mechanism** for all clients:
 
 ### All Clients (Mobile + Web Dashboards) — Firebase Auth + Token Exchange
 
-1. User signs in via social provider (Google, Facebook, Apple) through Firebase Auth
-   - **Mobile**: Native SDK (`google_sign_in`, `sign_in_with_apple`) obtains platform credential → `firebase_auth` wraps it → Firebase ID token
-   - **Web**: Firebase Auth Web SDK handles OAuth popup/redirect → Firebase ID token
+1. User signs in via social provider (Google, Facebook, Apple) or phone number (SMS OTP) through Firebase Auth
+   - **Mobile**: Native SDK (`google_sign_in`, `sign_in_with_apple`) obtains platform credential → `firebase_auth` wraps it → Firebase ID token. Phone auth: Firebase handles OTP send/verify → Firebase ID token with `phone_number` claim.
+   - **Web**: Firebase Auth Web SDK handles OAuth popup/redirect (social) → Firebase ID token. Phone auth: Firebase Web SDK handles phone number input + OTP verification → Firebase ID token.
 2. Client sends Firebase ID token to `POST /v1/auth/token-exchange` on the Hono backend
-3. Backend verifies the token with **Firebase Admin SDK** (single verification path for all providers)
-4. Backend creates or finds the user in PostgreSQL
-5. Returns a **JWT access token** (15min) + **refresh token** (7 days)
-6. Client stores tokens and attaches `Authorization: Bearer <access_token>` to all API calls
-7. Refresh flow: `POST /v1/auth/refresh` with the refresh token to get a new pair
+3. Backend verifies the token with **Firebase Admin SDK** (single verification path for all providers: social and phone)
+4. For phone auth tokens, backend extracts the `phone_number` claim from the verified token and auto-populates the user's phone field
+5. Backend creates or finds the user in PostgreSQL
+   - **Phone auth users**: phone is pre-populated from `phone_number` claim — no additional onboarding step needed
+   - **Social auth users**: phone is set to `NULL` initially — user MUST provide a phone number during onboarding
+6. Returns a **JWT access token** (15min) + **refresh token** (7 days)
+7. Client stores tokens and attaches `Authorization: Bearer <access_token>` to all API calls
+8. Refresh flow: `POST /v1/auth/refresh` with the refresh token to get a new pair
 
-> **Key simplification**: No more dual auth mechanism (previously Auth.js for web + provider-specific token verification for mobile). Firebase Auth unifies the sign-in experience and Firebase Admin SDK provides a single token verification path regardless of which social provider the user chose.
+> **Key simplification**: No more dual auth mechanism (previously Auth.js for web + provider-specific token verification for mobile). Firebase Auth unifies the sign-in experience and Firebase Admin SDK provides a single token verification path regardless of which provider (social or phone) the user chose. Phone is required for ALL users — phone auth users get it automatically from the verified token; social auth users must provide it during onboarding.
 
 ---
 

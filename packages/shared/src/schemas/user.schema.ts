@@ -17,7 +17,7 @@ export const UserRoleEnum = z.enum([
   'super_admin',
 ]);
 
-export const AuthProviderEnum = z.enum(['google', 'facebook', 'apple']);
+export const AuthProviderEnum = z.enum(['google', 'facebook', 'apple', 'phone']);
 
 export const UserSchema = z.object({
   id: z.string().uuid(),
@@ -25,7 +25,7 @@ export const UserSchema = z.object({
   authProviderId: z.string().min(1),
   email: z.string().email(),
   fullName: z.string().min(1),
-  phone: z.string().optional().nullable(),
+  phone: z.string().nullable(), // null for social-auth users until onboarding
   role: UserRoleEnum,
   organizationId: z.string().uuid().optional().nullable(),
   emergencyContacts: z.array(EmergencyContactSchema).min(1).max(3),
@@ -51,7 +51,8 @@ export const UserCreateSchema = z.object({
 });
 
 export const UserUpdateSchema = z.object({
-  phone: z.string().optional().nullable(),
+  fullName: z.string().min(1, 'Full name is required').optional(),
+  phone: z.string().min(1, 'Phone number is required').optional(),
   emergencyContacts: z.array(EmergencyContactSchema).min(1).max(3).optional(),
   notificationPreferences: z.object({
     pushEnabled: z.boolean(),

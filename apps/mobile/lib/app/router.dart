@@ -14,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import '../features/auth/cubit/auth_cubit.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/onboarding_screen.dart';
+import '../features/auth/screens/phone_auth_screen.dart';
 import '../features/home/screens/home_shell.dart';
 import '../features/profile/screens/profile_screen.dart';
 import '../features/vehicles/screens/vehicle_list_screen.dart';
@@ -29,6 +30,7 @@ class AppRoutes {
   static const String profile = '/profile';
   static const String vehicles = '/vehicles';
   static const String addVehicle = '/vehicles/add';
+  static const String phoneAuth = '/phone-auth';
 
   // Future routes (Week 2+)
   static const String tripRegistration = '/trip/register';
@@ -38,7 +40,7 @@ class AppRoutes {
 }
 
 /// Paths that are accessible without authentication.
-const _publicPaths = {AppRoutes.login, AppRoutes.onboarding};
+const _publicPaths = {AppRoutes.login, AppRoutes.onboarding, AppRoutes.phoneAuth};
 
 /// Bridges a [Cubit]'s stream to a [Listenable] for use with GoRouter's
 /// [GoRouterRefreshStream].
@@ -109,6 +111,11 @@ GoRouter createRouter(AuthCubit authCubit) {
         path: AppRoutes.onboarding,
         name: 'onboarding',
         builder: (context, state) => const OnboardingScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.phoneAuth,
+        name: 'phoneAuth',
+        builder: (context, state) => const PhoneAuthScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) => HomeShell(child: child),

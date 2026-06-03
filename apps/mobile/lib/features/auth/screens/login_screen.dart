@@ -1,4 +1,4 @@
-/// Login Screen — Social auth buttons (Google, Facebook, Apple).
+/// Login Screen — Social auth buttons + phone auth.
 ///
 /// Auth-based navigation (login → home, sign-out → login) is handled
 /// by the GoRouter `redirect` guard — this screen only renders the UI.
@@ -6,7 +6,9 @@ library login_screen;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../app/theme.dart';
+import '../../../app/router.dart';
 import '../cubit/auth_cubit.dart';
 
 class LoginScreen extends StatelessWidget {
@@ -111,6 +113,17 @@ class LoginScreen extends StatelessWidget {
                 onPressed: () =>
                     context.read<AuthCubit>().signInWithApple(),
               ),
+              const SizedBox(height: 12),
+
+              // Phone Sign-In
+              _SocialAuthButton(
+                label: 'Continue with Phone',
+                backgroundColor: AppColors.safetyGreen,
+                foregroundColor: Colors.white,
+                icon: Icons.phone_android,
+                onPressed: () =>
+                    context.go(AppRoutes.phoneAuth),
+              ),
 
               const SizedBox(height: 24),
 
@@ -139,6 +152,7 @@ class _SocialAuthButton extends StatelessWidget {
   final Color foregroundColor;
   final Color? borderColor;
   final VoidCallback onPressed;
+  final IconData? icon;
 
   const _SocialAuthButton({
     required this.label,
@@ -146,6 +160,7 @@ class _SocialAuthButton extends StatelessWidget {
     required this.foregroundColor,
     this.borderColor,
     required this.onPressed,
+    this.icon,
   });
 
   @override
@@ -167,7 +182,7 @@ class _SocialAuthButton extends StatelessWidget {
                   color: Colors.white,
                 ),
               )
-            : const Icon(Icons.login, size: 20),
+            : Icon(icon ?? Icons.login, size: 20),
         label: Text(label),
         style: ElevatedButton.styleFrom(
           backgroundColor: backgroundColor,

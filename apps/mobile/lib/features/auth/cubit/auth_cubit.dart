@@ -1,13 +1,13 @@
 /// Auth Cubit — manages authentication state for the SafePass mobile app.
 ///
-/// Handles Firebase Auth sign-in (Google, Facebook, Apple),
+/// Handles Firebase Auth sign-in (Google, Facebook, Apple, Phone),
 /// token exchange with SafePass backend, and token storage.
-library auth_cubit;
 
 import 'package:equatable/equatable.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/constants.dart';
@@ -15,32 +15,40 @@ import '../../../core/constants.dart';
 part 'auth_state.dart';
 
 class AuthCubit extends Cubit<AuthState> {
-  AuthCubit() : super(const AuthState.initial());
+  final FirebaseAuth _firebaseAuth;
+  final GoogleSignIn _googleSignIn;
 
-  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
+  /// Stored verification ID for Firebase Phone Auth OTP verification.
+  /// Set by the `codeSent` callback and consumed by [verifyPhoneOtp].
+  String? _phoneVerificationId;
 
-  /// GoogleSignIn configured with serverClientId for Firebase Auth.
+  /// Create an AuthCubit with optional dependency injection for testing.
   ///
-  /// The `serverClientId` (Web Client ID from Firebase Console →
-  /// Authentication → Sign-in method → Google) is required on Android
-  /// so `google_sign_in` returns an `idToken` compatible with Firebase Auth.
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email'],
-    serverClientId: kGoogleWebClientId,
-  );
+  /// In production, all parameters use their defaults and the Cubit
+  /// connects to live Firebase Auth and Google Sign-In SDKs.
+  /// In tests, pass mock/stub instances to avoid platform channel errors.
+  AuthCubit({
+    FirebaseAuth? firebaseAuth,
+    GoogleSignIn? googleSignIn,
+  })  : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
+        _googleSignIn = googleSignIn ??
+            GoogleSignIn(
+              scopes: ['email'],
+              serverClientId: kGoogleWebClientId,
+            ),
+        super(const AuthState.initial());
+
+  // ---------------------------------------------------------------------------
+  // Google Sign-In
+  // ---------------------------------------------------------------------------
 
   /// Sign in with Google.
-  ///
-  /// 1. Trigger Google Sign-In UI
-  /// 2. Get Firebase ID token
-  /// 3. Exchange with SafePass backend for JWT
   Future<void> signInWithGoogle() async {
     emit(state.copyWith(status: AuthStatus.loading));
 
     try {
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        // User cancelled
         emit(state.copyWith(status: AuthStatus.initial));
         return;
       }
@@ -86,7 +94,228 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
-  /// Sign in with Apple (stub — coming soon).
+  // ---------------------------------------------------------------------------
+  // Facebook Sign-In
+  // ---------------------------------------------------------------------------
+
+  /// Sign in with Facebook.
+  ///
+  /// Uses [flutter_facebook_auth] for native Facebook login, then exchanges
+  /// the Facebook access token for a Firebase credential to get an ID token
+  /// for SafePass token exchange.
+  Future<void> signInWithFacebook() async {
+    emit(state.copyWith(status: AuthStatus.loading));
+
+    try {
+      // 1. Sign in with Facebook native SDK.
+      final LoginResult result = await FacebookAuth.instance.login();
+
+      if (result.status != LoginStatus.success) {
+        // User cancelled or an error occurred.
+        if (result.status == LoginStatus.cancelled) {
+          emit(state.copyWith(status: AuthStatus.initial));
+        } else {
+          emit(state.copyWith(
+            status: AuthStatus.error,
+            errorMessage: result.message ?? 'Facebook login failed',
+          ));
+        }
+        return;
+      }
+
+      final accessToken = result.accessToken;
+      if (accessToken == null) {
+        emit(state.copyWith(
+          status: AuthStatus.error,
+          errorMessage: 'Failed to get Facebook access token',
+        ));
+        return;
+      }
+
+      // 2. Create Firebase credential from Facebook access token.
+      final credential =
+          FacebookAuthProvider.credential(accessToken.tokenString);
+
+      // 3. Sign in to Firebase with Facebook credential.
+      final userCredential =
+          await _firebaseAuth.signInWithCredential(credential);
+      final idToken = await userCredential.user?.getIdToken();
+
+      if (idToken == null) {
+        emit(state.copyWith(
+          status: AuthStatus.error,
+          errorMessage: 'Failed to get authentication token',
+        ));
+        return;
+      }
+
+      // 4. Exchange Firebase ID token for SafePass JWT.
+      await _exchangeToken(idToken);
+    } on FirebaseAuthException catch (e) {
+      // Account exists with a different credential — account linking edge case.
+      if (e.code == 'account-exists-with-different-credential') {
+        emit(state.copyWith(
+          status: AuthStatus.error,
+          errorMessage:
+              'An account already exists with this email. Please sign in with '
+              'the provider you used previously.',
+        ));
+      } else {
+        emit(state.copyWith(
+          status: AuthStatus.error,
+          errorMessage: e.message ?? 'Facebook authentication failed',
+        ));
+      }
+    } catch (e) {
+      debugPrint('Facebook sign-in error: $e');
+      emit(state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: 'An unexpected error occurred during Facebook sign-in',
+      ));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Phone Authentication (M-19)
+  // ---------------------------------------------------------------------------
+
+  /// Begin the phone number sign-in flow.
+  ///
+  /// Sends an SMS OTP via Firebase Phone Auth. On success, transitions to
+  /// [AuthStatus.phoneOtpSent] so the UI can show the OTP input field.
+  Future<void> startPhoneSignIn(String phoneNumber) async {
+    emit(state.copyWith(
+      status: AuthStatus.phoneInput,
+      phoneAuthStep: PhoneAuthStep.sendingCode,
+      phoneNumber: phoneNumber,
+    ));
+
+    try {
+      await _firebaseAuth.verifyPhoneNumber(
+        phoneNumber: phoneNumber,
+        // Auto-verification (e.g., Android SMS auto-read) — rare on emulators
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          await _completePhoneAuth(credential);
+        },
+        verificationFailed: (FirebaseAuthException e) {
+          emit(state.copyWith(
+            status: AuthStatus.error,
+            errorMessage: _mapPhoneAuthError(e),
+            clearPhoneAuth: true,
+          ));
+        },
+        codeSent: (String verificationId, int? resendToken) {
+          _phoneVerificationId = verificationId;
+          emit(state.copyWith(
+            status: AuthStatus.phoneOtpSent,
+            phoneAuthStep: PhoneAuthStep.awaitingOtp,
+            verificationId: verificationId,
+            resendToken: resendToken,
+          ));
+        },
+        codeAutoRetrievalTimeout: (String verificationId) {
+          // SMS auto-retrieval timed out — user must enter code manually.
+          // The UI already shows the OTP field; no state change needed.
+          _phoneVerificationId = verificationId;
+        },
+      );
+    } catch (e) {
+      debugPrint('Phone auth error: $e');
+      emit(state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: 'Failed to send verification code. Please try again.',
+        clearPhoneAuth: true,
+      ));
+    }
+  }
+
+  /// Verify the SMS OTP code and complete phone authentication.
+  Future<void> verifyPhoneOtp(String smsCode) async {
+    final verificationId = _phoneVerificationId;
+    if (verificationId == null) {
+      emit(state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: 'Verification session expired. Please try again.',
+        clearPhoneAuth: true,
+      ));
+      return;
+    }
+
+    emit(state.copyWith(
+      phoneAuthStep: PhoneAuthStep.verifyingOtp,
+    ));
+
+    try {
+      final credential = PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: smsCode,
+      );
+      await _completePhoneAuth(credential);
+    } on FirebaseAuthException catch (e) {
+      emit(state.copyWith(
+        status: AuthStatus.phoneOtpSent,
+        phoneAuthStep: PhoneAuthStep.awaitingOtp,
+        errorMessage: _mapPhoneAuthError(e),
+      ));
+    } catch (e) {
+      debugPrint('OTP verify error: $e');
+      emit(state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: 'An unexpected error occurred',
+        clearPhoneAuth: true,
+      ));
+    }
+  }
+
+  /// Shared completion logic for phone auth — signs into Firebase,
+  /// gets the ID token, and exchanges it with SafePass.
+  ///
+  /// Called by both [verificationCompleted] (auto-verify) and [verifyPhoneOtp]
+  /// (manual OTP entry).
+  Future<void> _completePhoneAuth(PhoneAuthCredential credential) async {
+    emit(state.copyWith(
+      status: AuthStatus.loading,
+      phoneAuthStep: PhoneAuthStep.verifyingOtp,
+    ));
+
+    try {
+      // Sign in to Firebase with the phone credential.
+      // If the user doesn't exist, Firebase creates them automatically
+      // (Firebase Auth creates an anonymous-like account linked to the phone).
+      final userCredential =
+          await _firebaseAuth.signInWithCredential(credential);
+      final idToken = await userCredential.user?.getIdToken();
+
+      if (idToken == null) {
+        emit(state.copyWith(
+          status: AuthStatus.error,
+          errorMessage: 'Failed to get authentication token',
+          clearPhoneAuth: true,
+        ));
+        return;
+      }
+
+      await _exchangeToken(idToken);
+    } on FirebaseAuthException catch (e) {
+      emit(state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: _mapPhoneAuthError(e),
+        clearPhoneAuth: true,
+      ));
+    }
+  }
+
+  /// Cancel the phone auth flow and return to initial state.
+  void cancelPhoneSignIn() {
+    _phoneVerificationId = null;
+    emit(const AuthState.initial());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Apple (stub — requires Apple Developer account)
+  // ---------------------------------------------------------------------------
+
+  /// Sign in with Apple (stub — requires paid Apple Developer account).
   Future<void> signInWithApple() async {
     emit(state.copyWith(status: AuthStatus.loading));
     emit(
@@ -97,16 +326,9 @@ class AuthCubit extends Cubit<AuthState> {
     );
   }
 
-  /// Sign in with Facebook (stub — coming soon).
-  Future<void> signInWithFacebook() async {
-    emit(state.copyWith(status: AuthStatus.loading));
-    emit(
-      state.copyWith(
-        status: AuthStatus.error,
-        errorMessage: 'Facebook Sign-In will be available soon',
-      ),
-    );
-  }
+  // ---------------------------------------------------------------------------
+  // Token exchange & sign-out
+  // ---------------------------------------------------------------------------
 
   /// Exchange Firebase ID token for SafePass JWT tokens.
   Future<void> _exchangeToken(String firebaseIdToken) async {
@@ -126,26 +348,58 @@ class AuthCubit extends Cubit<AuthState> {
       );
 
       if (isNewUser) {
-        emit(state.copyWith(status: AuthStatus.onboardingRequired));
+        emit(state.copyWith(
+          status: AuthStatus.onboardingRequired,
+          clearPhoneAuth: true,
+        ));
       } else {
-        emit(state.copyWith(status: AuthStatus.authenticated));
+        emit(state.copyWith(
+          status: AuthStatus.authenticated,
+          clearPhoneAuth: true,
+        ));
       }
     } catch (_) {
       await _firebaseAuth.signOut();
-      emit(
-        state.copyWith(
-          status: AuthStatus.error,
-          errorMessage: 'Failed to connect to SafePass. Please try again.',
-        ),
-      );
+      emit(state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: 'Failed to connect to SafePass. Please try again.',
+        clearPhoneAuth: true,
+      ));
     }
   }
 
-  /// Sign out from Firebase and clear local tokens.
+  /// Sign out from all auth providers and clear local tokens.
+  ///
+  /// Sign-out is fire-and-forget with best-effort provider logout.
+  /// Local token cleanup always happens regardless of provider errors
+  /// (network issues or uninitialized Firebase in test environments
+  /// must never prevent a user from clearing their session).
   Future<void> signOut() async {
-    await _firebaseAuth.signOut();
-    await _googleSignIn.signOut();
-    await ApiClient.instance.clearTokens();
+    // Best-effort provider sign-out — individual failures are ignored.
+    try { await _firebaseAuth.signOut(); } catch (_) {}
+    try { await _googleSignIn.signOut(); } catch (_) {}
+    try { await FacebookAuth.instance.logOut(); } catch (_) {}
+    // Best-effort local token cleanup — should never block sign-out.
+    try { await ApiClient.instance.clearTokens(); } catch (_) {}
+    _phoneVerificationId = null;
     emit(const AuthState.initial());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  /// Map Firebase Auth error codes to user-friendly messages for phone auth.
+  String _mapPhoneAuthError(FirebaseAuthException e) {
+    return switch (e.code) {
+      'invalid-phone-number' => 'Please enter a valid phone number.',
+      'too-many-requests' =>
+        'Too many attempts. Please try again later.',
+      'invalid-verification-code' =>
+        'Invalid verification code. Please check and try again.',
+      'session-expired' =>
+        'Verification session expired. Please request a new code.',
+      _ => e.message ?? 'Authentication failed',
+    };
   }
 }

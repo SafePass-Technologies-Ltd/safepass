@@ -26,7 +26,7 @@ export async function getUserById(userId: string): Promise<User | null> {
 }
 
 /**
- * Update user profile (phone, emergency contacts, notification preferences).
+ * Update user profile (full name, phone, emergency contacts, notification preferences).
  */
 export async function updateUser(
   userId: string,
@@ -34,6 +34,9 @@ export async function updateUser(
 ): Promise<User> {
   const updateData: Record<string, unknown> = {};
 
+  if (data.fullName !== undefined) {
+    updateData.fullName = data.fullName;
+  }
   if (data.phone !== undefined) {
     updateData.phone = data.phone;
   }

@@ -16,7 +16,7 @@ export const userRoleEnum = pgEnum('user_role', [
   'super_admin',
 ]);
 
-export const authProviderEnum = pgEnum('auth_provider', ['google', 'facebook', 'apple']);
+export const authProviderEnum = pgEnum('auth_provider', ['google', 'facebook', 'apple', 'phone']);
 
 // --- Organization ---
 

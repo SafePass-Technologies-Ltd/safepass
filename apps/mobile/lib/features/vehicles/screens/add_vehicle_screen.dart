@@ -97,7 +97,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              value: _vehicleType,
+              initialValue: _vehicleType,
               decoration: const InputDecoration(
                 labelText: 'Vehicle Type *',
                 prefixIcon: Icon(Icons.directions_car_outlined),

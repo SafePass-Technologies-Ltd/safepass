@@ -15,6 +15,7 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  final _fullNameController = TextEditingController();
   final _phoneController = TextEditingController();
 
   @override
@@ -25,6 +26,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   void dispose() {
+    _fullNameController.dispose();
     _phoneController.dispose();
     super.dispose();
   }
@@ -32,15 +34,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<ProfileCubit, ProfileState>(
+      listenWhen: (previous, current) =>
+          previous.status != current.status &&
+          current.status == ProfileStatus.error,
       listener: (context, state) {
-        if (state.status == ProfileStatus.error) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(state.errorMessage ?? 'An error occurred'),
-              backgroundColor: AppColors.emergencyRed,
-            ),
-          );
-        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(state.errorMessage ?? 'An error occurred'),
+            backgroundColor: AppColors.emergencyRed,
+          ),
+        );
+        // Reset error so it doesn't fire again on subsequent rebuilds
+        context.read<ProfileCubit>().clearError();
       },
       builder: (context, state) {
         if (state.status == ProfileStatus.loading) {
@@ -50,7 +55,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           );
         }
 
-        // Sync phone controller when data arrives
+        // Sync controllers when data arrives
+        if (state.fullName.isNotEmpty && _fullNameController.text.isEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted && _fullNameController.text.isEmpty) {
+              _fullNameController.text = state.fullName;
+            }
+          });
+        }
         if (_phoneController.text.isEmpty && state.phone != null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && _phoneController.text.isEmpty) {
@@ -96,22 +108,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               children: [
                 TextField(
-                  readOnly: true,
-                  controller: TextEditingController(text: state.fullName),
+                  controller: _fullNameController,
                   decoration: const InputDecoration(
                     labelText: 'Full Name',
-                    helperText: 'From your social account',
                     prefixIcon: Icon(Icons.person_outline),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  readOnly: true,
-                  controller: TextEditingController(text: state.email),
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    helperText: 'From your social account',
-                    prefixIcon: Icon(Icons.email_outlined),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -119,9 +119,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(
-                    labelText: 'Phone Number (Optional)',
+                    labelText: 'Phone Number',
                     hintText: '+2348012345678',
-                    helperText: 'Used for driver identity on self-driven trips',
+                    helperText: 'Used to reach out to you when you\'re offline',
                     prefixIcon: Icon(Icons.phone_outlined),
                   ),
                 ),
@@ -144,8 +144,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'At least one contact with a phone number is required. '
           'These contacts will be notified if you trigger an emergency.',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: AppColors.darkSlate.withValues(alpha: 0.6),
-              ),
+            color: AppColors.darkSlate.withValues(alpha: 0.6),
+          ),
         ),
         const SizedBox(height: 12),
         ...state.contacts.asMap().entries.map((entry) {
@@ -205,27 +205,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildSaveButton(BuildContext context, ProfileState state) {
     final isSaving = state.status == ProfileStatus.saving;
     return ElevatedButton(
-      onPressed: isSaving
-          ? null
-          : () {
-              context.read<ProfileCubit>().saveProfile(
-                    phone: _phoneController.text.trim().isEmpty
-                        ? null
-                        : _phoneController.text.trim(),
-                    contacts:
-                        state.contacts.map((c) => c.toJson()).toList(),
-                    pushEnabled: state.pushEnabled,
-                    emailEnabled: state.emailEnabled,
-                  );
-            },
-      child: isSaving
-          ? const SizedBox(
-              width: 22,
-              height: 22,
-              child:
-                  CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-            )
-          : const Text('Save Changes'),
+      onPressed:
+          isSaving
+              ? null
+              : () {
+                context.read<ProfileCubit>().saveProfile(
+                  fullName: _fullNameController.text.trim(),
+                  phone:
+                      _phoneController.text.trim().isEmpty
+                          ? null
+                          : _phoneController.text.trim(),
+                  contacts: state.contacts.map((c) => c.toJson()).toList(),
+                  pushEnabled: state.pushEnabled,
+                  emailEnabled: state.emailEnabled,
+                );
+              },
+      child:
+          isSaving
+              ? const SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+              : const Text('Save Changes'),
     );
   }
 
@@ -253,9 +258,9 @@ class _SectionHeader extends StatelessWidget {
     return Text(
       title,
       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: AppColors.darkSlate,
-          ),
+        fontWeight: FontWeight.w600,
+        color: AppColors.darkSlate,
+      ),
     );
   }
 }
@@ -303,15 +308,18 @@ class _EmergencyContactCardState extends State<_EmergencyContactCard> {
   }
 
   void _emitChange() {
-    widget.onChanged(EmergencyContactModel(
-      name: _nameController.text,
-      relationship: _relationshipController.text.isEmpty
-          ? null
-          : _relationshipController.text,
-      phone: _phoneController.text,
-      phoneWhatsappEnabled: widget.contact.phoneWhatsappEnabled,
-      email: _emailController.text.isEmpty ? null : _emailController.text,
-    ));
+    widget.onChanged(
+      EmergencyContactModel(
+        name: _nameController.text,
+        relationship:
+            _relationshipController.text.isEmpty
+                ? null
+                : _relationshipController.text,
+        phone: _phoneController.text,
+        phoneWhatsappEnabled: widget.contact.phoneWhatsappEnabled,
+        email: _emailController.text.isEmpty ? null : _emailController.text,
+      ),
+    );
   }
 
   @override
@@ -327,15 +335,17 @@ class _EmergencyContactCardState extends State<_EmergencyContactCard> {
               children: [
                 Text(
                   'Contact ${widget.index + 1}',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const Spacer(),
                 IconButton(
                   onPressed: widget.onRemove,
-                  icon: const Icon(Icons.delete_outline,
-                      color: AppColors.emergencyRed),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.emergencyRed,
+                  ),
                   iconSize: 20,
                   tooltip: 'Remove contact',
                 ),
@@ -375,8 +385,10 @@ class _EmergencyContactCardState extends State<_EmergencyContactCard> {
             SwitchListTile(
               title: const Text('WhatsApp enabled'),
               value: widget.contact.phoneWhatsappEnabled,
-              onChanged: (val) => widget
-                  .onChanged(widget.contact.copyWith(phoneWhatsappEnabled: val)),
+              onChanged:
+                  (val) => widget.onChanged(
+                    widget.contact.copyWith(phoneWhatsappEnabled: val),
+                  ),
               dense: true,
               contentPadding: EdgeInsets.zero,
             ),
