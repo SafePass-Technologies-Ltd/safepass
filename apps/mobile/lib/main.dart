@@ -2,6 +2,9 @@
 ///
 /// Bootstraps Firebase, initializes API client, and launches the app with
 /// BLoC state management and go_router declarative routing.
+///
+/// The GoRouter receives the AuthCubit as both a route guard (redirect)
+/// and a refreshListenable so navigation reacts instantly to auth changes.
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -18,9 +21,10 @@ import 'features/vehicles/cubit/vehicle_cubit.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
-  // Initialize API client
   ApiClient.instance.initialize(baseUrl: kApiBaseUrl);
 
   runApp(const SafePassApp());
@@ -38,11 +42,19 @@ class SafePassApp extends StatelessWidget {
         BlocProvider<ProfileCubit>(create: (_) => ProfileCubit()),
         BlocProvider<VehicleCubit>(create: (_) => VehicleCubit()),
       ],
-      child: MaterialApp.router(
-        title: 'SafePass',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme,
-        routerConfig: createRouter(),
+      child: Builder(
+        builder: (context) {
+          // Read AuthCubit after it's been provided so the router can
+          // use it as a refreshListenable and redirect guard.
+          final authCubit = context.read<AuthCubit>();
+
+          return MaterialApp.router(
+            title: 'SafePass',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.lightTheme,
+            routerConfig: createRouter(authCubit),
+          );
+        },
       ),
     );
   }

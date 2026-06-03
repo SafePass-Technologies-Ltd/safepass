@@ -64,6 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1019146773543',
     projectId: 'safepass-d5403',
     storageBucket: 'safepass-d5403.firebasestorage.app',
+    androidClientId: '1019146773543-jnbulqp726s5gjihlkntj192dgn4stm9.apps.googleusercontent.com',
     iosClientId: '1019146773543-iaruebgvebdk0tg4epfmsk4o4o84hok0.apps.googleusercontent.com',
     iosBundleId: 'com.safepass-tech.safepassMobile',
   );
@@ -74,6 +75,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1019146773543',
     projectId: 'safepass-d5403',
     storageBucket: 'safepass-d5403.firebasestorage.app',
+    androidClientId: '1019146773543-jnbulqp726s5gjihlkntj192dgn4stm9.apps.googleusercontent.com',
     iosClientId: '1019146773543-iaruebgvebdk0tg4epfmsk4o4o84hok0.apps.googleusercontent.com',
     iosBundleId: 'com.safepass-tech.safepassMobile',
   );
@@ -87,5 +89,4 @@ class DefaultFirebaseOptions {
     storageBucket: 'safepass-d5403.firebasestorage.app',
     measurementId: 'G-QZZBE7DB27',
   );
-
 }

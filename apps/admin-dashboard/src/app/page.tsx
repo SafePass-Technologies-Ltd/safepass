@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { getFirebaseAuth } from '@/lib/firebase';
 import { apiClient } from '@/lib/api-client';
 
 export default function LoginPage() {
@@ -22,7 +22,7 @@ export default function LoginPage() {
 
     try {
       // 1. Firebase Auth popup
-      const result = await signInWithPopup(auth, new GoogleAuthProvider());
+      const result = await signInWithPopup(getFirebaseAuth(), new GoogleAuthProvider());
       const idToken = await result.user.getIdToken();
 
       // 2. Exchange Firebase ID token for SafePass JWT

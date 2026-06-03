@@ -2,10 +2,16 @@
 ///
 /// All navigation happens through typed GoRoute definitions here.
 /// Never use Navigator.push directly.
+///
+/// The router accepts an [AuthCubit] so it can react to auth state changes
+/// and automatically redirect unauthenticated users to the login screen.
 library safepass_router;
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../features/auth/cubit/auth_cubit.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/onboarding_screen.dart';
 import '../features/home/screens/home_shell.dart';
@@ -31,10 +37,68 @@ class AppRoutes {
   static const String tripHistory = '/trips';
 }
 
-/// Creates the GoRouter instance with all app routes.
-GoRouter createRouter() {
+/// Paths that are accessible without authentication.
+const _publicPaths = {AppRoutes.login, AppRoutes.onboarding};
+
+/// Bridges a [Cubit]'s stream to a [Listenable] for use with GoRouter's
+/// [GoRouterRefreshStream].
+///
+/// GoRouter v17 expects a `Listenable` for `refreshListenable`, but
+/// `flutter_bloc`'s `Cubit` uses streams internally. This adapter
+/// listens to the cubit stream and calls `notifyListeners()` on every
+/// state change so the router re-evaluates its redirect guard.
+class _CubitChangeNotifier extends ChangeNotifier {
+  late final StreamSubscription<AuthState> _subscription;
+
+  _CubitChangeNotifier(AuthCubit cubit) {
+    _subscription = cubit.stream.listen((_) => notifyListeners());
+  }
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}
+
+/// Creates the GoRouter instance with auth-aware redirects.
+///
+/// [authCubit] is bridged to a [Listenable] via [_CubitChangeNotifier]
+/// so the router re-evaluates its [redirect] whenever the auth state
+/// changes (sign-in, sign-out, token expiry, etc.).
+GoRouter createRouter(AuthCubit authCubit) {
+  final refreshNotifier = _CubitChangeNotifier(authCubit);
+
   return GoRouter(
     initialLocation: AppRoutes.login,
+    refreshListenable: refreshNotifier,
+    redirect: (context, state) {
+      final authState = authCubit.state;
+      final currentPath = state.uri.toString();
+      final isAuthenticated =
+          authState.status == AuthStatus.authenticated ||
+          authState.status == AuthStatus.onboardingRequired;
+      final isPublic = _publicPaths.contains(currentPath);
+
+      // Signed out on a protected page → force to login
+      if (!isAuthenticated && !isPublic) {
+        return AppRoutes.login;
+      }
+
+      // Signed in on a public page → forward to appropriate screen
+      if (isAuthenticated && isPublic) {
+        if (authState.status == AuthStatus.onboardingRequired &&
+            currentPath != AppRoutes.onboarding) {
+          return AppRoutes.onboarding;
+        }
+        if (authState.status == AuthStatus.authenticated) {
+          return AppRoutes.home;
+        }
+      }
+
+      // Allowed — no redirect
+      return null;
+    },
     routes: [
       GoRoute(
         path: AppRoutes.login,
@@ -52,7 +116,8 @@ GoRouter createRouter() {
           GoRoute(
             path: AppRoutes.home,
             name: 'home',
-            builder: (context, state) => const Center(child: Text('Home — Map View')),
+            builder: (context, state) =>
+                const Center(child: Text('Home — Map View')),
           ),
           GoRoute(
             path: AppRoutes.profile,

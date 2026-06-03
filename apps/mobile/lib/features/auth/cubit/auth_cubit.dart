@@ -4,13 +4,13 @@
 /// token exchange with SafePass backend, and token storage.
 library auth_cubit;
 
-import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../../core/api/api_client.dart';
+import '../../../core/constants.dart';
 
 part 'auth_state.dart';
 
@@ -18,9 +18,19 @@ class AuthCubit extends Cubit<AuthState> {
   AuthCubit() : super(const AuthState.initial());
 
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email']);
+
+  /// GoogleSignIn configured with serverClientId for Firebase Auth.
+  ///
+  /// The `serverClientId` (Web Client ID from Firebase Console →
+  /// Authentication → Sign-in method → Google) is required on Android
+  /// so `google_sign_in` returns an `idToken` compatible with Firebase Auth.
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    scopes: ['email'],
+    serverClientId: kGoogleWebClientId,
+  );
 
   /// Sign in with Google.
+  ///
   /// 1. Trigger Google Sign-In UI
   /// 2. Get Firebase ID token
   /// 3. Exchange with SafePass backend for JWT
@@ -28,7 +38,6 @@ class AuthCubit extends Cubit<AuthState> {
     emit(state.copyWith(status: AuthStatus.loading));
 
     try {
-      // Trigger the Google Sign-In flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
         // User cancelled
@@ -39,16 +48,13 @@ class AuthCubit extends Cubit<AuthState> {
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
 
-      // Create Firebase credential
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      // Sign in to Firebase
-      final userCredential = await _firebaseAuth.signInWithCredential(
-        credential,
-      );
+      final userCredential =
+          await _firebaseAuth.signInWithCredential(credential);
       final idToken = await userCredential.user?.getIdToken();
 
       if (idToken == null) {
@@ -61,7 +67,6 @@ class AuthCubit extends Cubit<AuthState> {
         return;
       }
 
-      // Exchange Firebase token for SafePass JWT
       await _exchangeToken(idToken);
     } on FirebaseAuthException catch (e) {
       emit(
@@ -81,151 +86,26 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
-  /// Sign in with Apple.
+  /// Sign in with Apple (stub — coming soon).
   Future<void> signInWithApple() async {
     emit(state.copyWith(status: AuthStatus.loading));
-
-    try {
-      // Apple Sign-In requires the sign_in_with_apple package
-      // For now, emit a message that this is coming soon
-      emit(
-        state.copyWith(
-          status: AuthStatus.error,
-          errorMessage: 'Apple Sign-In will be available soon',
-        ),
-      );
-    } catch (e) {
-      emit(
-        state.copyWith(
-          status: AuthStatus.error,
-          errorMessage: 'An unexpected error occurred',
-        ),
-      );
-    }
+    emit(
+      state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: 'Apple Sign-In will be available soon',
+      ),
+    );
   }
 
-  // ---------------------------------------------------------------------------
-  // Email & Password authentication (TEMPORARY — will be removed later).
-  // ---------------------------------------------------------------------------
-
-  /// Sign up with email and password via Firebase, then exchange token.
-  Future<void> signUpWithEmailAndPassword({
-    required String email,
-    required String password,
-  }) async {
-    emit(state.copyWith(status: AuthStatus.loading));
-
-    try {
-      final userCredential =
-          await _firebaseAuth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      final idToken = await userCredential.user?.getIdToken();
-      if (idToken == null) {
-        emit(
-          state.copyWith(
-            status: AuthStatus.error,
-            errorMessage: 'Failed to get authentication token',
-          ),
-        );
-        return;
-      }
-
-      await _exchangeToken(idToken);
-    } on FirebaseAuthException catch (e) {
-      // Map common Firebase errors to user-friendly messages.
-      final message = switch (e.code) {
-        'email-already-in-use' => 'This email is already registered.',
-        'invalid-email' => 'Please enter a valid email address.',
-        'weak-password' => 'Password must be at least 6 characters.',
-        _ => e.message ?? 'Sign-up failed',
-      };
-      emit(state.copyWith(status: AuthStatus.error, errorMessage: message));
-    } catch (e) {
-      emit(
-        state.copyWith(
-          status: AuthStatus.error,
-          errorMessage: 'An unexpected error occurred',
-        ),
-      );
-    }
-  }
-
-  /// Sign in with email and password via Firebase, then exchange token.
-  Future<void> signInWithEmailAndPassword({
-    required String email,
-    required String password,
-  }) async {
-    emit(state.copyWith(status: AuthStatus.loading));
-
-    try {
-      final userCredential =
-          await _firebaseAuth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      final idToken = await userCredential.user?.getIdToken();
-      if (idToken == null) {
-        emit(
-          state.copyWith(
-            status: AuthStatus.error,
-            errorMessage: 'Failed to get authentication token',
-          ),
-        );
-        return;
-      }
-
-      await _exchangeToken(idToken);
-    } on FirebaseAuthException catch (e) {
-      // Map common Firebase errors to user-friendly messages.
-      final message = switch (e.code) {
-        'invalid-credential' => 'Invalid email or password.',
-        'user-not-found' => 'No account found with this email.',
-        'wrong-password' => 'Invalid email or password.',
-        'invalid-email' => 'Please enter a valid email address.',
-        'too-many-requests' =>
-            'Too many attempts. Please try again later or reset your password.',
-        _ => e.message ?? 'Sign-in failed',
-      };
-      emit(state.copyWith(status: AuthStatus.error, errorMessage: message));
-    } catch (e) {
-      emit(
-        state.copyWith(
-          status: AuthStatus.error,
-          errorMessage: 'An unexpected error occurred',
-        ),
-      );
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Social auth stubs (not yet implemented).
-  // ---------------------------------------------------------------------------
-
-  /// Sign in with Facebook.
+  /// Sign in with Facebook (stub — coming soon).
   Future<void> signInWithFacebook() async {
     emit(state.copyWith(status: AuthStatus.loading));
-
-    try {
-      // Facebook Sign-In requires the flutter_facebook_auth package
-      // For now, emit a message that this is coming soon
-      emit(
-        state.copyWith(
-          status: AuthStatus.error,
-          errorMessage: 'Facebook Sign-In will be available soon',
-        ),
-      );
-    } catch (e) {
-      emit(
-        state.copyWith(
-          status: AuthStatus.error,
-          errorMessage: 'An unexpected error occurred',
-        ),
-      );
-    }
+    emit(
+      state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: 'Facebook Sign-In will be available soon',
+      ),
+    );
   }
 
   /// Exchange Firebase ID token for SafePass JWT tokens.
@@ -250,7 +130,7 @@ class AuthCubit extends Cubit<AuthState> {
       } else {
         emit(state.copyWith(status: AuthStatus.authenticated));
       }
-    } on Exception catch (e) {
+    } catch (_) {
       await _firebaseAuth.signOut();
       emit(
         state.copyWith(

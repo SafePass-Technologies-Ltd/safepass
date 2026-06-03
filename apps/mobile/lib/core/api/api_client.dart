@@ -3,7 +3,6 @@ library safepass_api_client;
 
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../constants.dart';
 
 /// Singleton Dio instance configured for SafePass API.
 class ApiClient {
