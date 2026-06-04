@@ -69,7 +69,7 @@ class HomeShell extends StatelessWidget {
         // TODO: Navigate to trip history (M-15, Week 4)
         break;
       case 2:
-        // TODO: Navigate to wallet (M-04, Week 2)
+        context.go(AppRoutes.wallet);
         break;
       case 3:
         context.go(AppRoutes.profile);

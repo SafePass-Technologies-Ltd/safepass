@@ -16,9 +16,12 @@ import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/onboarding_screen.dart';
 import '../features/auth/screens/phone_auth_screen.dart';
 import '../features/home/screens/home_shell.dart';
+import '../features/home/screens/home_screen.dart';
 import '../features/profile/screens/profile_screen.dart';
 import '../features/vehicles/screens/vehicle_list_screen.dart';
 import '../features/vehicles/screens/add_vehicle_screen.dart';
+import '../features/trips/screens/trip_registration_screen.dart';
+import '../features/wallet/screens/wallet_screen.dart';
 
 /// Route path constants.
 class AppRoutes {
@@ -123,8 +126,17 @@ GoRouter createRouter(AuthCubit authCubit) {
           GoRoute(
             path: AppRoutes.home,
             name: 'home',
-            builder: (context, state) =>
-                const Center(child: Text('Home — Map View')),
+            builder: (context, state) => const HomeScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.tripRegistration,
+            name: 'tripRegistration',
+            builder: (context, state) => const TripRegistrationScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.wallet,
+            name: 'wallet',
+            builder: (context, state) => const WalletScreen(),
           ),
           GoRoute(
             path: AppRoutes.profile,
