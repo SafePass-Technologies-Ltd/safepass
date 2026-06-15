@@ -18,6 +18,7 @@ import 'features/auth/cubit/auth_cubit.dart';
 import 'features/profile/cubit/profile_cubit.dart';
 import 'features/vehicles/cubit/vehicle_cubit.dart';
 import 'features/trips/cubit/trip_registration_cubit.dart';
+import 'features/trips/cubit/trip_monitoring_cubit.dart';
 import 'features/wallet/cubit/wallet_cubit.dart';
 
 void main() async {
@@ -45,6 +46,9 @@ class SafePassApp extends StatelessWidget {
         BlocProvider<VehicleCubit>(create: (_) => VehicleCubit()),
         BlocProvider<TripRegistrationCubit>(
           create: (_) => TripRegistrationCubit(),
+        ),
+        BlocProvider<TripMonitoringCubit>(
+          create: (_) => TripMonitoringCubit(),
         ),
         BlocProvider<WalletCubit>(create: (_) => WalletCubit()),
       ],

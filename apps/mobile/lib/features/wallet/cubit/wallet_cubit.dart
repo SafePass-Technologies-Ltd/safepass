@@ -84,6 +84,7 @@ class WalletState extends Equatable {
   final List<WalletTransaction> transactions;
   final String? errorMessage;
   final String? topUpReference;
+  final String? authorizationUrl;
 
   const WalletState({
     this.status = WalletStatus.initial,
@@ -91,6 +92,7 @@ class WalletState extends Equatable {
     this.transactions = const [],
     this.errorMessage,
     this.topUpReference,
+    this.authorizationUrl,
   });
 
   WalletState copyWith({
@@ -99,6 +101,8 @@ class WalletState extends Equatable {
     List<WalletTransaction>? transactions,
     String? errorMessage,
     String? topUpReference,
+    String? authorizationUrl,
+    bool clearAuthUrl = false,
   }) {
     return WalletState(
       status: status ?? this.status,
@@ -106,11 +110,13 @@ class WalletState extends Equatable {
       transactions: transactions ?? this.transactions,
       errorMessage: errorMessage,
       topUpReference: topUpReference ?? this.topUpReference,
+      authorizationUrl: clearAuthUrl ? null : (authorizationUrl ?? this.authorizationUrl),
     );
   }
 
   @override
-  List<Object?> get props => [status, wallet, transactions, errorMessage, topUpReference];
+  List<Object?> get props =>
+      [status, wallet, transactions, errorMessage, topUpReference, authorizationUrl];
 }
 
 // ────────────────────────────────────────────────────────────
@@ -172,14 +178,13 @@ class WalletCubit extends Cubit<WalletState> {
 
       final data = response.data as Map<String, dynamic>;
       final reference = data['reference'] as String;
+      final authorizationUrl = data['authorizationUrl'] as String;
 
       emit(state.copyWith(
         status: WalletStatus.fundSuccess,
         topUpReference: reference,
+        authorizationUrl: authorizationUrl,
       ));
-
-      // The screen should open authUrl in a WebView or browser.
-      // For now, we store the reference for client-side verification.
     } on DioException catch (e) {
       emit(state.copyWith(
         status: WalletStatus.error,
@@ -201,5 +206,10 @@ class WalletCubit extends Cubit<WalletState> {
             e.response?.data?['error']?['message'] ?? 'Payment verification failed',
       ));
     }
+  }
+
+  /// Clear the top-up state after the WebView has been opened.
+  void clearTopUpState() {
+    emit(state.copyWith(clearAuthUrl: true, topUpReference: null));
   }
 }

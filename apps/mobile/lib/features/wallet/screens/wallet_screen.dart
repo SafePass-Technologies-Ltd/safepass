@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../app/theme.dart';
 import '../../../core/constants.dart';
 import '../cubit/wallet_cubit.dart';
+import 'payment_webview_screen.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -31,14 +32,21 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
       body: BlocConsumer<WalletCubit, WalletState>(
         listener: (context, state) {
-          if (state.status == WalletStatus.fundSuccess && state.topUpReference != null) {
-            // Open payment checkout URL.
-            // In production, this would use a WebView or url_launcher.
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Redirecting to payment...'),
+          if (state.status == WalletStatus.fundSuccess &&
+              state.topUpReference != null &&
+              state.authorizationUrl != null) {
+            // Navigate to the in-app WebView for Paystack checkout.
+            final cubit = context.read<WalletCubit>();
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PaymentWebViewScreen(
+                  authorizationUrl: state.authorizationUrl!,
+                  reference: state.topUpReference!,
+                ),
               ),
             );
+            // Clear the auth URL so we don't re-navigate on rebuild.
+            cubit.clearTopUpState();
           }
           if (state.errorMessage != null && state.status == WalletStatus.error) {
             ScaffoldMessenger.of(context).showSnackBar(

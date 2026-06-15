@@ -8,6 +8,12 @@ import { tripRoutes, adminTripRoutes } from './routes/trip.routes';
 import { walletRoutes, adminWalletRoutes } from './routes/wallet.routes';
 import { paymentRoutes } from './routes/payment.routes';
 import { messageRoutes } from './routes/message.routes';
+import { incidentRoutes, adminIncidentRoutes } from './routes/incident.routes';
+import { markerRoutes, adminMarkerRoutes } from './routes/map-marker.routes';
+import { orgRoutes, adminOrgRoutes } from './routes/organization.routes';
+import { emergencyRoutes, escalationRoutes, checkinRoutes } from './routes/admin-emergency.routes';
+import { emergencyTriggerRoutes } from './routes/emergency.routes';
+import { adminUserRoutes } from './routes/admin-user.routes';
 import { env } from './env';
 
 const app = new Hono();
@@ -64,6 +70,18 @@ v1.route('/payments', paymentRoutes);
 // Messaging (scoped to trips)
 v1.route('/', messageRoutes);
 
+// Incident reporting + proximity lookup
+v1.route('/incidents', incidentRoutes);
+
+// Map marker interactions (user-facing)
+v1.route('/markers', markerRoutes);
+
+// Organization management (corporate + transport partner)
+v1.route('/organizations', orgRoutes);
+
+// Emergency trigger (user-facing panic button)
+v1.route('/emergency', emergencyTriggerRoutes);
+
 // ──────────────────────────────────────────────────────────
 // Admin Routes (v1/admin)
 // ──────────────────────────────────────────────────────────
@@ -71,8 +89,13 @@ v1.route('/', messageRoutes);
 const adminV1 = new Hono();
 adminV1.route('/trips', adminTripRoutes);
 adminV1.route('/wallets', adminWalletRoutes);
-// Future: adminV1.route('/users', adminUserRoutes);
-// Future: adminV1.route('/incidents', adminIncidentRoutes);
+adminV1.route('/users', adminUserRoutes);
+adminV1.route('/incidents', adminIncidentRoutes);
+adminV1.route('/markers', adminMarkerRoutes);
+adminV1.route('/organizations', adminOrgRoutes);
+adminV1.route('/emergencies', emergencyRoutes);
+adminV1.route('/escalations', escalationRoutes);
+adminV1.route('/checkins', checkinRoutes);
 
 v1.route('/admin', adminV1);
 

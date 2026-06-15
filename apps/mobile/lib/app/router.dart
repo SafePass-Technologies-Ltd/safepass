@@ -21,6 +21,7 @@ import '../features/profile/screens/profile_screen.dart';
 import '../features/vehicles/screens/vehicle_list_screen.dart';
 import '../features/vehicles/screens/add_vehicle_screen.dart';
 import '../features/trips/screens/trip_registration_screen.dart';
+import '../features/trips/screens/active_trip_screen.dart';
 import '../features/wallet/screens/wallet_screen.dart';
 
 /// Route path constants.
@@ -132,6 +133,14 @@ GoRouter createRouter(AuthCubit authCubit) {
             path: AppRoutes.tripRegistration,
             name: 'tripRegistration',
             builder: (context, state) => const TripRegistrationScreen(),
+          ),
+          GoRoute(
+            path: '/trip/active/:tripId',
+            name: 'activeTrip',
+            builder: (context, state) {
+              final tripId = state.pathParameters['tripId']!;
+              return ActiveTripScreen(tripId: tripId);
+            },
           ),
           GoRoute(
             path: AppRoutes.wallet,

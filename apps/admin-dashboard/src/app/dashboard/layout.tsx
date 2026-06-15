@@ -9,7 +9,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   Map,
   AlertTriangle,
@@ -17,12 +17,12 @@ import {
   Users,
   Wallet,
   Flag,
-  Settings,
   LogOut,
   Menu,
   X,
   ChevronRight,
 } from 'lucide-react';
+import { useActiveTrips } from '@/hooks/useActiveTrips';
 
 const navigation = [
   {
@@ -70,6 +70,18 @@ export default function DashboardLayout({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const { trips } = useActiveTrips(30_000); // 30s poll for header only
+
+  const activeCount = trips.filter(
+    (t) => t.status === 'active' || t.status === 'delayed'
+  ).length;
+
+  function handleSignOut() {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    router.push('/');
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
@@ -143,7 +155,10 @@ export default function DashboardLayout({
 
         {/* Sidebar footer */}
         <div className="border-t border-slate-200 p-3">
-          <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900">
+          <button
+            onClick={handleSignOut}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+          >
             <LogOut className="h-5 w-5 text-slate-400" />
             Sign Out
           </button>
@@ -168,7 +183,7 @@ export default function DashboardLayout({
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-safety-green opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-safety-green" />
               </span>
-              12 active trips
+              {activeCount} active trip{activeCount !== 1 ? 's' : ''}
             </div>
 
             {/* User avatar placeholder */}

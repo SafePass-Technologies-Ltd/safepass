@@ -54,16 +54,21 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
   Widget build(BuildContext context) {
     return BlocConsumer<TripRegistrationCubit, TripRegistrationState>(
       listener: (context, state) {
-        if (state.status == TripFormStatus.started && state.startedTripId != null) {
+        if (state.status == TripFormStatus.started &&
+            state.startedTripId != null) {
           // Navigate to the active trip monitoring screen.
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Trip monitoring started! Stay safe.')),
+            const SnackBar(
+              content: Text('Trip monitoring started! Stay safe.'),
+            ),
           );
           context.go(AppRoutes.home);
         }
         if (state.status == TripFormStatus.draftSaved) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Trip saved as draft. Start when ready.')),
+            const SnackBar(
+              content: Text('Trip saved as draft. Start when ready.'),
+            ),
           );
         }
       },
@@ -97,19 +102,19 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
                 ],
 
                 // ── Common Fields ──
-        _buildLocationField(
-          controller: _originController,
-          label: 'Origin',
-          hint: 'e.g., Lagos, Ikeja',
-          icon: Icons.trip_origin,
-        ),
-        const SizedBox(height: 12),
-        _buildLocationField(
-          controller: _destinationController,
-          label: 'Destination',
-          hint: 'e.g., Benin, Ring Road',
-          icon: Icons.flag_outlined,
-        ),
+                _buildLocationField(
+                  controller: _originController,
+                  label: 'Origin',
+                  hint: 'e.g., Lagos, Ikeja',
+                  icon: Icons.trip_origin,
+                ),
+                const SizedBox(height: 12),
+                _buildLocationField(
+                  controller: _destinationController,
+                  label: 'Destination',
+                  hint: 'e.g., Benin, Ring Road',
+                  icon: Icons.flag_outlined,
+                ),
                 const SizedBox(height: 12),
 
                 // ── Passenger Count ──
@@ -131,9 +136,10 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: state.status == TripFormStatus.submitting
-                            ? null
-                            : () => _cubit.saveDraft(),
+                        onPressed:
+                            state.status == TripFormStatus.submitting
+                                ? null
+                                : () => _cubit.saveDraft(),
                         icon: const Icon(Icons.bookmark_outline, size: 18),
                         label: const Text('Save Draft'),
                         style: OutlinedButton.styleFrom(
@@ -145,20 +151,22 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
                     Expanded(
                       flex: 2,
                       child: FilledButton.icon(
-                        onPressed: state.isFormValid &&
-                                state.status != TripFormStatus.submitting
-                            ? () => _cubit.startTrip()
-                            : null,
-                        icon: state.status == TripFormStatus.submitting
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.play_arrow, size: 18),
+                        onPressed:
+                            state.isFormValid &&
+                                    state.status != TripFormStatus.submitting
+                                ? () => _cubit.startTrip()
+                                : null,
+                        icon:
+                            state.status == TripFormStatus.submitting
+                                ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                : const Icon(Icons.play_arrow, size: 18),
                         label: Text(
                           state.status == TripFormStatus.submitting
                               ? 'Starting...'
@@ -232,15 +240,16 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
               prefixIcon: Icon(Icons.directions_car_outlined),
               border: OutlineInputBorder(),
             ),
-            items: vehicles.map((v) {
-              return DropdownMenuItem(
-                value: v.id,
-                child: Text(
-                  '${v.plateNumber} — ${v.make ?? ''} ${v.model ?? ''}'
-                      .trim(),
-                ),
-              );
-            }).toList(),
+            items:
+                vehicles.map((v) {
+                  return DropdownMenuItem(
+                    value: v.id,
+                    child: Text(
+                      '${v.plateNumber} — ${v.make ?? ''} ${v.model ?? ''}'
+                          .trim(),
+                    ),
+                  );
+                }).toList(),
             onChanged: (id) {
               if (id != null) _cubit.selectVehicle(id);
             },
@@ -350,9 +359,10 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
         const Spacer(),
         IconButton(
           icon: const Icon(Icons.remove_circle_outline),
-          onPressed: state.passengerCount > 1
-              ? () => _cubit.setPassengerCount(state.passengerCount - 1)
-              : null,
+          onPressed:
+              state.passengerCount > 1
+                  ? () => _cubit.setPassengerCount(state.passengerCount - 1)
+                  : null,
         ),
         Text(
           '${state.passengerCount}',
@@ -372,20 +382,24 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       decoration: BoxDecoration(
         color: AppColors.safetyGreen.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: AppColors.safetyGreen.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: AppColors.safetyGreen.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline, color: AppColors.safetyGreen, size: 18),
+          const Icon(
+            Icons.info_outline,
+            color: AppColors.safetyGreen,
+            size: 18,
+          ),
           const SizedBox(width: 8),
-          Text(
-            'Trip monitoring costs ₦${kTripPriceNaira}. '
-            'Auto-deducted from your wallet on Start.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.darkSlate,
-                ),
+          Expanded(
+            child: Text(
+              'Trip monitoring costs ₦${kTripPriceNaira}. '
+              'Auto-deducted from your wallet on Start.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.darkSlate),
+            ),
           ),
         ],
       ),
@@ -404,10 +418,9 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       ),
       child: Text(
         message,
-        style: Theme.of(context)
-            .textTheme
-            .bodySmall
-            ?.copyWith(color: AppColors.emergencyRed),
+        style: Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: AppColors.emergencyRed),
       ),
     );
   }
@@ -435,17 +448,26 @@ class _ModeToggleChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
-          boxShadow: isSelected
-              ? [BoxShadow(color: Colors.black12.withValues(alpha: 0.1), blurRadius: 4)]
-              : null,
+          boxShadow:
+              isSelected
+                  ? [
+                    BoxShadow(
+                      color: Colors.black12.withValues(alpha: 0.1),
+                      blurRadius: 4,
+                    ),
+                  ]
+                  : null,
         ),
         child: Center(
           child: Text(
             label,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  color: isSelected ? AppColors.darkSlate : AppColors.darkSlate.withValues(alpha: 0.6),
-                ),
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+              color:
+                  isSelected
+                      ? AppColors.darkSlate
+                      : AppColors.darkSlate.withValues(alpha: 0.6),
+            ),
           ),
         ),
       ),

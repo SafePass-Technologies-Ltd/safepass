@@ -19,12 +19,14 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// Enforce consistent Kotlin JVM target (17) across all subprojects to prevent
-// "Inconsistent JVM Target Compatibility" errors between plugins that
-// default to different Java/Kotlin compile targets.
-// Uses the compilerOptions DSL required by Kotlin Gradle Plugin 2.x.
+// Enforce consistent JVM target (17) across ALL subprojects for Kotlin.
+//
+// Java targets remain as-is (set by individual plugins/AGP) to avoid
+// stripping the Android SDK classpath from JavaCompile tasks.
+// JVM target mismatch between Java (1.8) and Kotlin (17) in third-party
+// plugins is suppressed via kotlin.jvm.target.validation.mode=WARNING
+// in gradle.properties.
 subprojects {
-    // configureEach matches tasks even if added later — safe without afterEvaluate
     tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)

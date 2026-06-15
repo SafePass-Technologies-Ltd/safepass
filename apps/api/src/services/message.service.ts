@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { eq, desc, and } from 'drizzle-orm';
 import { db } from '../db';
 import { messages, trips } from '../db/schema';
+import { broadcastNewMessage } from './websocket.service';
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -55,6 +56,15 @@ export async function sendMessage(
       isRead: false,
     })
     .returning();
+
+  // Broadcast the new message to all WebSocket clients subscribed to this trip.
+  broadcastNewMessage(input.tripId, {
+    id: message.id,
+    senderId: message.senderId,
+    senderRole: message.senderRole,
+    content: message.content,
+    createdAt: message.createdAt.toISOString(),
+  });
 
   return message;
 }

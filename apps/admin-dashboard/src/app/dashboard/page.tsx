@@ -1,31 +1,30 @@
 /// Admin Dashboard — Main Page (Live Trip Map + Stats).
 ///
-/// Week 2: API-connected stats with real active trip count.
-/// Week 3: Full Google Maps integration for live trip markers.
+/// Week 2: Google Maps with live trip markers, real-time stats via SWR,
+/// and WebSocket-ready architecture for Week 3 sub-second updates.
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { MapPin, AlertTriangle, Users, Activity } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { useActiveTrips } from '@/hooks/useActiveTrips';
+import LiveTripMap from '@/components/map/live-trip-map';
+import type { ActiveTrip } from '@/hooks/useActiveTrips';
 
 export default function DashboardPage() {
-  const [activeTrips, setActiveTrips] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { trips, isLoading, error, isRefreshing } = useActiveTrips(10_000);
+  const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchActiveTrips();
-  }, []);
+  // ── Derived stats ──────────────────────────────────────
+  const activeCount = trips.filter(
+    (t) => t.status === 'active' || t.status === 'delayed'
+  ).length;
+  const emergencyCount = trips.filter(
+    (t) => t.status === 'emergency' || t.status === 'escalated'
+  ).length;
+  const uniqueUsers = new Set(trips.map((t) => t.userId)).size;
 
-  async function fetchActiveTrips() {
-    try {
-      const data = await apiClient<{ trips: unknown[] }>('/v1/admin/trips/active');
-      const trips = data.trips ?? [];
-      setActiveTrips(trips.length);
-    } catch (err) {
-      // API may not be running locally — show fallback.
-      console.error('Failed to fetch active trips:', err);
-      setActiveTrips(0);
-    }
+  function handleTripClick(trip: ActiveTrip) {
+    setSelectedTripId((prev) => (prev === trip.id ? null : trip.id));
   }
 
   return (
@@ -34,29 +33,29 @@ export default function DashboardPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatsCard
           title="Active Trips"
-          value={activeTrips !== null ? `${activeTrips}` : '—'}
-          change="Real-time count"
-          changeType="neutral"
+          value={isLoading ? '...' : `${activeCount}`}
+          change={`${trips.length} total` + (isRefreshing ? ' • refreshing' : '')}
+          changeType={activeCount > 0 ? 'positive' : 'neutral'}
           icon={MapPin}
         />
         <StatsCard
-          title="Incidents Today"
-          value="4"
-          change="2 pending review"
-          changeType="neutral"
+          title="Emergency"
+          value={isLoading ? '...' : `${emergencyCount}`}
+          change={emergencyCount > 0 ? 'Immediate attention' : 'No emergencies'}
+          changeType={emergencyCount > 0 ? 'negative' : 'neutral'}
           icon={AlertTriangle}
         />
         <StatsCard
           title="Users Monitored"
-          value="—"
-          change="Trips in progress"
+          value={isLoading ? '...' : `${uniqueUsers}`}
+          change={`${trips.length} trips in progress`}
           changeType="neutral"
           icon={Users}
         />
         <StatsCard
-          title="Alerts (24h)"
-          value="—"
-          change="Monitoring active"
+          title="Refresh"
+          value={isRefreshing ? '⟳' : '✓'}
+          change={isRefreshing ? 'Polling API...' : 'Live (10s interval)'}
           changeType="neutral"
           icon={Activity}
         />
@@ -69,25 +68,13 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Map placeholder */}
-      <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="flex h-96 items-center justify-center bg-slate-100">
-          <div className="text-center">
-            <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-              <MapPin className="h-8 w-8 text-primary" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-700">Live Trip Map</h3>
-            <p className="mt-1 text-sm text-slate-500">
-              Google Maps integration with live trip markers coming in Week 3
-            </p>
-            {activeTrips !== null && (
-              <p className="mt-2 text-xs font-medium text-safety-green">
-                {activeTrips} active trip{activeTrips !== 1 ? 's' : ''} on the platform
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
+      {/* Live trip map */}
+      <LiveTripMap
+        trips={trips}
+        isLoading={isLoading && trips.length === 0}
+        selectedTripId={selectedTripId}
+        onTripClick={handleTripClick}
+      />
     </div>
   );
 }
@@ -105,7 +92,7 @@ interface StatsCardProps {
 }
 
 function StatsCard({ title, value, change, changeType, icon: Icon }: StatsCardProps) {
-  const changeColor =
+  const changeColour =
     changeType === 'positive'
       ? 'text-safety-green'
       : changeType === 'negative'
@@ -119,7 +106,7 @@ function StatsCard({ title, value, change, changeType, icon: Icon }: StatsCardPr
         <Icon className="h-5 w-5 text-slate-400" />
       </div>
       <p className="mt-2 text-3xl font-bold text-slate-dark">{value}</p>
-      <p className={`mt-1 text-xs ${changeColor}`}>{change}</p>
+      <p className={`mt-1 text-xs ${changeColour}`}>{change}</p>
     </div>
   );
 }

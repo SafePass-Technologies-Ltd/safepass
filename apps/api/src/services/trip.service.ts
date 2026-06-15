@@ -11,6 +11,10 @@ import { db } from '../db';
 import { trips, wallets, walletTransactions } from '../db/schema';
 import { env } from '../env';
 import type { Location } from '../db/schema/types';
+import {
+  broadcastGpsUpdate,
+  broadcastTripStatus,
+} from './websocket.service';
 
 // ────────────────────────────────────────────────────────────
 // Enum column types (for Drizzle strict enum comparisons)
@@ -232,6 +236,9 @@ export async function startTrip(
     return [updated];
   });
 
+  // Broadcast trip status change to WebSocket subscribers.
+  broadcastTripStatus(tripId, 'active');
+
   return updatedTrip;
 }
 
@@ -241,11 +248,12 @@ export async function startTrip(
 
 /**
  * Record a GPS position update for an active trip.
+ * Broadcasts the position to all subscribed WebSocket clients.
  */
 export async function updateGpsPosition(
   tripId: string,
   userId: string,
-  _data: GpsUpdateInput
+  data: GpsUpdateInput
 ): Promise<void> {
   const trip = await db.query.trips.findFirst({
     where: and(eq(trips.id, tripId), eq(trips.userId, userId)),
@@ -262,12 +270,19 @@ export async function updateGpsPosition(
     );
   }
 
-  // For MVP: update the trip's updatedAt timestamp to confirm activity.
-  // Week 2+ will add DynamoDB write + WebSocket broadcast.
+  // Update trip's last-activity timestamp.
   await db
     .update(trips)
     .set({ updatedAt: new Date() })
     .where(eq(trips.id, tripId));
+
+  // Broadcast GPS position to all WebSocket clients subscribed to this trip.
+  broadcastGpsUpdate(tripId, {
+    latitude: data.latitude,
+    longitude: data.longitude,
+    speed: data.speed,
+    heading: data.heading,
+  });
 }
 
 // ────────────────────────────────────────────────────────────
@@ -301,6 +316,7 @@ export async function completeTrip(
     .where(eq(trips.id, tripId))
     .returning();
 
+  broadcastTripStatus(tripId, 'completed');
   return updated;
 }
 
@@ -330,6 +346,7 @@ export async function cancelTrip(
     .where(eq(trips.id, tripId))
     .returning();
 
+  broadcastTripStatus(tripId, 'cancelled');
   return updated;
 }
 
@@ -362,6 +379,7 @@ export async function adminUpdateTripStatus(
     .where(eq(trips.id, tripId))
     .returning();
 
+  broadcastTripStatus(tripId, newStatus);
   return updated;
 }
 
