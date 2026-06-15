@@ -14,6 +14,8 @@ import { orgRoutes, adminOrgRoutes } from './routes/organization.routes';
 import { emergencyRoutes, escalationRoutes, checkinRoutes } from './routes/admin-emergency.routes';
 import { emergencyTriggerRoutes } from './routes/emergency.routes';
 import { adminUserRoutes } from './routes/admin-user.routes';
+import { vehicleRoutes } from './routes/vehicle.routes';
+import { driverRoutes } from './routes/driver.routes';
 import { env } from './env';
 
 const app = new Hono();
@@ -78,6 +80,10 @@ v1.route('/markers', markerRoutes);
 
 // Organization management (corporate + transport partner)
 v1.route('/organizations', orgRoutes);
+
+// Transport partner fleet management
+v1.route('/vehicles', vehicleRoutes);
+v1.route('/drivers', driverRoutes);
 
 // Emergency trigger (user-facing panic button)
 v1.route('/emergency', emergencyTriggerRoutes);
