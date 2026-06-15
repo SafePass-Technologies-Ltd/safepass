@@ -19,6 +19,8 @@ export const transportVehicles = pgTable(
     model: varchar('model', { length: 100 }),
     year: integer('year'),
     capacity: integer('capacity'),
+    vehicleType: varchar('vehicle_type', { length: 50 }),
+    status: varchar('status', { length: 20 }).notNull().default('active'),
     photoUrl: text('photo_url'),
     isVerified: boolean('is_verified').notNull().default(false),
     qrCodeUrl: text('qr_code_url'),
