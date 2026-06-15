@@ -23,6 +23,11 @@ import '../features/vehicles/screens/add_vehicle_screen.dart';
 import '../features/trips/screens/trip_registration_screen.dart';
 import '../features/trips/screens/active_trip_screen.dart';
 import '../features/wallet/screens/wallet_screen.dart';
+import '../features/emergency/screens/emergency_screen.dart';
+import '../features/incidents/screens/incident_report_screen.dart';
+import '../features/messaging/screens/conversations_screen.dart';
+import '../features/messaging/screens/message_thread_screen.dart';
+import '../features/markers/screens/marker_action_screen.dart';
 
 /// Route path constants.
 class AppRoutes {
@@ -36,11 +41,17 @@ class AppRoutes {
   static const String addVehicle = '/vehicles/add';
   static const String phoneAuth = '/phone-auth';
 
-  // Future routes (Week 2+)
   static const String tripRegistration = '/trip/register';
   static const String activeTrip = '/trip/active';
   static const String wallet = '/wallet';
   static const String tripHistory = '/trips';
+
+  // Week 3
+  static const String emergency = '/emergency/:tripId';
+  static const String incidentReport = '/incidents/report';
+  static const String messages = '/messages';
+  static const String messageThread = '/messages/:conversationId';
+  static const String markerAction = '/markers/:markerId';
 }
 
 /// Paths that are accessible without authentication.
@@ -161,6 +172,45 @@ GoRouter createRouter(AuthCubit authCubit) {
             path: AppRoutes.addVehicle,
             name: 'addVehicle',
             builder: (context, state) => const AddVehicleScreen(),
+          ),
+          GoRoute(
+            path: '/emergency/:tripId',
+            name: 'emergency',
+            builder: (context, state) {
+              final tripId = state.pathParameters['tripId']!;
+              return EmergencyScreen(tripId: tripId);
+            },
+          ),
+          GoRoute(
+            path: AppRoutes.incidentReport,
+            name: 'incidentReport',
+            builder: (context, state) => const IncidentReportScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.messages,
+            name: 'messages',
+            builder: (context, state) => const ConversationsScreen(),
+          ),
+          GoRoute(
+            path: '/messages/:conversationId',
+            name: 'messageThread',
+            builder: (context, state) {
+              final conversationId = state.pathParameters['conversationId']!;
+              final participantName =
+                  state.uri.queryParameters['name'] ?? 'Messages';
+              return MessageThreadScreen(
+                conversationId: conversationId,
+                participantName: participantName,
+              );
+            },
+          ),
+          GoRoute(
+            path: '/markers/:markerId',
+            name: 'markerAction',
+            builder: (context, state) {
+              final markerId = state.pathParameters['markerId']!;
+              return MarkerActionScreen(markerId: markerId);
+            },
           ),
         ],
       ),

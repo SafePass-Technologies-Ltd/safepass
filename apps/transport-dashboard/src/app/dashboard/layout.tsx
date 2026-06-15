@@ -13,6 +13,7 @@ const navigation = [
   { name: 'Drivers', href: '/dashboard/drivers', icon: Users },
   { name: 'Trips', href: '/dashboard/trips', icon: Map },
   { name: 'Documents', href: '/dashboard/documents', icon: FileText },
+  { name: 'QR Codes', href: '/dashboard/qr', icon: QrCode },
   { name: 'Wallet', href: '/dashboard/wallet', icon: Wallet },
 ];
 

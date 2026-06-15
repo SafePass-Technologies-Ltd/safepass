@@ -21,6 +21,8 @@ import {
   Menu,
   X,
   ChevronRight,
+  CheckCircle,
+  MapPin,
 } from 'lucide-react';
 import { useActiveTrips } from '@/hooks/useActiveTrips';
 
@@ -60,6 +62,18 @@ const navigation = [
     href: '/dashboard/payments',
     icon: Wallet,
     description: 'Wallet balances and transactions',
+  },
+  {
+    name: 'Check-ins',
+    href: '/dashboard/checkins',
+    icon: CheckCircle,
+    description: 'Passenger check-in log',
+  },
+  {
+    name: 'Map Markers',
+    href: '/dashboard/markers',
+    icon: MapPin,
+    description: 'Verify and manage map markers',
   },
 ];
 

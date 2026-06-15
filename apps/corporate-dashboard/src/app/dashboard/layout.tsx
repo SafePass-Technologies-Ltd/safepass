@@ -12,7 +12,8 @@ import { getUserSession } from '@/lib/auth-utils';
 const navigation = [
   { name: 'Live Trip Map', href: '/dashboard', icon: Map, description: 'Monitor staff trips' },
   { name: 'Staff', href: '/dashboard/staff', icon: Users, description: 'Manage staff members' },
-  { name: 'Trip History', href: '/dashboard/trips', icon: Flag, description: 'Past trips and reports' },
+  { name: 'Trip Registration', href: '/dashboard/trips', icon: Flag, description: 'Register staff trips' },
+  { name: 'Live Staff Map', href: '/dashboard/map', icon: Map, description: 'Real-time staff locations' },
   { name: 'Wallet', href: '/dashboard/wallet', icon: Wallet, description: 'Corporate wallet' },
 ];
 

@@ -214,8 +214,7 @@ export default function TripManagementPage() {
                       key={trip.id}
                       className="group cursor-pointer transition-colors hover:bg-slate-50"
                       onClick={() => {
-                        // Week 3: navigate to trip detail
-                        console.log('View trip:', trip.id);
+                        window.location.href = `/dashboard/trips/${trip.id}`;
                       }}
                     >
                       {/* Route */}
