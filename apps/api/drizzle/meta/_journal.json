@@ -29,6 +29,13 @@
       "when": 1781570077385,
       "tag": "0003_petite_earthquake",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781604748387,
+      "tag": "0004_lethal_infant_terrible",
+      "breakpoints": true
     }
   ]
 }

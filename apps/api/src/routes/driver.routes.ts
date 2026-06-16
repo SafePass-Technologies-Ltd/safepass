@@ -9,7 +9,7 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requireRole } from '../middleware/auth';
 import { getDriversByOrg, createDriver } from '../services/driver.service';
 
 // ────────────────────────────────────────────────────────────
@@ -30,6 +30,8 @@ const DriverCreateSchema = z.object({
 
 const driverRoutes = new Hono();
 driverRoutes.use('*', authMiddleware);
+// Driver management is transport-partner-dashboard-only; admins may also manage via /v1/admin.
+driverRoutes.use('*', requireRole('transport_partner', 'admin', 'super_admin'));
 
 /**
  * GET /v1/drivers

@@ -1,10 +1,12 @@
 /// Transport Partner Dashboard — Company Profile Onboarding (T-01)
 ///
 /// Post-login onboarding for transport partners after first sign-in.
+/// Submitting creates a pending role_upgrade_requests entry — the user does
+/// NOT get dashboard access until an admin approves it.
 'use client';
 
 import { useState } from 'react';
-import { Truck, ArrowRight } from 'lucide-react';
+import { Truck, ArrowRight, Clock } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface FormData {
@@ -33,6 +35,7 @@ export default function OnboardingPage() {
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
   function updateField(field: keyof FormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -45,7 +48,7 @@ export default function OnboardingPage() {
     setError(null);
 
     try {
-      const org = await apiClient<{ id: string }>('/v1/organizations', {
+      await apiClient('/v1/organizations', {
         method: 'POST',
         body: JSON.stringify({
           type: 'transport_partner',
@@ -59,13 +62,33 @@ export default function OnboardingPage() {
         }),
       });
 
-      localStorage.setItem('org_id', org.id);
-      window.location.href = '/dashboard';
+      // Awaiting admin review — no orgId is granted yet, so mark this device
+      // as pending so the layout guard doesn't bounce back into onboarding.
+      localStorage.setItem('pending_role_upgrade', 'true');
+      setSubmitted(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create organization');
+      setError(err instanceof Error ? err.message : 'Failed to submit organization for review');
     } finally {
       setLoading(false);
     }
+  }
+
+  if (submitted) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+        <div className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-8 text-center shadow-xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-amber-100">
+            <Clock className="h-8 w-8 text-amber-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-dark">Pending Admin Approval</h1>
+          <p className="text-sm text-slate-500">
+            Your request has been submitted and is pending admin approval. You will be notified
+            and gain dashboard access once a SafePass administrator reviews and approves your
+            organization.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

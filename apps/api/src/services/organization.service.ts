@@ -10,12 +10,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../db';
-import { organizations, users } from '../db/schema';
+import { organizations, users, roleUpgradeRequests as roleUpgradeRequestsTable } from '../db/schema';
 import {
   createWallet,
   getWallet,
   getWalletTransactions as getTransactions,
 } from './wallet.service';
+import { createRoleUpgradeRequest } from './role-upgrade.service';
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -200,12 +201,17 @@ export async function updateOrgVerification(
 
 /**
  * Add a user as a staff member of an organization.
- * Sets the user's organizationId and optional role.
+ *
+ * NOTE: this no longer promotes the user's role directly. Staff added via
+ * this path (e.g. the org creator during onboarding) only gain dashboard
+ * access once an admin approves a role_upgrade_requests entry — see
+ * requestOrgRoleUpgrade. This function is retained for admin-driven staff
+ * additions where the role is already approved (e.g. corporate_admin adding
+ * an already-approved teammate to the same org without role change).
  */
 export async function addStaffMember(
   orgId: string,
-  userId: string,
-  role: UserRole = 'user'
+  userId: string
 ): Promise<typeof users.$inferSelect> {
   const org = await db.query.organizations.findFirst({
     where: eq(organizations.id, orgId),
@@ -231,13 +237,28 @@ export async function addStaffMember(
     .update(users)
     .set({
       organizationId: orgId,
-      role: org.type === 'corporate' ? 'corporate_admin' as UserRole : 'transport_partner' as UserRole,
       updatedAt: new Date(),
     })
     .where(eq(users.id, userId))
     .returning();
 
   return updated;
+}
+
+/**
+ * Submit a role upgrade request for the user who just created an organization.
+ * The requestedRole matches the org type (corporate -> corporate_admin,
+ * transport_partner -> transport_partner). The user's role is left as `user`
+ * and their organizationId is NOT set until an admin approves the request —
+ * this prevents self-signup from granting instant dashboard access.
+ */
+export async function requestOrgRoleUpgrade(
+  orgId: string,
+  userId: string,
+  orgType: OrgType
+): Promise<typeof roleUpgradeRequestsTable.$inferSelect> {
+  const requestedRole = orgType === 'corporate' ? 'corporate_admin' : 'transport_partner';
+  return createRoleUpgradeRequest({ userId, requestedRole, organizationId: orgId });
 }
 
 /**

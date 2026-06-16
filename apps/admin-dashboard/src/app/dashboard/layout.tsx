@@ -25,6 +25,7 @@ import {
   MapPin,
   Car,
   Siren,
+  ShieldCheck,
 } from 'lucide-react';
 import { useActiveTrips } from '@/hooks/useActiveTrips';
 import { apiClient } from '@/lib/api-client';
@@ -95,6 +96,12 @@ const navigation = [
     href: '/dashboard/vehicle-verification',
     icon: Car,
     description: 'Approve and verify transport vehicles',
+  },
+  {
+    name: 'Role Upgrades',
+    href: '/dashboard/role-upgrades',
+    icon: ShieldCheck,
+    description: 'Approve corporate, transport, and admin access requests',
   },
 ];
 

@@ -25,6 +25,7 @@ export type { EmergencyContact, NotificationPreferences, Location } from './type
 export { users } from './users';
 export { userVehicles } from './user-vehicles';
 export { organizations } from './organizations';
+export { roleUpgradeRequests } from './role-upgrade-requests';
 
 // Trip and commerce tables
 export { trips } from './trips';

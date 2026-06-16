@@ -21,6 +21,7 @@ import {
   getOrganizationStaff,
   getOrganizationWallet,
   getOrganizationWalletTransactions,
+  requestOrgRoleUpgrade,
 } from '../services/organization.service';
 
 // ────────────────────────────────────────────────────────────
@@ -62,13 +63,17 @@ orgRoutes.use('*', authMiddleware);
 /**
  * POST /v1/organizations
  * Create a new organization (corporate or transport partner).
- * The authenticated user becomes the first staff member.
+ *
+ * The requesting user does NOT get dashboard access immediately — this
+ * would let anyone self-sign-up as corporate_admin/transport_partner.
+ * Instead a pending role_upgrade_requests row is created; the user keeps
+ * role `user` and no organizationId until an admin approves the request.
  */
 orgRoutes.post('/', zValidator('json', OrgCreateSchema), async (c) => {
   const user = c.get('user');
   const data = c.req.valid('json');
 
-  // Only users and corporate_admins can create organizations.
+  // Only plain users can initiate an org signup.
   if (!['user', 'corporate_admin', 'transport_partner'].includes(user.role)) {
     return c.json(
       { error: { code: 403, message: 'You are not authorized to create an organization' } },
@@ -78,10 +83,17 @@ orgRoutes.post('/', zValidator('json', OrgCreateSchema), async (c) => {
 
   const org = await createOrganization(data);
 
-  // Add the creator as the first staff member.
-  await addStaffMember(org.id, user.sub);
+  // Submit a pending role upgrade request instead of granting access immediately.
+  await requestOrgRoleUpgrade(org.id, user.sub, org.type as 'corporate' | 'transport_partner');
 
-  return c.json(org, 201);
+  return c.json(
+    {
+      organization: org,
+      status: 'pending_review',
+      message: 'Your organization has been created and is pending admin approval. You will gain dashboard access once approved.',
+    },
+    201
+  );
 });
 
 /**
@@ -168,9 +180,10 @@ orgRoutes.post('/:id/staff', zValidator('json', StaffAddSchema), async (c) => {
     return c.json({ error: { code: 404, message: 'Organization not found' } }, 404);
   }
 
-  // Only members of the org or admins can add staff.
+  // Only the org's own corporate_admin/transport_partner, or platform admins, can add staff.
   const isAdmin = ['admin', 'monitoring_officer', 'super_admin'].includes(user.role);
-  if (!isAdmin && user.orgId !== orgId) {
+  const isOrgOwner = ['corporate_admin', 'transport_partner'].includes(user.role) && user.orgId === orgId;
+  if (!isAdmin && !isOrgOwner) {
     return c.json({ error: { code: 403, message: 'Access denied' } }, 403);
   }
 
@@ -188,7 +201,8 @@ orgRoutes.delete('/:id/staff/:userId', async (c) => {
   const targetUserId = c.req.param('userId');
 
   const isAdmin = ['admin', 'monitoring_officer', 'super_admin'].includes(user.role);
-  if (!isAdmin && user.orgId !== orgId) {
+  const isOrgOwner = ['corporate_admin', 'transport_partner'].includes(user.role) && user.orgId === orgId;
+  if (!isAdmin && !isOrgOwner) {
     return c.json({ error: { code: 403, message: 'Access denied' } }, 403);
   }
 

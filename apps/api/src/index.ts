@@ -15,6 +15,7 @@ import { orgRoutes, adminOrgRoutes } from './routes/organization.routes';
 import { emergencyRoutes, escalationRoutes, checkinRoutes } from './routes/admin-emergency.routes';
 import { emergencyTriggerRoutes } from './routes/emergency.routes';
 import { adminUserRoutes } from './routes/admin-user.routes';
+import { roleUpgradeRoutes } from './routes/role-upgrade.routes';
 import { vehicleRoutes } from './routes/vehicle.routes';
 import { driverRoutes } from './routes/driver.routes';
 import { documentRoutes } from './routes/document.routes';
@@ -136,6 +137,7 @@ adminV1.route('/organizations', adminOrgRoutes);
 adminV1.route('/emergencies', emergencyRoutes);
 adminV1.route('/escalations', escalationRoutes);
 adminV1.route('/checkins', checkinRoutes);
+adminV1.route('/role-upgrades', roleUpgradeRoutes);
 
 v1.route('/admin', adminV1);
 

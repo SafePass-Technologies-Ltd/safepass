@@ -18,6 +18,20 @@ export const userRoleEnum = pgEnum('user_role', [
 
 export const authProviderEnum = pgEnum('auth_provider', ['google', 'facebook', 'apple', 'phone']);
 
+export const roleUpgradeRequestedRoleEnum = pgEnum('role_upgrade_requested_role', [
+  'admin',
+  'super_admin',
+  'corporate_admin',
+  'transport_partner',
+  'monitoring_officer',
+]);
+
+export const roleUpgradeStatusEnum = pgEnum('role_upgrade_status', [
+  'pending',
+  'approved',
+  'rejected',
+]);
+
 // --- Organization ---
 
 export const orgTypeEnum = pgEnum('org_type', ['corporate', 'transport_partner']);

@@ -9,10 +9,10 @@
  * All routes require auth. The user's orgId is taken from the JWT payload;
  * users without an orgId receive a 403.
  */
-import { Hono } from 'hono';
+import { Hono, Context } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requireRole } from '../middleware/auth';
 import {
   getVehiclesByOrg,
   createVehicle,
@@ -48,9 +48,11 @@ const VehicleUpdateSchema = z.object({
 
 const vehicleRoutes = new Hono();
 vehicleRoutes.use('*', authMiddleware);
+// Fleet management is transport-partner-dashboard-only; admins may also manage via /v1/admin.
+vehicleRoutes.use('*', requireRole('transport_partner', 'admin', 'super_admin'));
 
 /** Require an organizationId on the authenticated user. */
-function requireOrgId(c: Parameters<Parameters<typeof vehicleRoutes.get>[1]>[0]) {
+function requireOrgId(c: Context) {
   const user = c.get('user');
   const orgId = user.orgId as string | undefined;
   if (!orgId) {

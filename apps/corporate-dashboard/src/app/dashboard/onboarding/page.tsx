@@ -1,13 +1,14 @@
 /// Corporate Dashboard — Company Profile Onboarding
 ///
 /// Shown after first login when the user doesn't have an organization yet.
-/// Collects company registration details and creates the organization
-/// via POST /v1/organizations, then links the user as the first admin.
+/// Collects company registration details and submits them via
+/// POST /v1/organizations. The user does NOT get dashboard access
+/// immediately — the API creates a pending role_upgrade_requests entry and
+/// an admin must approve it before the user becomes corporate_admin.
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Building2, ArrowRight } from 'lucide-react';
+import { Building2, ArrowRight, Clock } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface FormData {
@@ -37,10 +38,12 @@ const INDUSTRIES = [
 ];
 
 export default function OnboardingPage() {
-  const router = useRouter();
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Once submitted, the request is pending admin review — the user does not
+  // get dashboard access yet, so we show a waiting state instead of redirecting.
+  const [submitted, setSubmitted] = useState(false);
 
   function updateField(field: keyof FormData, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -53,7 +56,7 @@ export default function OnboardingPage() {
     setError(null);
 
     try {
-      const org = await apiClient<{ id: string }>('/v1/organizations', {
+      await apiClient('/v1/organizations', {
         method: 'POST',
         body: JSON.stringify({
           type: 'corporate',
@@ -67,21 +70,35 @@ export default function OnboardingPage() {
         }),
       });
 
-      // After creating the org, the user needs a new token with the updated orgId.
-      // Refresh the page token by refreshing, then redirect to dashboard.
-      // For simplicity, we store the orgId locally and redirect.
-      // Persist org ID durably so the layout guard recognises the stale JWT
-      // as belonging to an org that already exists. Cleared only on sign-out.
-      localStorage.setItem('org_id', org.id);
-
-      // Hard refresh to trigger a new token-exchange (or we could call /v1/auth/refresh).
-      // For MVP, redirecting to dashboard will re-fetch the user profile.
-      window.location.href = '/dashboard';
+      // Mark this device as "awaiting approval" so the layout guard stops
+      // redirecting back into onboarding on every navigation. Dashboard
+      // access is only unlocked once an admin approves and the user signs
+      // in again with a fresh JWT carrying corporate_admin + orgId.
+      localStorage.setItem('pending_role_upgrade', 'true');
+      setSubmitted(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create organization');
+      setError(err instanceof Error ? err.message : 'Failed to submit organization for review');
     } finally {
       setLoading(false);
     }
+  }
+
+  if (submitted) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
+        <div className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-8 text-center shadow-xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-amber-100">
+            <Clock className="h-8 w-8 text-amber-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-dark">Pending Admin Approval</h1>
+          <p className="text-sm text-slate-500">
+            Your request has been submitted and is pending admin approval. You will be notified
+            and gain dashboard access once a SafePass administrator reviews and approves your
+            organization.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (

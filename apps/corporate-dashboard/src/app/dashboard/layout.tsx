@@ -43,12 +43,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // `org_id` in localStorage as a durable fallback. The onboarding page writes
   // this key on successful org creation and it is never cleared here — it
   // persists across all navigations until the user signs out.
+  //
+  // `pending_role_upgrade` is set when onboarding has been submitted but is
+  // still awaiting admin approval — the user has no orgId yet, but they
+  // should see the pending-approval screen rather than being bounced back
+  // into the onboarding form repeatedly.
   useEffect(() => {
     if (pathname === '/dashboard/onboarding') return;
     const session = getUserSession();
     if (session && !session.orgId) {
       const localOrgId = localStorage.getItem('org_id');
       if (localOrgId) return; // org exists locally — JWT is just stale
+      if (localStorage.getItem('pending_role_upgrade')) return; // awaiting admin review
       router.replace('/dashboard/onboarding');
     }
   }, [pathname, router]);
@@ -57,6 +63,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('org_id');
+    localStorage.removeItem('pending_role_upgrade');
     router.push('/');
   }
 
