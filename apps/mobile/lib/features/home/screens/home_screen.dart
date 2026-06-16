@@ -126,9 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: () {
-                            // Future: incident reporting quick action.
-                          },
+                          onPressed: () => context.push(AppRoutes.incidentReport),
                           icon: const Icon(Icons.report_outlined, size: 16),
                           label: const Text('Report'),
                           style: OutlinedButton.styleFrom(
