@@ -23,10 +23,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
 
   // Redirect to onboarding if the user hasn't set up a company profile yet.
+  //
+  // The JWT may be stale (issued before the org was created), so we also check
+  // `org_id` in localStorage as a durable fallback. The onboarding page writes
+  // this key on successful org creation and it is never cleared here — it
+  // persists across all navigations until the user signs out.
   useEffect(() => {
     if (pathname === '/dashboard/onboarding') return;
     const session = getUserSession();
     if (session && !session.orgId) {
+      const localOrgId = localStorage.getItem('org_id');
+      if (localOrgId) return; // org exists locally — JWT is just stale
       router.replace('/dashboard/onboarding');
     }
   }, [pathname, router]);
@@ -34,6 +41,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   function handleSignOut() {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
+    localStorage.removeItem('org_id');
     router.push('/');
   }
 

@@ -70,7 +70,9 @@ export default function OnboardingPage() {
       // After creating the org, the user needs a new token with the updated orgId.
       // Refresh the page token by refreshing, then redirect to dashboard.
       // For simplicity, we store the orgId locally and redirect.
-      localStorage.setItem('pending_org_id', org.id);
+      // Persist org ID durably so the layout guard recognises the stale JWT
+      // as belonging to an org that already exists. Cleared only on sign-out.
+      localStorage.setItem('org_id', org.id);
 
       // Hard refresh to trigger a new token-exchange (or we could call /v1/auth/refresh).
       // For MVP, redirecting to dashboard will re-fetch the user profile.
