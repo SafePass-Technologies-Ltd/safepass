@@ -54,7 +54,7 @@ class HomeShell extends StatelessWidget {
 
   int _getTabIndex(String location) {
     if (location.startsWith(AppRoutes.home)) return 0;
-    if (location.startsWith('/trips')) return 1;
+    if (location.startsWith('/trip')) return 1;
     if (location.startsWith('/wallet')) return 2;
     if (location.startsWith(AppRoutes.profile)) return 3;
     return 0;
@@ -66,7 +66,7 @@ class HomeShell extends StatelessWidget {
         context.go(AppRoutes.home);
         break;
       case 1:
-        // TODO: Navigate to trip history (M-15, Week 4)
+        context.go(AppRoutes.tripRegistration);
         break;
       case 2:
         context.go(AppRoutes.wallet);
