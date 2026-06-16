@@ -32,10 +32,10 @@ export default function AlertsPage() {
   async function fetchAlerts() {
     setError(null);
     try {
-      const data = await apiClient<{ emergencies: EmergencyEvent[] }>(
-        `/v1/admin/emergencies?status=active&limit=50`
+      const data = await apiClient<{ alerts: EmergencyEvent[] }>(
+        `/v1/emergency/alerts?status=active&limit=50`
       );
-      setAlerts(data.emergencies ?? []);
+      setAlerts(data.alerts ?? []);
     } catch {
       setError('Failed to load alerts. Is the API server running?');
     } finally {

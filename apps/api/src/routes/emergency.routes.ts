@@ -7,7 +7,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { eq } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth';
 import { db } from '../db';
 import { emergencyEvents, trips } from '../db/schema';
@@ -103,5 +103,42 @@ emergencyTriggerRoutes.post(
     return c.json(event, 201);
   }
 );
+
+/**
+ * GET /v1/emergency/alerts
+ *
+ * Org-scoped active emergency alerts for corporate/transport dashboard users.
+ * Returns active emergency events for trips belonging to the caller's org.
+ */
+emergencyTriggerRoutes.get('/alerts', async (c) => {
+  const user = c.get('user') as { sub: string; orgId?: string };
+  const status = c.req.query('status') ?? 'active';
+  const limit = parseInt(c.req.query('limit') ?? '50', 10);
+
+  // Get all trips for this org (or user if no orgId)
+  const orgTrips = await db.query.trips.findMany({
+    where: user.orgId
+      ? eq(trips.organizationId, user.orgId)
+      : eq(trips.userId, user.sub),
+    columns: { id: true },
+  });
+
+  if (orgTrips.length === 0) return c.json({ alerts: [] });
+
+  const tripIds = orgTrips.map((t) => t.id);
+  const validStatuses = ['active', 'acknowledged', 'escalated', 'resolved_false_alarm', 'resolved_incident'];
+  const safeStatus = validStatuses.includes(status) ? status : 'active';
+
+  const alerts = await db.query.emergencyEvents.findMany({
+    where: and(
+      inArray(emergencyEvents.tripId, tripIds),
+      eq(emergencyEvents.status, safeStatus as typeof emergencyEvents.$inferSelect['status'])
+    ),
+    orderBy: (e, { desc }) => [desc(e.createdAt)],
+    limit,
+  });
+
+  return c.json({ alerts });
+});
 
 export { emergencyTriggerRoutes };
