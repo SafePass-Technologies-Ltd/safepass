@@ -125,6 +125,33 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
           );
           context.go('/home');
         }
+
+        // Route safety alert (M-08) — non-blocking banner, dismissed after
+        // display so the cubit doesn't re-emit it on the next rebuild.
+        if (state.newHazardAlert != null) {
+          final hazard = state.newHazardAlert!;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 6),
+              backgroundColor: _hazardColor(hazard.severity),
+              content: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.white),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '${_hazardLabel(hazard.markerType)} ~${hazard.distanceMeters.round()}m ahead'
+                      '${hazard.description != null ? ' — ${hazard.description}' : ''}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+          context.read<TripMonitoringCubit>().dismissHazardAlert();
+        }
       },
       builder: (context, state) {
         return Scaffold(
@@ -471,6 +498,24 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       ),
     );
   }
+
+  /// Human-readable label for a marker type, used in hazard alert banners.
+  String _hazardLabel(String markerType) => switch (markerType) {
+        'kidnapping_hotspot' => 'Kidnapping hotspot',
+        'checkpoint' => 'Checkpoint',
+        'high_risk_zone' => 'High-risk zone',
+        'recent_attack' => 'Recent attack reported',
+        'safe_zone' => 'Safe zone',
+        _ => 'Safety alert',
+      };
+
+  /// Banner color by severity — escalates visually with risk level.
+  Color _hazardColor(String severity) => switch (severity) {
+        'critical' => AppColors.emergencyRed,
+        'high' => const Color(0xFFEA580C),
+        'medium' => const Color(0xFFEAB308),
+        _ => AppColors.darkSlate,
+      };
 
   String _statusLabel(String status) => switch (status) {
         'active' => 'Trip Active',

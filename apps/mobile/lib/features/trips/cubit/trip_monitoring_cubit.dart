@@ -110,6 +110,46 @@ class GpsPosition extends Equatable {
   List<Object?> get props => [latitude, longitude, speed, heading];
 }
 
+/// A nearby safety hazard surfaced from `/v1/markers/nearby`, used to drive
+/// route safety alerts (M-08) while a trip is active.
+class RouteHazard extends Equatable {
+  final String id;
+  final String markerType;
+  final String title;
+  final String? description;
+  final String severity;
+  final double latitude;
+  final double longitude;
+  final double distanceMeters;
+
+  const RouteHazard({
+    required this.id,
+    required this.markerType,
+    required this.title,
+    this.description,
+    required this.severity,
+    required this.latitude,
+    required this.longitude,
+    required this.distanceMeters,
+  });
+
+  factory RouteHazard.fromJson(Map<String, dynamic> json, double distanceMeters) {
+    return RouteHazard(
+      id: json['id'] as String,
+      markerType: json['markerType'] as String? ?? 'high_risk_zone',
+      title: json['title'] as String? ?? 'Safety hazard',
+      description: json['description'] as String?,
+      severity: json['severity'] as String? ?? 'medium',
+      latitude: (json['latitude'] as num).toDouble(),
+      longitude: (json['longitude'] as num).toDouble(),
+      distanceMeters: distanceMeters,
+    );
+  }
+
+  @override
+  List<Object?> get props => [id, distanceMeters];
+}
+
 // ────────────────────────────────────────────────────────────
 // State
 // ────────────────────────────────────────────────────────────
@@ -133,12 +173,18 @@ class TripMonitoringState extends Equatable {
   final String? errorMessage;
   final int gpsUpdateCount;
 
+  /// The most recently detected hazard alert that hasn't been shown yet,
+  /// or `null` if there is nothing new to surface. The screen listens for
+  /// this and clears it after displaying the banner.
+  final RouteHazard? newHazardAlert;
+
   const TripMonitoringState({
     this.status = TripMonitorStatus.initial,
     this.trip,
     this.lastPosition,
     this.errorMessage,
     this.gpsUpdateCount = 0,
+    this.newHazardAlert,
   });
 
   TripMonitoringState copyWith({
@@ -147,6 +193,8 @@ class TripMonitoringState extends Equatable {
     GpsPosition? lastPosition,
     String? errorMessage,
     int? gpsUpdateCount,
+    RouteHazard? newHazardAlert,
+    bool clearHazardAlert = false,
   }) {
     return TripMonitoringState(
       status: status ?? this.status,
@@ -154,6 +202,7 @@ class TripMonitoringState extends Equatable {
       lastPosition: lastPosition ?? this.lastPosition,
       errorMessage: errorMessage,
       gpsUpdateCount: gpsUpdateCount ?? this.gpsUpdateCount,
+      newHazardAlert: clearHazardAlert ? null : (newHazardAlert ?? this.newHazardAlert),
     );
   }
 
@@ -164,6 +213,7 @@ class TripMonitoringState extends Equatable {
         lastPosition,
         errorMessage,
         gpsUpdateCount,
+        newHazardAlert,
       ];
 }
 
@@ -176,6 +226,18 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
 
   final _dio = ApiClient.instance.dio;
   StreamSubscription<Position>? _positionSubscription;
+
+  /// Hazard radius (M-08): markers within this distance of the user trigger
+  /// an alert.
+  static const double _hazardAlertRadiusMeters = 500;
+
+  /// Minimum time between proximity checks, to avoid hammering the API on
+  /// every GPS tick.
+  static const Duration _hazardCheckInterval = Duration(seconds: 45);
+
+  DateTime? _lastHazardCheckAt;
+  final Set<String> _shownHazardIds = {};
+  bool _hazardCheckInFlight = false;
 
   /// Load trip details and start GPS tracking.
   Future<void> startMonitoring(String tripId) async {
@@ -237,7 +299,87 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
 
       // Upload position to backend (fire-and-forget).
       _uploadGpsPosition(tripId, position);
+
+      // Route safety alerts (M-08) — throttled proximity check.
+      _maybeCheckRouteHazards(position);
     });
+  }
+
+  /// Check for nearby verified hazards, throttled to [_hazardCheckInterval]
+  /// to avoid spamming the API on every GPS update.
+  void _maybeCheckRouteHazards(Position position) {
+    final now = DateTime.now();
+    if (_hazardCheckInFlight) return;
+    if (_lastHazardCheckAt != null &&
+        now.difference(_lastHazardCheckAt!) < _hazardCheckInterval) {
+      return;
+    }
+    _lastHazardCheckAt = now;
+    _hazardCheckInFlight = true;
+
+    _checkRouteHazards(position).whenComplete(() {
+      _hazardCheckInFlight = false;
+    });
+  }
+
+  /// Query nearby markers and emit an alert for the closest hazard the
+  /// user hasn't already been shown this trip.
+  Future<void> _checkRouteHazards(Position position) async {
+    try {
+      final response = await _dio.get('/v1/markers/nearby', queryParameters: {
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        // Query a wider radius than the alert threshold so distance can be
+        // computed precisely client-side; server uses a bounding box.
+        'radius': 5,
+      });
+
+      final markers = (response.data['markers'] as List<dynamic>?) ?? [];
+
+      RouteHazard? closestNewHazard;
+      for (final raw in markers) {
+        final json = raw as Map<String, dynamic>;
+
+        // Only verified or partially-confirmed hazards are worth interrupting
+        // the user for — unverified reports are too noisy.
+        final verificationStatus = json['verificationStatus'] as String?;
+        if (verificationStatus != 'verified' &&
+            verificationStatus != 'partially_confirmed') {
+          continue;
+        }
+
+        final id = json['id'] as String;
+        if (_shownHazardIds.contains(id)) continue;
+
+        final lat = (json['latitude'] as num).toDouble();
+        final lng = (json['longitude'] as num).toDouble();
+        final distance = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          lat,
+          lng,
+        );
+
+        if (distance > _hazardAlertRadiusMeters) continue;
+
+        if (closestNewHazard == null || distance < closestNewHazard.distanceMeters) {
+          closestNewHazard = RouteHazard.fromJson(json, distance);
+        }
+      }
+
+      if (closestNewHazard != null) {
+        _shownHazardIds.add(closestNewHazard.id);
+        emit(state.copyWith(newHazardAlert: closestNewHazard));
+      }
+    } on DioException {
+      // Hazard checks are best-effort — failures should not interrupt the
+      // trip or surface an error to the user.
+    }
+  }
+
+  /// Clear the pending hazard alert after the UI has displayed it.
+  void dismissHazardAlert() {
+    emit(state.copyWith(clearHazardAlert: true));
   }
 
   /// Upload GPS position to the backend API.
