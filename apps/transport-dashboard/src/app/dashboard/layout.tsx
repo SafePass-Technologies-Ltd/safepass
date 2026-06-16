@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Map, Car, Users, Wallet, FileText, QrCode, LogOut, Menu, X, Truck } from 'lucide-react';
+import { Map, Car, Users, Wallet, FileText, QrCode, LogOut, Menu, X, Truck, Bell } from 'lucide-react';
 import { getUserSession } from '@/lib/auth-utils';
 
 const navigation = [
@@ -15,6 +15,7 @@ const navigation = [
   { name: 'Documents', href: '/dashboard/documents', icon: FileText },
   { name: 'QR Codes', href: '/dashboard/qr', icon: QrCode },
   { name: 'Wallet', href: '/dashboard/wallet', icon: Wallet },
+  { name: 'Alerts', href: '/dashboard/alerts', icon: Bell },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

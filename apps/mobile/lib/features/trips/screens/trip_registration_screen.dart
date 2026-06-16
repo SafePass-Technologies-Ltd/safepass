@@ -77,6 +77,18 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
           appBar: AppBar(
             title: const Text('Start New Trip'),
             centerTitle: true,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.qr_code_scanner),
+                tooltip: 'Scan Vehicle QR',
+                onPressed: () => context.push(AppRoutes.qrScanner),
+              ),
+              IconButton(
+                icon: const Icon(Icons.history),
+                tooltip: 'Trip History',
+                onPressed: () => context.push(AppRoutes.tripHistory),
+              ),
+            ],
           ),
           body: SingleChildScrollView(
             padding: const EdgeInsets.all(16),

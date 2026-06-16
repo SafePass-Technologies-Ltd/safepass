@@ -23,6 +23,8 @@ import {
   ChevronRight,
   CheckCircle,
   MapPin,
+  Car,
+  Siren,
 } from 'lucide-react';
 import { useActiveTrips } from '@/hooks/useActiveTrips';
 
@@ -74,6 +76,18 @@ const navigation = [
     href: '/dashboard/markers',
     icon: MapPin,
     description: 'Verify and manage map markers',
+  },
+  {
+    name: 'Escalations',
+    href: '/dashboard/escalations',
+    icon: Siren,
+    description: 'Emergency escalation workflow',
+  },
+  {
+    name: 'Vehicle Verification',
+    href: '/dashboard/vehicle-verification',
+    icon: Car,
+    description: 'Approve and verify transport vehicles',
   },
 ];
 

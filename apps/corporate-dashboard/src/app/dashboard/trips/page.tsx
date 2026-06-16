@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Flag, Loader2, Plus } from 'lucide-react';
+import { Flag, Loader2, Plus, Download } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { getUserSession } from '@/lib/auth-utils';
 
@@ -114,9 +114,20 @@ export default function TripsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-dark">Trip Registration</h1>
-        <p className="mt-1 text-sm text-slate-500">Register a new trip for a staff member</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-dark">Trip Registration</h1>
+          <p className="mt-1 text-sm text-slate-500">Register a new trip for a staff member</p>
+        </div>
+        {trips.length > 0 && (
+          <button
+            onClick={() => exportCsv(trips)}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            <Download className="h-4 w-4" />
+            Export CSV
+          </button>
+        )}
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -302,6 +313,30 @@ export default function TripsPage() {
       </div>
     </div>
   );
+}
+
+function exportCsv(trips: Trip[]) {
+  const headers = ['ID', 'Staff ID', 'Origin', 'Destination', 'Mode', 'Passengers', 'Status', 'Date'];
+  const rows = trips.map((t) => [
+    t.id,
+    t.userId,
+    t.origin.name,
+    t.destination.name,
+    t.tripMode,
+    String(t.passengerCount),
+    t.status,
+    new Date(t.createdAt).toISOString(),
+  ]);
+  const csv = [headers, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `trips-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function StatusBadge({ status }: { status: string }) {

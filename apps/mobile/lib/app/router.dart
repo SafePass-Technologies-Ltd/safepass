@@ -28,6 +28,8 @@ import '../features/incidents/screens/incident_report_screen.dart';
 import '../features/messaging/screens/conversations_screen.dart';
 import '../features/messaging/screens/message_thread_screen.dart';
 import '../features/markers/screens/marker_action_screen.dart';
+import '../features/trips/screens/trip_history_screen.dart';
+import '../features/trips/screens/qr_scanner_screen.dart';
 
 /// Route path constants.
 class AppRoutes {
@@ -44,7 +46,8 @@ class AppRoutes {
   static const String tripRegistration = '/trip/register';
   static const String activeTrip = '/trip/active';
   static const String wallet = '/wallet';
-  static const String tripHistory = '/trips';
+  static const String tripHistory = '/trips/history';
+  static const String qrScanner = '/trips/scan-qr';
 
   // Week 3
   static const String emergency = '/emergency/:tripId';
@@ -211,6 +214,16 @@ GoRouter createRouter(AuthCubit authCubit) {
               final markerId = state.pathParameters['markerId']!;
               return MarkerActionScreen(markerId: markerId);
             },
+          ),
+          GoRoute(
+            path: AppRoutes.tripHistory,
+            name: 'tripHistory',
+            builder: (context, state) => const TripHistoryScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.qrScanner,
+            name: 'qrScanner',
+            builder: (context, state) => const QrScannerScreen(),
           ),
         ],
       ),
