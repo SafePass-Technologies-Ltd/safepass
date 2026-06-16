@@ -59,7 +59,7 @@ export default function OnboardingPage() {
         }),
       });
 
-      localStorage.setItem('pending_org_id', org.id);
+      localStorage.setItem('org_id', org.id);
       window.location.href = '/dashboard';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create organization');

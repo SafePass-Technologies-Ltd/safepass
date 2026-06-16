@@ -26,7 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (pathname === '/dashboard/onboarding') return;
     const session = getUserSession();
-    if (session && !session.orgId) {
+    if (session && !session.orgId && !localStorage.getItem('org_id')) {
       router.replace('/dashboard/onboarding');
     }
   }, [pathname, router]);
@@ -52,7 +52,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
         <div className="border-t border-slate-200 p-3">
-          <button onClick={() => { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); router.push('/'); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100">
+          <button onClick={() => { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); localStorage.removeItem('org_id'); router.push('/'); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100">
             <LogOut className="h-5 w-5 text-slate-400" /> Sign Out
           </button>
         </div>
