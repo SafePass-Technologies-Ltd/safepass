@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/theme.dart';
+import '../../../app/router.dart';
 import '../cubit/auth_cubit.dart';
 
 class PhoneAuthScreen extends StatefulWidget {
@@ -50,7 +51,11 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
               icon: const Icon(Icons.arrow_back),
               onPressed: () {
                 context.read<AuthCubit>().cancelPhoneSignIn();
-                context.pop();
+                if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go(AppRoutes.login);
+                }
               },
             ),
           ),
