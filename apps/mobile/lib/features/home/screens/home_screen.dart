@@ -4,6 +4,7 @@
 /// trip is in progress, shows trip status with a "View Trip" button.
 /// Otherwise, shows a "Start New Trip" call-to-action.
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/theme.dart';
@@ -149,11 +150,22 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _centerOnUser() {
-    // This would use Geolocator to get current position and animate the
-    // camera. For now, zoom to Nigeria level.
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(_defaultCenter, 14),
-    );
+  Future<void> _centerOnUser() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition();
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(position.latitude, position.longitude),
+          15,
+        ),
+      );
+    } catch (_) {}
   }
 }
