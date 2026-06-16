@@ -27,6 +27,37 @@ class _IncidentReportViewState extends State<_IncidentReportView> {
   final _descriptionController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchLocation());
+  }
+
+  Future<void> _fetchLocation() async {
+    if (!mounted) return;
+    final cubit = context.read<IncidentCubit>();
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition();
+      cubit.setLocation(position.latitude, position.longitude);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not get location: $e')),
+        );
+      }
+    }
+  }
+
+  @override
   void dispose() {
     _descriptionController.dispose();
     super.dispose();
@@ -55,30 +86,6 @@ class _IncidentReportViewState extends State<_IncidentReportView> {
     IncidentType.suspicious_activity: 'Suspicious',
     IncidentType.other: 'Other',
   };
-
-  Future<void> _useMyLocation(BuildContext context) async {
-    final cubit = context.read<IncidentCubit>();
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
-      }
-      if (permission == LocationPermission.deniedForever) return;
-
-      final position = await Geolocator.getCurrentPosition();
-      cubit.setLocation(position.latitude, position.longitude);
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not get location: $e')),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -174,15 +181,25 @@ class _IncidentReportViewState extends State<_IncidentReportView> {
                   onChanged: cubit.setDescription,
                 ),
                 const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: () => _useMyLocation(context),
-                  icon: const Icon(Icons.my_location),
-                  label: Text(
-                    state.latitude != null
-                        ? 'Location set (${state.latitude!.toStringAsFixed(4)}, ${state.longitude!.toStringAsFixed(4)})'
-                        : 'Use My Location',
+                if (state.latitude != null)
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on, size: 16, color: Colors.green),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Location: ${state.latitude!.toStringAsFixed(4)}, ${state.longitude!.toStringAsFixed(4)}',
+                        style: const TextStyle(fontSize: 12, color: Colors.green),
+                      ),
+                    ],
+                  )
+                else
+                  const Row(
+                    children: [
+                      SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                      SizedBox(width: 8),
+                      Text('Getting location...', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
                   ),
-                ),
                 const SizedBox(height: 24),
                 if (state.status == IncidentStatus.error &&
                     state.errorMessage != null) ...[
