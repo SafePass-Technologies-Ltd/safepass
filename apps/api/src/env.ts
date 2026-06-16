@@ -26,6 +26,9 @@ const envSchema = z.object({
   TRIP_PRICE_NGN: z.coerce.number().int().positive().default(2000),
   ADMIN_DASHBOARD_URL: z.string().url().default('http://localhost:3001'),
   ENABLE_PANIC_RECORDING: z.coerce.boolean().default(true),
+  // Resend — transactional email (role upgrade approval/rejection notices).
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('SafePass <onboarding@resend.dev>'),
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -10,6 +10,9 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
+import { db } from '../db';
+import { users, organizations } from '../db/schema';
 import { authMiddleware, requireRole } from '../middleware/auth';
 import {
   getRoleUpgradeRequests,
@@ -18,6 +21,10 @@ import {
   rejectRoleUpgradeRequest,
   requiresSuperAdminReview,
 } from '../services/role-upgrade.service';
+import {
+  sendRoleUpgradeApprovedEmail,
+  sendRoleUpgradeRejectedEmail,
+} from '../services/email.service';
 
 const roleUpgradeRoutes = new Hono();
 roleUpgradeRoutes.use('*', authMiddleware);
@@ -80,10 +87,12 @@ roleUpgradeRoutes.patch('/:id', zValidator('json', ReviewSchema), async (c) => {
   try {
     if (action === 'approve') {
       const updated = await approveRoleUpgradeRequest(requestId, reviewer.sub);
+      void notifyRequester(updated, 'approved');
       return c.json(updated);
     }
 
     const updated = await rejectRoleUpgradeRequest(requestId, reviewer.sub, reason);
+    void notifyRequester(updated, 'rejected');
     return c.json(updated);
   } catch (err: unknown) {
     if (err instanceof Error) {
@@ -93,5 +102,35 @@ roleUpgradeRoutes.patch('/:id', zValidator('json', ReviewSchema), async (c) => {
     throw err;
   }
 });
+
+/** Looks up the requester and org, then fires the approval/rejection email. Best-effort. */
+async function notifyRequester(
+  request: { userId: string; requestedRole: string; organizationId: string | null; reason: string | null },
+  outcome: 'approved' | 'rejected'
+): Promise<void> {
+  const requester = await db.query.users.findFirst({ where: eq(users.id, request.userId) });
+  if (!requester) return;
+
+  const organization = request.organizationId
+    ? await db.query.organizations.findFirst({ where: eq(organizations.id, request.organizationId) })
+    : null;
+
+  if (outcome === 'approved') {
+    await sendRoleUpgradeApprovedEmail({
+      to: requester.email,
+      fullName: requester.fullName,
+      requestedRole: request.requestedRole,
+      organizationName: organization?.name,
+    });
+  } else {
+    await sendRoleUpgradeRejectedEmail({
+      to: requester.email,
+      fullName: requester.fullName,
+      requestedRole: request.requestedRole,
+      organizationName: organization?.name,
+      reason: request.reason,
+    });
+  }
+}
 
 export { roleUpgradeRoutes };

@@ -58,6 +58,8 @@ export default function RoleUpgradesPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterMode>('pending');
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<RoleUpgradeRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   useEffect(() => {
     apiClient<{ role: string }>('/v1/users/me')
@@ -119,12 +121,12 @@ export default function RoleUpgradesPage() {
     fetchRequests();
   }, [fetchRequests]);
 
-  async function review(id: string, action: 'approve' | 'reject') {
+  async function review(id: string, action: 'approve' | 'reject', reason?: string) {
     setPendingId(id);
     try {
       await apiClient(`/v1/admin/role-upgrades/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ action }),
+        body: reason ? { action, reason } : { action },
       });
       await fetchRequests();
     } catch (err) {
@@ -132,6 +134,18 @@ export default function RoleUpgradesPage() {
     } finally {
       setPendingId(null);
     }
+  }
+
+  function openRejectDialog(request: RoleUpgradeRequest) {
+    setRejectReason('');
+    setRejectTarget(request);
+  }
+
+  async function confirmReject() {
+    if (!rejectTarget) return;
+    const trimmed = rejectReason.trim();
+    await review(rejectTarget.id, 'reject', trimmed || undefined);
+    setRejectTarget(null);
   }
 
   const FILTERS: { label: string; value: FilterMode }[] = [
@@ -256,7 +270,7 @@ export default function RoleUpgradesPage() {
                               <CheckCircle className="h-3.5 w-3.5" /> Approve
                             </button>
                             <button
-                              onClick={() => review(r.id, 'reject')}
+                              onClick={() => openRejectDialog(r)}
                               disabled={pendingId === r.id || !canReview}
                               title={
                                 !canReview
@@ -284,6 +298,41 @@ export default function RoleUpgradesPage() {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {rejectTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-dark">Reject request</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Rejecting {users[rejectTarget.userId]?.fullName ?? 'this user'}&rsquo;s request for{' '}
+              {ROLE_LABELS[rejectTarget.requestedRole]} access. They&rsquo;ll receive an email with this reason.
+            </p>
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Optional reason (sent to the requester)"
+              rows={4}
+              className="mt-4 w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-primary focus:outline-none"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setRejectTarget(null)}
+                disabled={pendingId === rejectTarget.id}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmReject}
+                disabled={pendingId === rejectTarget.id}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {pendingId === rejectTarget.id ? 'Rejecting...' : 'Reject request'}
+              </button>
+            </div>
           </div>
         </div>
       )}
