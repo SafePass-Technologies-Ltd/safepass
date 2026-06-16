@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
@@ -27,6 +27,13 @@ import {
   Siren,
 } from 'lucide-react';
 import { useActiveTrips } from '@/hooks/useActiveTrips';
+import { apiClient } from '@/lib/api-client';
+
+/** Derive initials from a full name, e.g. "Jane Doe" -> "JD", "Jane" -> "J". */
+function getInitials(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map((p) => p[0]!.toUpperCase()).join('');
+}
 
 const navigation = [
   {
@@ -100,10 +107,17 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const { trips } = useActiveTrips(30_000); // 30s poll for header only
+  const [initials, setInitials] = useState<string | null>(null);
 
   const activeCount = trips.filter(
     (t) => t.status === 'active' || t.status === 'delayed'
   ).length;
+
+  useEffect(() => {
+    apiClient<{ fullName: string }>('/v1/users/me')
+      .then((data) => setInitials(getInitials(data.fullName ?? '')))
+      .catch(() => setInitials(''));
+  }, []);
 
   function handleSignOut() {
     localStorage.removeItem('access_token');
@@ -219,7 +233,7 @@ export default function DashboardLayout({
               href="/dashboard/profile"
               className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary transition-colors hover:bg-primary/20"
             >
-              MO
+              {initials}
             </Link>
           </div>
         </header>

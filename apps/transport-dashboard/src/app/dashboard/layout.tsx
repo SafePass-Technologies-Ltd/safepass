@@ -6,6 +6,13 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Map, Car, Users, Wallet, FileText, QrCode, LogOut, Menu, X, Truck, Bell } from 'lucide-react';
 import { getUserSession } from '@/lib/auth-utils';
+import { apiClient } from '@/lib/api-client';
+
+/** Derive initials from a full name, e.g. "Jane Doe" -> "JD", "Jane" -> "J". */
+function getInitials(fullName: string): string {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  return parts.slice(0, 2).map((p) => p[0]!.toUpperCase()).join('');
+}
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: Map },
@@ -22,6 +29,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const [initials, setInitials] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiClient<{ fullName: string }>('/v1/users/me')
+      .then((data) => setInitials(getInitials(data.fullName ?? '')))
+      .catch(() => setInitials(''));
+  }, []);
 
   // Redirect to onboarding if the user hasn't set up a company profile yet.
   useEffect(() => {
@@ -62,7 +76,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <header className="flex h-16 items-center border-b border-slate-200 bg-white px-4 lg:px-6">
           <button className="rounded-lg p-1.5 hover:bg-slate-100 lg:hidden" onClick={() => setSidebarOpen(true)}><Menu className="h-5 w-5 text-slate-600" /></button>
           <div className="flex flex-1 items-center justify-end">
-            <Link href="/dashboard/profile" className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary transition-colors hover:bg-primary/20">TP</Link>
+            <Link href="/dashboard/profile" className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary transition-colors hover:bg-primary/20">{initials}</Link>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
