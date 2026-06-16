@@ -56,8 +56,8 @@ class LoginScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                           child: Image.asset(
                             'assets/images/safepass-logo.png',
-                            width: 72,
-                            height: 72,
+                            width: 100,
+                            height: 100,
                             fit: BoxFit.contain,
                           ),
                         ),
