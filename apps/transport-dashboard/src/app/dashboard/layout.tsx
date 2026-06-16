@@ -2,9 +2,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Map, Car, Users, Wallet, FileText, QrCode, LogOut, Menu, X, Truck, Bell } from 'lucide-react';
+import { Map, Car, Users, Wallet, FileText, QrCode, LogOut, Menu, X, Bell } from 'lucide-react';
 import { getUserSession } from '@/lib/auth-utils';
 import { apiClient } from '@/lib/api-client';
 
@@ -58,7 +59,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {sidebarOpen && <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 transform border-r border-slate-200 bg-white transition-transform lg:relative lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex h-16 items-center gap-2 border-b border-slate-200 px-4">
-          <Truck className="h-6 w-6 text-primary" />
+          <Image src="/safepass-logo.png" alt="SafePass" width={24} height={24} className="object-contain" />
           <span className="text-lg font-bold text-slate-dark">SafePass Fleet</span>
           <button className="ml-auto rounded-lg p-1 hover:bg-slate-100 lg:hidden" onClick={() => setSidebarOpen(false)}><X className="h-5 w-5" /></button>
         </div>

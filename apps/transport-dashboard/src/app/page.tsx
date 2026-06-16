@@ -2,8 +2,8 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Truck } from 'lucide-react';
 import { signInWithGoogle } from '@/lib/firebase';
 import { apiClient } from '@/lib/api-client';
 
@@ -33,7 +33,7 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-8 rounded-2xl bg-white p-8 shadow-xl">
         <div className="text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10">
-            <Truck className="h-8 w-8 text-primary" />
+            <Image src="/safepass-logo.png" alt="SafePass" width={40} height={40} className="object-contain" />
           </div>
           <h1 className="mt-4 text-2xl font-bold text-slate-dark">SafePass Transport</h1>
           <p className="mt-2 text-sm text-slate-500">Fleet, driver, and vehicle management for transport partners</p>
