@@ -22,32 +22,24 @@ walletRoutes.use('*', authMiddleware);
 /**
  * GET /v1/wallets/me
  * Get the authenticated user's wallet.
+ * Auto-creates the wallet on first access so mobile callers never get 404.
  */
 walletRoutes.get('/me', async (c) => {
   const user = c.get('user') as { sub: string };
-  const wallet = await getWallet('user', user.sub);
-
-  if (!wallet) {
-    return c.json(
-      { error: { code: 404, message: 'Wallet not found. Contact support.' } },
-      404
-    );
-  }
-
+  // createWallet is idempotent — returns the existing wallet if one already exists.
+  const wallet = await createWallet({ ownerType: 'user', ownerId: user.sub });
   return c.json(wallet, 200);
 });
 
 /**
  * GET /v1/wallets/me/transactions
  * Get transaction history for the authenticated user's wallet.
+ * Auto-creates the wallet on first access so a fresh account never gets 404.
  */
 walletRoutes.get('/me/transactions', async (c) => {
   const user = c.get('user') as { sub: string };
-  const wallet = await getWallet('user', user.sub);
-
-  if (!wallet) {
-    return c.json({ error: { code: 404, message: 'Wallet not found' } }, 404);
-  }
+  // createWallet is idempotent — safe to call on every request.
+  const wallet = await createWallet({ ownerType: 'user', ownerId: user.sub });
 
   const limit = Number(c.req.query('limit') ?? '50');
   const offset = Number(c.req.query('offset') ?? '0');
