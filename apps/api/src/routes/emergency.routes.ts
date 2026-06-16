@@ -175,6 +175,54 @@ emergencyTriggerRoutes.post('/:id/audio', async (c) => {
 });
 
 /**
+ * POST /v1/emergency/:tripId/check-in
+ *
+ * User confirms they are safe, resolving their own active emergency.
+ * Marks the emergency event as a false alarm and restores the trip to
+ * 'active' status.
+ */
+emergencyTriggerRoutes.post('/:tripId/check-in', async (c) => {
+  const user = c.get('user') as { sub: string };
+  const tripId = c.req.param('tripId');
+
+  const trip = await db.query.trips.findFirst({ where: eq(trips.id, tripId) });
+  if (!trip) {
+    return c.json({ error: { code: 404, message: 'Trip not found' } }, 404);
+  }
+  if (trip.userId !== user.sub) {
+    return c.json({ error: { code: 403, message: 'Access denied — not your trip' } }, 403);
+  }
+
+  const activeEmergency = await db.query.emergencyEvents.findFirst({
+    where: and(eq(emergencyEvents.tripId, tripId), eq(emergencyEvents.status, 'active')),
+    orderBy: (e, { desc }) => [desc(e.createdAt)],
+  });
+
+  if (!activeEmergency) {
+    return c.json({ error: { code: 404, message: 'No active emergency for this trip' } }, 404);
+  }
+
+  const [resolved] = await db.transaction(async (tx) => {
+    await tx
+      .update(trips)
+      .set({ status: 'active', updatedAt: new Date() })
+      .where(eq(trips.id, tripId));
+
+    const [event] = await tx
+      .update(emergencyEvents)
+      .set({ status: 'resolved_false_alarm' })
+      .where(eq(emergencyEvents.id, activeEmergency.id))
+      .returning();
+
+    return [event];
+  });
+
+  broadcastTripStatus(tripId, 'active');
+
+  return c.json(resolved);
+});
+
+/**
  * GET /v1/emergency/alerts
  *
  * Org-scoped active emergency alerts for corporate/transport dashboard users.
