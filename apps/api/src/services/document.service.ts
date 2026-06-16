@@ -1,18 +1,20 @@
 /**
  * Document Service — manages compliance documents for organizations.
  *
- * NOTE: No `documents` table exists in the Drizzle schema yet.
- * Documents are stored in-memory for now so the transport-dashboard
- * documents page works without a migration.
+ * Uses the `documents` Drizzle table (transport.ts). All queries are scoped to
+ * the requesting organization so partners only see their own documents.
  *
- * TODO: Create a Drizzle migration for the `documents` table and replace
- * the in-memory store with proper DB calls before deploying to production.
- * Suggested columns:
- *   id uuid PK, organizationId uuid FK→organizations, documentName text,
- *   documentType text, status text, fileUrl text, expiryDate date nullable,
- *   createdAt timestamptz, updatedAt timestamptz
+ * The `complianceStatus` column tracks the client-facing lifecycle:
+ *   pending  — uploaded, awaiting review or expiry evaluation
+ *   valid    — expiry date is in the future (or not set)
+ *   expired  — expiry date is in the past
+ *
+ * This is separate from `verificationStatus` (org_verification enum) which
+ * records the admin review state (pending | verified | rejected).
  */
-import { v4 as uuidv4 } from 'uuid';
+import { eq, and, desc } from 'drizzle-orm';
+import { db } from '../db';
+import { documents } from '../db/schema';
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -22,12 +24,12 @@ export interface Document {
   id: string;
   organizationId: string;
   documentName: string;
-  documentType: string;
+  documentType: string | null;
   /** pending | valid | expired */
   status: string;
   /** ISO date string or null */
   expiryDate: string | null;
-  /** Filename of the uploaded file (stored in-memory only) */
+  /** Original filename of the uploaded file. */
   fileName: string | null;
   createdAt: string;
   updatedAt: string;
@@ -36,21 +38,19 @@ export interface Document {
 export interface CreateDocumentInput {
   organizationId: string;
   documentName: string;
-  documentType: string;
+  documentType?: string | null;
   expiryDate?: string | null;
   fileName?: string | null;
 }
 
 // ────────────────────────────────────────────────────────────
-// In-memory store (replace with DB queries once migration exists)
+// Helpers
 // ────────────────────────────────────────────────────────────
 
-const documentStore = new Map<string, Document>();
-
 /**
- * Derive the initial status of a document based on its expiry date.
- * - No expiry → "valid"
- * - Expiry in the past → "expired"
+ * Derive the compliance status from an expiry date.
+ * - No expiry → "valid"  (document is considered always valid until reviewed)
+ * - Expiry in the past  → "expired"
  * - Expiry in the future → "valid"
  */
 function deriveStatus(expiryDate?: string | null): string {
@@ -60,56 +60,88 @@ function deriveStatus(expiryDate?: string | null): string {
 }
 
 /**
+ * Map a raw DB row to the public Document shape.
+ */
+function toDocumentResponse(row: typeof documents.$inferSelect): Document {
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    documentName: row.documentName ?? '',
+    documentType: row.documentType ?? null,
+    status: row.complianceStatus,
+    expiryDate: row.expiryDate ? row.expiryDate.toISOString() : null,
+    fileName: row.fileName ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+// ────────────────────────────────────────────────────────────
+// Queries
+// ────────────────────────────────────────────────────────────
+
+/**
  * List all documents belonging to the given organization, newest first.
  */
 export async function listDocuments(organizationId: string): Promise<Document[]> {
-  const results: Document[] = [];
-  for (const doc of documentStore.values()) {
-    if (doc.organizationId === organizationId) {
-      results.push(doc);
-    }
-  }
-  // Sort descending by createdAt
-  results.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-  return results;
+  const rows = await db.query.documents.findMany({
+    where: eq(documents.organizationId, organizationId),
+    orderBy: desc(documents.createdAt),
+  });
+  return rows.map(toDocumentResponse);
 }
 
 /**
  * Create a new document record for an organization.
- * The file itself is not persisted server-side (in-memory mode); only metadata
- * and the original filename are stored. A proper file-upload integration
- * (e.g. S3 / GCS / local disk) should be wired once the DB migration lands.
+ *
+ * File upload is not handled here — a file storage integration (S3 / GCS)
+ * should set `fileUrl` once available. For now only metadata is persisted.
  */
 export async function createDocument(input: CreateDocumentInput): Promise<Document> {
-  const now = new Date().toISOString();
-  const doc: Document = {
-    id: uuidv4(),
-    organizationId: input.organizationId,
-    documentName: input.documentName,
-    documentType: input.documentType,
-    status: deriveStatus(input.expiryDate),
-    expiryDate: input.expiryDate ?? null,
-    fileName: input.fileName ?? null,
-    createdAt: now,
-    updatedAt: now,
-  };
-  documentStore.set(doc.id, doc);
-  return doc;
+  const status = deriveStatus(input.expiryDate);
+
+  const [row] = await db
+    .insert(documents)
+    .values({
+      organizationId: input.organizationId,
+      documentName: input.documentName,
+      fileName: input.fileName ?? null,
+      expiryDate: input.expiryDate ? new Date(input.expiryDate) : null,
+      complianceStatus: status,
+    })
+    .returning();
+
+  return toDocumentResponse(row);
 }
 
 /**
- * Delete a document by ID. Returns the deleted document, or null if not found.
+ * Delete a document by ID. Scoped to the organization to prevent cross-tenant
+ * deletion. Returns the deleted document, or null if not found.
  */
-export async function deleteDocument(id: string): Promise<Document | null> {
-  const doc = documentStore.get(id);
-  if (!doc) return null;
-  documentStore.delete(id);
-  return doc;
+export async function deleteDocument(
+  id: string,
+  organizationId: string
+): Promise<Document | null> {
+  const existing = await db.query.documents.findFirst({
+    where: and(eq(documents.id, id), eq(documents.organizationId, organizationId)),
+  });
+
+  if (!existing) return null;
+
+  const [row] = await db
+    .delete(documents)
+    .where(and(eq(documents.id, id), eq(documents.organizationId, organizationId)))
+    .returning();
+
+  return toDocumentResponse(row);
 }
 
 /**
  * Find a single document by ID.
  */
 export async function getDocumentById(id: string): Promise<Document | null> {
-  return documentStore.get(id) ?? null;
+  const row = await db.query.documents.findFirst({
+    where: eq(documents.id, id),
+  });
+  return row ? toDocumentResponse(row) : null;
 }

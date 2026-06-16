@@ -15,6 +15,20 @@
       "when": 1780523053309,
       "tag": "0001_right_dakota_north",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781566956966,
+      "tag": "0002_flippant_luminals",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781570077385,
+      "tag": "0003_petite_earthquake",
+      "breakpoints": true
     }
   ]
 }

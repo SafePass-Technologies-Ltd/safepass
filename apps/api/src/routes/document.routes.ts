@@ -176,7 +176,7 @@ documentRoutes.delete('/:id', async (c) => {
     return c.json({ error: { code: 403, message: 'Access denied' } }, 403);
   }
 
-  await deleteDocument(id);
+  await deleteDocument(id, existing.organizationId);
   return c.json({ success: true });
 });
 

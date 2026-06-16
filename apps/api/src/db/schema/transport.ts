@@ -72,15 +72,28 @@ export const documents = pgTable(
     organizationId: uuid('organization_id')
       .notNull()
       .references(() => organizations.id),
-    entityType: documentEntityEnum('entity_type').notNull(),
-    entityId: uuid('entity_id').notNull(),
-    documentType: documentTypeEnum('document_type').notNull(),
-    fileUrl: text('file_url').notNull(),
+    // entityType and entityId are nullable so the compliance-documents upload
+    // flow (which doesn't yet associate documents to a specific entity) can
+    // insert rows without them.  They are populated by the admin verification
+    // flow once implemented.
+    entityType: documentEntityEnum('entity_type'),
+    entityId: uuid('entity_id'),
+    documentType: documentTypeEnum('document_type'),
+    fileUrl: text('file_url'),
     fileName: varchar('file_name', { length: 255 }),
     verificationStatus: orgVerificationEnum('verification_status').notNull().default('pending'),
     verifiedBy: uuid('verified_by').references(() => users.id),
     rejectionReason: text('rejection_reason'),
+    // Human-readable label supplied by the transport partner (e.g. "Vehicle
+    // Registration – Truck 001").  Used by the compliance documents list.
+    documentName: varchar('document_name', { length: 255 }),
+    // Document validity window; nullable — some documents do not expire.
+    expiryDate: timestamp('expiry_date', { withTimezone: true }),
+    // Derived status used by the compliance UI (pending | valid | expired).
+    // Distinct from verificationStatus which tracks admin review state.
+    complianceStatus: varchar('compliance_status', { length: 20 }).notNull().default('pending'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     entityIdx: index('docs_entity_idx').on(table.entityType, table.entityId),
