@@ -18,10 +18,15 @@ coverage/
 .idea/
 *.iml
 .vscode/
+.obsidian/
 
 # OS
 Thumbs.db
 .DS_Store
+
+# Stray local debug/test output
+test-output.txt
+test-error.txt
 
 # Docs should not be pushed because it contains business strategy.
 docs/SafePass
