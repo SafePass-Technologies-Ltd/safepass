@@ -16,6 +16,7 @@ import { emergencyTriggerRoutes } from './routes/emergency.routes';
 import { adminUserRoutes } from './routes/admin-user.routes';
 import { vehicleRoutes } from './routes/vehicle.routes';
 import { driverRoutes } from './routes/driver.routes';
+import { documentRoutes } from './routes/document.routes';
 import { env } from './env';
 
 const app = new Hono();
@@ -84,6 +85,9 @@ v1.route('/organizations', orgRoutes);
 // Transport partner fleet management
 v1.route('/vehicles', vehicleRoutes);
 v1.route('/drivers', driverRoutes);
+
+// Compliance documents (transport dashboard)
+v1.route('/documents', documentRoutes);
 
 // Emergency trigger (user-facing panic button)
 v1.route('/emergency', emergencyTriggerRoutes);
