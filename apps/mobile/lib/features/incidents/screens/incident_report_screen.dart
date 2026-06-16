@@ -71,7 +71,13 @@ class _IncidentReportViewState extends State<_IncidentReportView> {
 
       final position = await Geolocator.getCurrentPosition();
       cubit.setLocation(position.latitude, position.longitude);
-    } catch (_) {}
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not get location: $e')),
+        );
+      }
+    }
   }
 
   @override
