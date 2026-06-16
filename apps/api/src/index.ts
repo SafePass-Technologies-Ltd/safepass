@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { rateLimiter } from 'hono-rate-limiter';
 import { errorHandler } from './middleware/error';
 import { authRoutes } from './routes/auth.routes';
 import { userRoutes } from './routes/users.routes';
@@ -36,6 +37,35 @@ app.use(
 if (env.NODE_ENV === 'development') {
   app.use('*', logger());
 }
+
+// Rate limiting — keyed by IP address from standard proxy headers or socket.
+const ipKey = (c: Parameters<Parameters<typeof rateLimiter>[0]['keyGenerator']>[0]): string =>
+  c.req.header('x-forwarded-for')?.split(',')[0].trim() ??
+  c.req.header('x-real-ip') ??
+  (c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined)?.incoming?.socket?.remoteAddress ??
+  'unknown';
+
+// Global: 100 req/min per IP
+app.use(
+  '*',
+  rateLimiter({
+    windowMs: 60_000,
+    limit: 100,
+    keyGenerator: ipKey,
+    message: { error: { code: 'TOO_MANY_REQUESTS', message: 'Too many requests, please try again later.' } },
+  })
+);
+
+// Auth routes: 10 req/min per IP (brute-force protection)
+app.use(
+  '/v1/auth/*',
+  rateLimiter({
+    windowMs: 60_000,
+    limit: 10,
+    keyGenerator: ipKey,
+    message: { error: { code: 'TOO_MANY_REQUESTS', message: 'Too many authentication attempts, please try again later.' } },
+  })
+);
 
 // Error Handling
 app.onError(errorHandler);
@@ -118,8 +148,8 @@ app.notFound((c) => {
   return c.json(
     {
       error: {
-        code: 404,
-        message: `Route not found: ${c.req.method} ${c.req.path}`,
+        code: 'NOT_FOUND',
+        message: 'Route not found',
       },
     },
     404
