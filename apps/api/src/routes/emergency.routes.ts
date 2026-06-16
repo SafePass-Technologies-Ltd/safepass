@@ -1,17 +1,27 @@
 /**
  * Emergency Routes — user-facing panic button trigger.
  *
- * POST /v1/emergency/trigger — user triggers an emergency on their active trip
+ * POST /v1/emergency/trigger    — user triggers an emergency on their active trip
+ * POST /v1/emergency/:id/audio  — upload a silent background audio recording
  */
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { eq, and, inArray } from 'drizzle-orm';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth';
 import { db } from '../db';
 import { emergencyEvents, trips } from '../db/schema';
 import { broadcastEmergencyAlert, broadcastTripStatus } from '../services/websocket.service';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+// Local disk storage for emergency audio recordings. Matches the same
+// placeholder pattern used by document uploads (see document.routes.ts) —
+// a TODO marks where an S3/GCS backend should replace this once available.
+const AUDIO_UPLOAD_DIR = resolve(__dirname, '../../uploads/emergency-audio');
 
 const EmergencyTriggerSchema = z.object({
   tripId: z.string().uuid(),
@@ -103,6 +113,66 @@ emergencyTriggerRoutes.post(
     return c.json(event, 201);
   }
 );
+
+/**
+ * POST /v1/emergency/:id/audio  (multipart/form-data)
+ *
+ * Uploads a silent background audio recording captured during an active
+ * emergency session (panic button press to check-in). The file is stored
+ * on local disk and its URL is appended to the emergency event's
+ * `audioRecordingUrls` array.
+ *
+ * Expected fields:
+ *   file  File  required  (m4a/aac audio)
+ */
+emergencyTriggerRoutes.post('/:id/audio', async (c) => {
+  const user = c.get('user') as { sub: string };
+  const id = c.req.param('id');
+
+  const event = await db.query.emergencyEvents.findFirst({
+    where: eq(emergencyEvents.id, id),
+  });
+
+  if (!event) {
+    return c.json({ error: { code: 404, message: 'Emergency event not found' } }, 404);
+  }
+
+  const trip = await db.query.trips.findFirst({ where: eq(trips.id, event.tripId) });
+  if (!trip || trip.userId !== user.sub) {
+    return c.json({ error: { code: 403, message: 'Access denied — not your emergency' } }, 403);
+  }
+
+  let formData: FormData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return c.json({ error: { code: 400, message: 'Request must be multipart/form-data' } }, 400);
+  }
+
+  const file = formData.get('file') as File | null;
+  if (!file || !(file instanceof File)) {
+    return c.json({ error: { code: 400, message: 'file is required' } }, 400);
+  }
+
+  // TODO: pipe `file` to a storage backend (S3/GCS) instead of local disk
+  // once available, matching the same deferred approach as document uploads.
+  await mkdir(AUDIO_UPLOAD_DIR, { recursive: true });
+  const safeFileName = `${id}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+  const filePath = resolve(AUDIO_UPLOAD_DIR, safeFileName);
+  await writeFile(filePath, Buffer.from(await file.arrayBuffer()));
+
+  const fileUrl = `/uploads/emergency-audio/${safeFileName}`;
+
+  const [updated] = await db
+    .update(emergencyEvents)
+    .set({
+      audioRecordingUrls: sql`${emergencyEvents.audioRecordingUrls} || ${JSON.stringify([fileUrl])}::jsonb`,
+    })
+    .where(eq(emergencyEvents.id, id))
+    .returning();
+
+  return c.json({ emergencyEventId: id, audioRecordingUrls: updated.audioRecordingUrls }, 201);
+});
 
 /**
  * GET /v1/emergency/alerts
