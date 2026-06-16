@@ -214,10 +214,13 @@ export default function DashboardLayout({
               {activeCount} active trip{activeCount !== 1 ? 's' : ''}
             </div>
 
-            {/* User avatar placeholder */}
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+            {/* User avatar — links to profile page */}
+            <Link
+              href="/dashboard/profile"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary transition-colors hover:bg-primary/20"
+            >
               MO
-            </div>
+            </Link>
           </div>
         </header>
 
