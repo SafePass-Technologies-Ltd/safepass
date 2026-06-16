@@ -1,11 +1,11 @@
 'use client';
 
 /**
- * Trips page — lists trips returned by GET /v1/trips.
+ * Trips page — lists all trips belonging to this organisation via GET /v1/trips.
  *
- * NOTE: The /v1/trips endpoint is scoped to the authenticated user (the transport
- * operator account), not an organisation. Trips created by passengers linked to
- * this operator will appear once org-scoped filtering is supported by the API.
+ * The API returns org-scoped results when the caller's JWT contains an orgId
+ * (transport/corporate dashboard users), so every trip registered under this
+ * organisation is visible here.
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -77,7 +77,7 @@ export default function TripsPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-dark">Trips</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {trips.length} trip{trips.length !== 1 ? 's' : ''} — scoped to this operator account
+            {trips.length} trip{trips.length !== 1 ? 's' : ''} across your organisation
           </p>
         </div>
 

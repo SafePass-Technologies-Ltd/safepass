@@ -16,6 +16,7 @@ import {
   completeTrip,
   cancelTrip,
   getUserTrips,
+  getOrgTrips,
   getTripById,
   getActiveTrips,
   adminUpdateTripStatus,
@@ -82,17 +83,26 @@ tripRoutes.post('/start', zValidator('json', TripStartSchema), async (c) => {
 
 /**
  * GET /v1/trips
- * List the authenticated user's trips, with optional status filter.
+ * List trips visible to the authenticated caller.
+ *
+ * - Dashboard users (JWT contains orgId): returns all trips belonging to that
+ *   organisation so transport/corporate dashboards see their full fleet.
+ * - Mobile users (no orgId): returns only the caller's own trips.
+ *
+ * Supports optional ?status= query param (comma-separated for multiple values).
  */
 tripRoutes.get('/', async (c) => {
-  const user = c.get('user') as { sub: string };
+  const user = c.get('user') as { sub: string; orgId?: string };
   const statusParam = c.req.query('status');
 
   // Support comma-separated statuses: ?status=active,delayed
   const status = statusParam ? statusParam.split(',') : undefined;
 
-  const trips = await getUserTrips(user.sub, { status });
-  return c.json({ trips }, 200);
+  const result = user.orgId
+    ? await getOrgTrips(user.orgId, { status })
+    : await getUserTrips(user.sub, { status });
+
+  return c.json({ trips: result }, 200);
 });
 
 /**

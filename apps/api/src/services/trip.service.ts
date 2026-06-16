@@ -403,6 +403,34 @@ export async function getTripById(
 }
 
 /**
+ * List all trips belonging to an organisation, with optional status filtering.
+ * Used by transport and corporate dashboard users whose JWT carries an orgId.
+ */
+export async function getOrgTrips(
+  organizationId: string,
+  filter: TripFilter = {}
+): Promise<typeof trips.$inferSelect[]> {
+  const conditions = [eq(trips.organizationId, organizationId)];
+
+  if (filter.status) {
+    const statusValues = Array.isArray(filter.status)
+      ? filter.status.map(asTripStatus)
+      : [asTripStatus(filter.status)];
+
+    if (statusValues.length > 0) {
+      conditions.push(inArray(trips.status, statusValues));
+    }
+  }
+
+  return db.query.trips.findMany({
+    where: and(...conditions),
+    orderBy: desc(trips.createdAt),
+    limit: filter.limit ?? 200,
+    offset: filter.offset ?? 0,
+  });
+}
+
+/**
  * List trips for a user, with optional status filtering.
  */
 export async function getUserTrips(
