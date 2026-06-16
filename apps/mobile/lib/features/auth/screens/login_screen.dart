@@ -51,21 +51,14 @@ class LoginScreen extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Shield icon
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.2),
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.shield_rounded,
-                            color: Colors.white,
-                            size: 36,
+                        // SafePass logo
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: Image.asset(
+                            'assets/images/safepass-logo.png',
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.contain,
                           ),
                         ),
                         const SizedBox(height: 24),
