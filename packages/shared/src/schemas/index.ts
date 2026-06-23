@@ -14,3 +14,4 @@ export * from './checkin.schema';
 export * from './vehicle.schema';
 export * from './driver.schema';
 export * from './document.schema';
+export * from './org-membership.schema';

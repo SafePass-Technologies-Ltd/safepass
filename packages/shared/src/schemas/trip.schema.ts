@@ -1,8 +1,6 @@
 import { z } from 'zod';
 import { VehicleTypeEnum } from './user-vehicle.schema';
 
-export const TripModeEnum = z.enum(['driver', 'passenger']);
-
 export const TripStatusEnum = z.enum([
   'draft',
   'active',
@@ -32,7 +30,6 @@ export const TripSchema = z.object({
   userId: z.string().uuid(),
   registeredBy: z.string().uuid().optional().nullable(),
   organizationId: z.string().uuid().optional().nullable(),
-  tripMode: TripModeEnum.default('passenger'),
   userVehicleId: z.string().uuid().optional().nullable(),
   origin: z.object({
     name: z.string().optional(),
@@ -51,10 +48,12 @@ export const TripSchema = z.object({
   actualArrival: z.string().datetime().optional().nullable(),
   vehicleType: VehicleTypeEnum.optional().nullable(),
   vehiclePlateNumber: z.string().optional().nullable(),
+  vehicleDescription: z.string().optional().nullable(),
   transportCompany: z.string().optional().nullable(),
+  vehicleCopiedFromInitiator: z.boolean().optional().nullable(),
+  vehicleSourceInitiatorName: z.string().optional().nullable(),
   driverName: z.string().optional().nullable(),
   driverPhone: z.string().optional().nullable(),
-  passengerCount: z.number().int().min(1).optional().nullable(),
   currentLocation: CurrentLocationSchema.optional().nullable(),
   routePolyline: z.string().optional().nullable(),
   paymentIds: z.array(z.string().uuid()).optional(),
@@ -63,9 +62,8 @@ export const TripSchema = z.object({
 });
 
 export const TripCreateSchema = z.object({
-  userId: z.string().uuid(),
+  userId: z.string().uuid().optional(),
   organizationId: z.string().uuid().optional(),
-  tripMode: TripModeEnum.default('passenger'),
   userVehicleId: z.string().uuid().optional(),
   origin: z.object({
     name: z.string().optional(),
@@ -79,10 +77,10 @@ export const TripCreateSchema = z.object({
   }),
   vehicleType: VehicleTypeEnum.optional(),
   vehiclePlateNumber: z.string().optional(),
+  vehicleDescription: z.string().optional(),
   transportCompany: z.string().optional(),
   driverName: z.string().optional(),
   driverPhone: z.string().optional(),
-  passengerCount: z.number().int().min(1).optional(),
   routePolyline: z.string().optional(),
 });
 
@@ -98,7 +96,6 @@ export const TripGpsUpdateSchema = z.object({
   accuracy: z.number().optional(),
 });
 
-export type TripMode = z.infer<typeof TripModeEnum>;
 export type TripStatus = z.infer<typeof TripStatusEnum>;
 export type Trip = z.infer<typeof TripSchema>;
 export type TripCreate = z.infer<typeof TripCreateSchema>;

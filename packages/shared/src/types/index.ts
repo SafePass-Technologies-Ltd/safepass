@@ -21,7 +21,6 @@ import type {
   Trip,
   TripCreate,
   TripStatus,
-  TripMode,
   TripGpsUpdate,
 } from '../schemas/trip.schema';
 
@@ -75,7 +74,6 @@ export type {
   Trip,
   TripCreate,
   TripStatus,
-  TripMode,
   TripGpsUpdate,
   Payment,
   PaymentStatus,

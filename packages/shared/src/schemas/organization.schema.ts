@@ -10,6 +10,7 @@ export const SubscriptionPlanEnum = z.enum([
   'enterprise',
   'standard',
   'fleet',
+  'custom',
   'none',
 ]);
 
@@ -25,6 +26,12 @@ export const OrganizationSchema = z.object({
   contactEmail: z.string().email().optional().nullable(),
   verificationStatus: OrgVerificationStatusEnum.default('pending'),
   subscriptionPlan: SubscriptionPlanEnum.default('none'),
+  slotCount: z.number().int().nonnegative().default(0),
+  /**
+   * Admin-entered slot count for Custom plan subscriptions.
+   * Present only when subscriptionPlan === 'custom'. Minimum 5.
+   */
+  customSlotCount: z.number().int().min(5).optional().nullable(),
   isActive: z.boolean().default(true),
   createdAt: z.string().datetime(),
 });

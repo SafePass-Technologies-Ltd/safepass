@@ -23,7 +23,8 @@ export const UserSchema = z.object({
   id: z.string().uuid(),
   authProvider: AuthProviderEnum,
   authProviderId: z.string().min(1),
-  email: z.string().email(),
+  // Nullable: phone auth users do not have an email from their provider.
+  email: z.string().email().nullable().optional(),
   fullName: z.string().min(1),
   phone: z.string().nullable(), // null for social-auth users until onboarding
   role: UserRoleEnum,
@@ -42,7 +43,8 @@ export const UserSchema = z.object({
 export const UserCreateSchema = z.object({
   authProvider: AuthProviderEnum,
   authProviderId: z.string().min(1),
-  email: z.string().email(),
+  // Phone auth users will not have an email — nullable here.
+  email: z.string().email().nullable().optional(),
   fullName: z.string().min(1),
   phone: z.string().optional(),
   role: UserRoleEnum.default('user'),
