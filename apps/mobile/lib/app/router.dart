@@ -10,6 +10,7 @@ library safepass_router;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../features/auth/cubit/auth_cubit.dart';
 import '../features/auth/screens/login_screen.dart';
@@ -17,10 +18,13 @@ import '../features/auth/screens/onboarding_screen.dart';
 import '../features/auth/screens/phone_auth_screen.dart';
 import '../features/home/screens/home_shell.dart';
 import '../features/home/screens/home_screen.dart';
+import '../features/profile/cubit/profile_cubit.dart';
 import '../features/profile/screens/profile_screen.dart';
 import '../features/vehicles/screens/vehicle_list_screen.dart';
 import '../features/vehicles/screens/add_vehicle_screen.dart';
 import '../features/trips/screens/trip_registration_screen.dart';
+import '../features/trips/cubit/trip_registration_cubit.dart' show PlaceLocation;
+import '../features/trips/cubit/trip_monitoring_cubit.dart';
 import '../features/trips/screens/active_trip_screen.dart';
 import '../features/wallet/screens/wallet_screen.dart';
 import '../features/emergency/screens/emergency_screen.dart';
@@ -30,6 +34,9 @@ import '../features/messaging/screens/message_thread_screen.dart';
 import '../features/markers/screens/marker_action_screen.dart';
 import '../features/trips/screens/trip_history_screen.dart';
 import '../features/trips/screens/qr_scanner_screen.dart';
+import '../features/trips/screens/scheduled_trips_screen.dart';
+import '../features/org/cubit/join_org_cubit.dart';
+import '../features/org/screens/join_org_screen.dart';
 
 /// Route path constants.
 class AppRoutes {
@@ -48,6 +55,9 @@ class AppRoutes {
   static const String wallet = '/wallet';
   static const String tripHistory = '/trips/history';
   static const String qrScanner = '/trips/scan-qr';
+  static const String scheduledTrips = '/trips/scheduled';
+
+  static const String joinOrg = '/org/join';
 
   // Week 3
   static const String emergency = '/emergency/:tripId';
@@ -67,10 +77,10 @@ const _publicPaths = {AppRoutes.login, AppRoutes.onboarding, AppRoutes.phoneAuth
 /// `flutter_bloc`'s `Cubit` uses streams internally. This adapter
 /// listens to the cubit stream and calls `notifyListeners()` on every
 /// state change so the router re-evaluates its redirect guard.
-class _CubitChangeNotifier extends ChangeNotifier {
-  late final StreamSubscription<AuthState> _subscription;
+class _CubitChangeNotifier<S> extends ChangeNotifier {
+  late final StreamSubscription<S> _subscription;
 
-  _CubitChangeNotifier(AuthCubit cubit) {
+  _CubitChangeNotifier(Cubit<S> cubit) {
     _subscription = cubit.stream.listen((_) => notifyListeners());
   }
 
@@ -81,13 +91,22 @@ class _CubitChangeNotifier extends ChangeNotifier {
   }
 }
 
-/// Creates the GoRouter instance with auth-aware redirects.
+/// Creates the GoRouter instance with auth-aware and active-trip redirects.
 ///
-/// [authCubit] is bridged to a [Listenable] via [_CubitChangeNotifier]
-/// so the router re-evaluates its [redirect] whenever the auth state
-/// changes (sign-in, sign-out, token expiry, etc.).
-GoRouter createRouter(AuthCubit authCubit) {
-  final refreshNotifier = _CubitChangeNotifier(authCubit);
+/// [authCubit] and [tripMonitoringCubit] are bridged to [Listenable]s via
+/// [_CubitChangeNotifier] so the router re-evaluates its [redirect] on every
+/// auth or trip state change. When the user is authenticated and has an active
+/// trip the router automatically navigates to the active trip screen.
+GoRouter createRouter(
+  AuthCubit authCubit,
+  ProfileCubit profileCubit,
+  TripMonitoringCubit tripMonitoringCubit,
+) {
+  final refreshNotifier = Listenable.merge([
+    _CubitChangeNotifier<AuthState>(authCubit),
+    _CubitChangeNotifier<ProfileState>(profileCubit),
+    _CubitChangeNotifier<TripMonitoringState>(tripMonitoringCubit),
+  ]);
 
   return GoRouter(
     initialLocation: AppRoutes.login,
@@ -113,6 +132,36 @@ GoRouter createRouter(AuthCubit authCubit) {
         }
         if (authState.status == AuthStatus.authenticated) {
           return AppRoutes.home;
+        }
+      }
+
+      // Fully authenticated user on a protected, non-profile page → make
+      // sure we know whether they have an emergency contact on file, and
+      // force them to the profile screen until they add one.
+      if (authState.status == AuthStatus.authenticated &&
+          !isPublic &&
+          currentPath != AppRoutes.profile) {
+        final profileState = profileCubit.state;
+        if (profileState.status == ProfileStatus.initial) {
+          profileCubit.loadProfile();
+          return null;
+        }
+        if (profileState.status == ProfileStatus.loaded &&
+            !profileState.hasEmergencyContact) {
+          return AppRoutes.profile;
+        }
+      }
+
+      // Auto-resume redirect: only fires once on cold boot (when the user lands
+      // on /home after auth restores) to bring them back to an active trip.
+      // Does NOT re-fire while the user navigates freely — the persistent
+      // banner in HomeShell handles ongoing trip visibility.
+      if (authState.status == AuthStatus.authenticated &&
+          currentPath == AppRoutes.home) {
+        final tripState = tripMonitoringCubit.state;
+        final tripId = tripState.trip?.id;
+        if (tripState.status == TripMonitorStatus.active && tripId != null) {
+          return '/trip/active/$tripId';
         }
       }
 
@@ -146,7 +195,14 @@ GoRouter createRouter(AuthCubit authCubit) {
           GoRoute(
             path: AppRoutes.tripRegistration,
             name: 'tripRegistration',
-            builder: (context, state) => const TripRegistrationScreen(),
+            builder: (context, state) {
+              // Accepts an optional PlaceLocation as extra for pre-filling
+              // the destination when launched from a scheduled trip card.
+              final prefill = state.extra is PlaceLocation
+                  ? state.extra as PlaceLocation
+                  : null;
+              return TripRegistrationScreen(prefillDestination: prefill);
+            },
           ),
           GoRoute(
             path: '/trip/active/:tripId',
@@ -187,7 +243,15 @@ GoRouter createRouter(AuthCubit authCubit) {
           GoRoute(
             path: AppRoutes.incidentReport,
             name: 'incidentReport',
-            builder: (context, state) => const IncidentReportScreen(),
+            builder: (context, state) {
+              // When navigated from the active trip screen, extra carries an
+              // IncidentReportArgs with the current GPS fix and trip ID so the
+              // form is pre-filled without an additional Geolocator request.
+              final args = state.extra is IncidentReportArgs
+                  ? state.extra as IncidentReportArgs
+                  : null;
+              return IncidentReportScreen(args: args);
+            },
           ),
           GoRoute(
             path: AppRoutes.messages,
@@ -224,6 +288,19 @@ GoRouter createRouter(AuthCubit authCubit) {
             path: AppRoutes.qrScanner,
             name: 'qrScanner',
             builder: (context, state) => const QrScannerScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.scheduledTrips,
+            name: 'scheduledTrips',
+            builder: (context, state) => const ScheduledTripsScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.joinOrg,
+            name: 'joinOrg',
+            builder: (context, state) => BlocProvider<JoinOrgCubit>(
+              create: (_) => JoinOrgCubit(),
+              child: const JoinOrgScreen(),
+            ),
           ),
         ],
       ),

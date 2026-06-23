@@ -3,9 +3,11 @@ library profile_screen;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../auth/cubit/auth_cubit.dart';
 import '../cubit/profile_cubit.dart';
 import '../../../app/theme.dart';
+import '../../../app/router.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -81,6 +83,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _buildProfileSection(context, state),
                 const SizedBox(height: 24),
                 _buildEmergencyContacts(context, state),
+                const SizedBox(height: 24),
+                _buildOrgMembershipSection(context, state),
                 const SizedBox(height: 24),
                 _buildNotificationPrefs(context, state),
                 const SizedBox(height: 32),
@@ -167,6 +171,145 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
       ],
     );
+  }
+
+  Widget _buildOrgMembershipSection(BuildContext context, ProfileState state) {
+    final cubit = context.read<ProfileCubit>();
+    final membership = state.orgMembership;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeader(title: 'Organisation Membership'),
+        const SizedBox(height: 12),
+        if (membership == null)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    'You are not currently a member of any organisation.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: AppColors.darkSlate.withValues(alpha: 0.7),
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => context.push(AppRoutes.joinOrg),
+                    icon: const Icon(Icons.group_add_outlined),
+                    label: const Text('Join an Organisation'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 44),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.business_outlined,
+                        color: AppColors.safetyGreen,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          membership.orgName,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (membership.orgType.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      membership.orgType,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.darkSlate.withValues(alpha: 0.5),
+                          ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Text(
+                    'Member since ${_formatDate(membership.memberSince)}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.darkSlate.withValues(alpha: 0.6),
+                        ),
+                  ),
+                  const SizedBox(height: 16),
+                  OutlinedButton(
+                    onPressed: state.status == ProfileStatus.saving
+                        ? null
+                        : () => _confirmLeaveOrg(context, cubit, membership.orgName),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.emergencyRed,
+                      side: const BorderSide(color: AppColors.emergencyRed),
+                      minimumSize: const Size(double.infinity, 44),
+                    ),
+                    child: const Text('Leave Organisation'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  Future<void> _confirmLeaveOrg(
+    BuildContext context,
+    ProfileCubit cubit,
+    String orgName,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Leave Organisation?'),
+        content: Text(
+          'Are you sure you want to leave $orgName? '
+          'You will no longer receive org-covered trip monitoring.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.emergencyRed,
+            ),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      cubit.leaveOrg();
+    }
   }
 
   Widget _buildNotificationPrefs(BuildContext context, ProfileState state) {

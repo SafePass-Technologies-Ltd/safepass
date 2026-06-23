@@ -13,7 +13,7 @@ part 'profile_state.dart';
 class ProfileCubit extends Cubit<ProfileState> {
   ProfileCubit() : super(const ProfileState.initial());
 
-  /// Load the user profile from GET /v1/users/me.
+  /// Load the user profile from GET /v1/users/me and org membership.
   Future<void> loadProfile() async {
     emit(state.copyWith(status: ProfileStatus.loading));
 
@@ -36,6 +36,27 @@ class ProfileCubit extends Cubit<ProfileState> {
       final notifPrefs =
           data['notificationPreferences'] as Map<String, dynamic>?;
 
+      final hasEmergencyContact = contacts.any(
+        (c) => c.name.trim().isNotEmpty && c.phone.trim().isNotEmpty,
+      );
+
+      // Fetch org membership. API returns { membership: {...} } when the user
+      // belongs to an org, or { membership: null } when they don't. Either
+      // response is a 200 — a missing membership is not an error.
+      OrgMembership? orgMembership;
+      try {
+        final orgResponse =
+            await ApiClient.instance.dio.get('/v1/org/membership');
+        final body = orgResponse.data as Map<String, dynamic>?;
+        final membershipJson = body?['membership'] as Map<String, dynamic>?;
+        if (membershipJson != null) {
+          orgMembership = OrgMembership.fromJson(membershipJson);
+        }
+      } catch (_) {
+        // Network issue or unexpected error — treat as no membership.
+        orgMembership = null;
+      }
+
       emit(
         ProfileState(
           status: ProfileStatus.loaded,
@@ -43,10 +64,10 @@ class ProfileCubit extends Cubit<ProfileState> {
           email: data['email'] as String? ?? '',
           phone: data['phone'] as String?,
           contacts: contacts,
-          pushEnabled:
-              notifPrefs?['pushEnabled'] as bool? ?? true,
-          emailEnabled:
-              notifPrefs?['emailEnabled'] as bool? ?? true,
+          pushEnabled: notifPrefs?['pushEnabled'] as bool? ?? true,
+          emailEnabled: notifPrefs?['emailEnabled'] as bool? ?? true,
+          hasEmergencyContact: hasEmergencyContact,
+          orgMembership: orgMembership,
         ),
       );
     } on Exception {
@@ -54,6 +75,24 @@ class ProfileCubit extends Cubit<ProfileState> {
         state.copyWith(
           status: ProfileStatus.error,
           errorMessage: 'Failed to load profile',
+        ),
+      );
+    }
+  }
+
+  /// Leave the current organisation via DELETE /v1/org/membership.
+  Future<void> leaveOrg() async {
+    emit(state.copyWith(status: ProfileStatus.saving));
+
+    try {
+      await ApiClient.instance.dio.delete('/v1/org/membership');
+      // Reload to reflect updated state
+      await loadProfile();
+    } on Exception {
+      emit(
+        state.copyWith(
+          status: ProfileStatus.error,
+          errorMessage: 'Failed to leave organisation',
         ),
       );
     }

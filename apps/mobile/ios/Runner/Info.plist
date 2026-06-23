@@ -28,6 +28,14 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>SafePass records audio silently during an active emergency so monitoring officers and emergency responders have evidence of what's happening.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>SafePass needs your location in the background to monitor your trip and ensure your safety.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SafePass needs your location to monitor your trip route.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

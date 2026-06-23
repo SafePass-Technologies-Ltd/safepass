@@ -55,6 +55,25 @@ class ApiClient {
     await _secureStorage.delete(key: 'access_token');
     await _secureStorage.delete(key: 'refresh_token');
   }
+
+  // ---------------------------------------------------------------------------
+  // Active trip persistence — used for auto-resume on app restart
+  // ---------------------------------------------------------------------------
+
+  /// Persist the active trip ID so it survives app restarts.
+  Future<void> saveActiveTripId(String tripId) async {
+    await _secureStorage.write(key: 'active_trip_id', value: tripId);
+  }
+
+  /// Read the persisted active trip ID, or null if none is stored.
+  Future<String?> getActiveTripId() async {
+    return _secureStorage.read(key: 'active_trip_id');
+  }
+
+  /// Remove the persisted active trip ID (called on trip completion/cancellation/sign-out).
+  Future<void> clearActiveTripId() async {
+    await _secureStorage.delete(key: 'active_trip_id');
+  }
 }
 
 /// Interceptor that attaches the Bearer access token to every request

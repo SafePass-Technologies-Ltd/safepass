@@ -4,20 +4,48 @@ import 'package:geolocator/geolocator.dart';
 import '../../../app/theme.dart';
 import '../cubit/incident_cubit.dart';
 
+/// Arguments passed via [GoRouter] `extra` when navigating to this screen
+/// from the active trip screen. Both fields are optional — if omitted the
+/// screen falls back to fetching the current GPS position via Geolocator.
+class IncidentReportArgs {
+  /// GPS latitude pre-filled from the active trip's last known position.
+  final double? latitude;
+
+  /// GPS longitude pre-filled from the active trip's last known position.
+  final double? longitude;
+
+  /// Trip ID to link this report to the in-progress trip on the backend.
+  final String? tripId;
+
+  const IncidentReportArgs({this.latitude, this.longitude, this.tripId});
+}
+
 class IncidentReportScreen extends StatelessWidget {
-  const IncidentReportScreen({super.key});
+  /// Optional pre-fill data — latitude/longitude avoid a redundant Geolocator
+  /// call and tripId associates the report with the current trip.
+  final IncidentReportArgs? args;
+
+  const IncidentReportScreen({super.key, this.args});
 
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => IncidentCubit(),
-      child: const _IncidentReportView(),
+      create: (_) => IncidentCubit(
+        initialLatitude: args?.latitude,
+        initialLongitude: args?.longitude,
+        tripId: args?.tripId,
+      ),
+      child: _IncidentReportView(prefilled: args?.latitude != null),
     );
   }
 }
 
 class _IncidentReportView extends StatefulWidget {
-  const _IncidentReportView();
+  /// When true, the cubit was already seeded with GPS coordinates from the
+  /// active trip and no Geolocator fetch is needed.
+  final bool prefilled;
+
+  const _IncidentReportView({this.prefilled = false});
 
   @override
   State<_IncidentReportView> createState() => _IncidentReportViewState();
@@ -29,9 +57,15 @@ class _IncidentReportViewState extends State<_IncidentReportView> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchLocation());
+    // Skip the Geolocator round-trip if the caller already provided
+    // coordinates (e.g. from the active trip screen's last known GPS fix).
+    if (!widget.prefilled) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fetchLocation());
+    }
   }
 
+  /// Requests the device's current GPS position and updates the cubit.
+  /// Only called when no pre-filled coordinates were provided.
   Future<void> _fetchLocation() async {
     if (!mounted) return;
     final cubit = context.read<IncidentCubit>();

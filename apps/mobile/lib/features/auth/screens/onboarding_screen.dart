@@ -26,6 +26,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _tosAccepted = false;
   bool _recordingConsent = false;
   bool _isSavingPhone = false;
+  late final Future<bool> _needsPhoneFuture = _needsPhone();
 
   @override
   void dispose() {
@@ -79,78 +80,91 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         automaticallyImplyLeading: false,
       ),
       body: FutureBuilder<bool>(
-        future: _needsPhone(),
+        future: _needsPhoneFuture,
         builder: (context, snapshot) {
           final needsPhone = snapshot.data ?? true;
 
-          return Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Before you start, please review and accept the following:',
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
-                const SizedBox(height: 24),
-
-                // Phone number (social auth users only)
-                if (needsPhone) ...[
-                  _buildPhoneField(context),
-                  const SizedBox(height: 16),
-                ],
-
-                // Terms of Service
-                _ConsentCard(
-                  title: 'Terms of Service',
-                  description:
-                      'I agree to SafePass\'s Terms of Service and Privacy Policy. '
-                      'SafePass provides trip monitoring and alerting — it does not '
-                      'provide physical security.',
-                  value: _tosAccepted,
-                  onChanged: (value) => setState(() => _tosAccepted = value!),
-                ),
-                const SizedBox(height: 16),
-
-                // Emergency Recording Consent
-                _ConsentCard(
-                  title: 'Emergency Audio Recording Consent',
-                  description:
-                      'I understand that pressing the panic button during a trip will '
-                      'activate silent background audio recording. This recording is '
-                      'uploaded securely to SafePass for emergency response purposes only.',
-                  value: _recordingConsent,
-                  onChanged:
-                      (value) => setState(() => _recordingConsent = value!),
-                ),
-                const SizedBox(height: 16),
-
-                // Info note
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
+          return Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.info_outline, color: AppColors.primary),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'You\'ll set up emergency contacts on the next screen. '
-                          'At least one contact is required.',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: AppColors.darkSlate),
+                      Text(
+                        'Before you start, please review and accept the following:',
+                        style: Theme.of(context).textTheme.bodyLarge,
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Phone number (social auth users only)
+                      if (needsPhone) ...[
+                        _buildPhoneField(context),
+                        const SizedBox(height: 16),
+                      ],
+
+                      // Terms of Service
+                      _ConsentCard(
+                        title: 'Terms of Service',
+                        description:
+                            'I agree to SafePass\'s Terms of Service and Privacy Policy. '
+                            'SafePass provides trip monitoring and alerting — it does not '
+                            'provide physical security.',
+                        value: _tosAccepted,
+                        onChanged:
+                            (value) => setState(() => _tosAccepted = value!),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Emergency Recording Consent
+                      _ConsentCard(
+                        title: 'Emergency Audio Recording Consent',
+                        description:
+                            'I understand that pressing the panic button during a trip will '
+                            'activate silent background audio recording. This recording is '
+                            'uploaded securely to SafePass for emergency response purposes only.',
+                        value: _recordingConsent,
+                        onChanged:
+                            (value) =>
+                                setState(() => _recordingConsent = value!),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // Info note
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.info_outline,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'You\'ll set up emergency contacts on the next screen. '
+                                'At least one contact is required.',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: AppColors.darkSlate),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                const Spacer(),
+              ),
 
-                // Continue button
-                ElevatedButton(
+              // Continue button
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: ElevatedButton(
                   onPressed:
                       _canProceed(needsPhone)
                           ? () async {
@@ -173,9 +187,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           )
                           : const Text('Continue'),
                 ),
-                const SizedBox(height: 32),
-              ],
-            ),
+              ),
+            ],
           );
         },
       ),

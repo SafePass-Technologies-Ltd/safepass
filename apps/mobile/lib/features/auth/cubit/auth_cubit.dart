@@ -327,6 +327,34 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   // ---------------------------------------------------------------------------
+  // Session restore
+  // ---------------------------------------------------------------------------
+
+  /// Restore a previously authenticated session from stored tokens.
+  ///
+  /// Called during app startup — reads the stored access token and validates
+  /// it by hitting `GET /v1/users/me`. On success, emits [AuthStatus.authenticated]
+  /// with the user payload. On missing token or 401, emits initial (logged-out) state.
+  Future<void> restoreSession() async {
+    final token = await ApiClient.instance.getAccessToken();
+    if (token == null) {
+      // No token stored — user has never signed in or previously signed out.
+      return;
+    }
+
+    try {
+      // Token is still valid if /v1/users/me returns 200.
+      // The response body is available for future user-data hydration if needed.
+      await ApiClient.instance.dio.get('/v1/users/me');
+      emit(state.copyWith(status: AuthStatus.authenticated));
+    } catch (e) {
+      // 401 or network failure — treat as logged out. Clear stale token.
+      await ApiClient.instance.clearTokens();
+      emit(state.copyWith(status: AuthStatus.initial));
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Token exchange & sign-out
   // ---------------------------------------------------------------------------
 
@@ -381,6 +409,8 @@ class AuthCubit extends Cubit<AuthState> {
     try { await FacebookAuth.instance.logOut(); } catch (_) {}
     // Best-effort local token cleanup — should never block sign-out.
     try { await ApiClient.instance.clearTokens(); } catch (_) {}
+    // Clear persisted trip ID so no stale resume happens after sign-out.
+    try { await ApiClient.instance.clearActiveTripId(); } catch (_) {}
     _phoneVerificationId = null;
     emit(const AuthState.initial());
   }

@@ -88,7 +88,7 @@ class _VehicleListScreenState extends State<VehicleListScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Add your vehicle to skip filling details\non every trip in driver mode.',
+              'Save your vehicles for quick reference\nwhen registering a new trip.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: AppColors.darkSlate.withValues(alpha: 0.4),

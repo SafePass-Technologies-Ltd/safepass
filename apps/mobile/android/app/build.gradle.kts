@@ -17,10 +17,16 @@ kotlin {
 
 android {
     namespace = "com.safepasstech.safepass_mobile"
-    compileSdk = flutter.compileSdkVersion
+    // Pin to an explicit integer rather than the flutter token.
+    // flutter_local_notifications requires compileSdk >= 35 (v22.x).
+    // Bumped to 36 — several plugins and AndroidX dependencies require compileSdk >= 36.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications v10+ requires desugaring so that
+        // java.time APIs work on Android API levels below 26.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -45,6 +51,13 @@ android {
     }
 }
 
+dependencies {
+    // Required for flutter_local_notifications desugaring support (v10+).
+    // Provides java.time backport for Android API levels below 26.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
+
 flutter {
     source = "../.."
 }
+

@@ -1,19 +1,25 @@
 /// Trip Monitoring Cubit — manages active trip state, GPS tracking,
-/// WebSocket connection, and trip lifecycle during an active journey.
+/// background foreground service, and trip lifecycle during an active journey.
 ///
 /// Handles:
 ///   - GPS position tracking via geolocator (foreground)
+///   - Background GPS via flutter_foreground_task (survives app minimise/kill)
 ///   - Position upload to backend API
 ///   - Trip status transitions (complete, cancel)
 ///   - Trip details loading
+///   - Auto-resume: re-attaches to an in-flight background service on app restart
 library;
 
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:dio/dio.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/api/api_client.dart';
+import '../../../core/constants.dart';
 
 // ────────────────────────────────────────────────────────────
 // Models
@@ -22,69 +28,77 @@ import '../../../core/api/api_client.dart';
 class TripDetail extends Equatable {
   final String id;
   final String userId;
-  final String tripMode;
   final String status;
   final Map<String, dynamic> origin;
   final Map<String, dynamic> destination;
   final Map<String, dynamic>? currentLocation;
   final String? vehiclePlateNumber;
+  final String? vehicleDescription;
   final String? transportCompany;
   final String? driverName;
   final String? driverPhone;
-  final int? passengerCount;
   final String? startedAt;
   final String createdAt;
+  /// True when vehicle fields were copied from a trip tag invite initiator.
+  final bool vehicleCopiedFromInitiator;
+  /// Full name of the initiator whose vehicle info was copied, if applicable.
+  final String? vehicleSourceInitiatorName;
 
   const TripDetail({
     required this.id,
     required this.userId,
-    required this.tripMode,
     required this.status,
     required this.origin,
     required this.destination,
     this.currentLocation,
     this.vehiclePlateNumber,
+    this.vehicleDescription,
     this.transportCompany,
     this.driverName,
     this.driverPhone,
-    this.passengerCount,
     this.startedAt,
     required this.createdAt,
+    this.vehicleCopiedFromInitiator = false,
+    this.vehicleSourceInitiatorName,
   });
 
   factory TripDetail.fromJson(Map<String, dynamic> json) => TripDetail(
         id: json['id'] as String,
         userId: json['userId'] as String,
-        tripMode: json['tripMode'] as String? ?? 'passenger',
         status: json['status'] as String? ?? 'active',
         origin: json['origin'] as Map<String, dynamic>,
         destination: json['destination'] as Map<String, dynamic>,
         currentLocation: json['currentLocation'] as Map<String, dynamic>?,
         vehiclePlateNumber: json['vehiclePlateNumber'] as String?,
+        vehicleDescription: json['vehicleDescription'] as String?,
         transportCompany: json['transportCompany'] as String?,
         driverName: json['driverName'] as String?,
         driverPhone: json['driverPhone'] as String?,
-        passengerCount: json['passengerCount'] as int?,
         startedAt: json['startedAt'] as String?,
         createdAt: json['createdAt'] as String? ?? '',
+        vehicleCopiedFromInitiator:
+            json['vehicleCopiedFromInitiator'] as bool? ?? false,
+        vehicleSourceInitiatorName:
+            json['vehicleSourceInitiatorName'] as String?,
       );
 
   /// Create a copy with an overridden [status].
   TripDetail withStatus(String newStatus) => TripDetail(
         id: id,
         userId: userId,
-        tripMode: tripMode,
         status: newStatus,
         origin: origin,
         destination: destination,
         currentLocation: currentLocation,
         vehiclePlateNumber: vehiclePlateNumber,
+        vehicleDescription: vehicleDescription,
         transportCompany: transportCompany,
         driverName: driverName,
         driverPhone: driverPhone,
-        passengerCount: passengerCount,
         startedAt: startedAt,
         createdAt: createdAt,
+        vehicleCopiedFromInitiator: vehicleCopiedFromInitiator,
+        vehicleSourceInitiatorName: vehicleSourceInitiatorName,
       );
 
   @override
@@ -239,7 +253,12 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
   final Set<String> _shownHazardIds = {};
   bool _hazardCheckInFlight = false;
 
-  /// Load trip details and start GPS tracking.
+  // ---------------------------------------------------------------------------
+  // Public lifecycle methods
+  // ---------------------------------------------------------------------------
+
+  /// Load trip details, persist the trip ID for auto-resume, and start both
+  /// foreground GPS tracking and the background foreground service.
   Future<void> startMonitoring(String tripId) async {
     emit(state.copyWith(status: TripMonitorStatus.loading));
 
@@ -247,13 +266,24 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
       final response = await _dio.get('/v1/trips/$tripId');
       final trip = TripDetail.fromJson(response.data as Map<String, dynamic>);
 
+      // Persist trip ID only after a confirmed successful API response so a
+      // transient network error never stores a stale trip ID.
+      await ApiClient.instance.saveActiveTripId(tripId);
+
       emit(state.copyWith(
         status: TripMonitorStatus.active,
         trip: trip,
       ));
 
-      // Start GPS tracking.
+      // Start foreground GPS tracking for immediate map updates.
       _startGpsTracking(tripId);
+
+      // Start the OS-level background service so GPS uploads survive the app
+      // being minimised or killed by the OS.
+      await _startBackgroundService(tripId);
+
+      // Listen for position data forwarded from the background isolate.
+      FlutterForegroundTask.addTaskDataCallback(_onBackgroundData);
     } on DioException catch (e) {
       emit(state.copyWith(
         status: TripMonitorStatus.error,
@@ -263,9 +293,186 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
     }
   }
 
-  /// Start foreground GPS position tracking.
+  /// Re-attach to an active trip after app restart without launching a new
+  /// background service instance.
+  ///
+  /// Called once the user is confirmed authenticated. If a persisted trip ID
+  /// exists and the background service is already running, only the data
+  /// callback is registered (no duplicate service). If the service is not
+  /// running, [startMonitoring] is called to fully resume.
+  Future<void> resumeIfActiveTrip() async {
+    final tripId = await ApiClient.instance.getActiveTripId();
+    if (tripId == null) return;
+
+    final isRunning = await FlutterForegroundTask.isRunningService;
+    if (isRunning) {
+      // Service already tracking in background — just re-fetch trip details
+      // and register the data callback so the UI receives position updates.
+      try {
+        final response = await _dio.get('/v1/trips/$tripId');
+        final trip = TripDetail.fromJson(response.data as Map<String, dynamic>);
+        emit(state.copyWith(
+          status: TripMonitorStatus.active,
+          trip: trip,
+        ));
+        FlutterForegroundTask.addTaskDataCallback(_onBackgroundData);
+      } on DioException {
+        // If the trip is no longer fetchable (e.g. already completed server-side),
+        // clear the stored ID so we don't retry on the next restart.
+        await ApiClient.instance.clearActiveTripId();
+      }
+    } else {
+      // Service was killed — restart full monitoring.
+      await startMonitoring(tripId);
+    }
+  }
+
+  /// Mark trip as completed (safe arrival confirmed).
+  Future<void> completeTrip() async {
+    emit(state.copyWith(status: TripMonitorStatus.completing));
+
+    try {
+      await _dio.post('/v1/trips/${state.trip!.id}/complete');
+      await _stopTracking();
+      await ApiClient.instance.clearActiveTripId();
+
+      emit(state.copyWith(
+        status: TripMonitorStatus.completed,
+        trip: state.trip?.withStatus('completed'),
+      ));
+    } on DioException catch (e) {
+      emit(state.copyWith(
+        status: TripMonitorStatus.error,
+        errorMessage:
+            e.response?.data?['error']?['message'] ?? 'Failed to complete trip',
+      ));
+    }
+  }
+
+  /// Cancel the trip.
+  Future<void> cancelTrip() async {
+    emit(state.copyWith(status: TripMonitorStatus.cancelling));
+
+    try {
+      await _dio.post('/v1/trips/${state.trip!.id}/cancel');
+      await _stopTracking();
+      await ApiClient.instance.clearActiveTripId();
+
+      emit(state.copyWith(status: TripMonitorStatus.cancelled));
+    } on DioException catch (e) {
+      emit(state.copyWith(
+        status: TripMonitorStatus.error,
+        errorMessage:
+            e.response?.data?['error']?['message'] ?? 'Failed to cancel trip',
+      ));
+    }
+  }
+
+  /// Trigger an emergency (panic button).
+  ///
+  /// Sends the current GPS position to the backend emergency endpoint,
+  /// which flags the trip as EMERGENCY and alerts monitoring officers.
+  Future<void> triggerEmergency() async {
+    final trip = state.trip;
+    final position = state.lastPosition;
+
+    if (trip == null || position == null) {
+      emit(state.copyWith(
+        errorMessage: 'Cannot trigger emergency — no active trip or GPS signal',
+      ));
+      return;
+    }
+
+    try {
+      await _dio.post('/v1/emergency/trigger', data: {
+        'tripId': trip.id,
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'speed': position.speed,
+      });
+
+      // Update local trip status to emergency immediately.
+      emit(state.copyWith(
+        trip: trip.withStatus('emergency'),
+      ));
+    } on DioException catch (e) {
+      emit(state.copyWith(
+        errorMessage:
+            e.response?.data?['error']?['message'] ?? 'Failed to trigger emergency',
+      ));
+    }
+  }
+
+  /// Clear the pending hazard alert after the UI has displayed it.
+  void dismissHazardAlert() {
+    emit(state.copyWith(clearHazardAlert: true));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Background foreground service
+  // ---------------------------------------------------------------------------
+
+  /// Configure and start the OS background foreground service.
+  ///
+  /// Uses [flutter_foreground_task] to keep GPS uploads alive even when the
+  /// app is backgrounded or killed. The background isolate runs
+  /// [tripBackgroundServiceEntryPoint] which independently streams positions
+  /// to the API.
+  Future<void> _startBackgroundService(String tripId) async {
+    FlutterForegroundTask.init(
+      androidNotificationOptions: AndroidNotificationOptions(
+        channelId: 'safepass_trip_tracking',
+        channelName: 'SafePass Trip Tracking',
+        channelDescription: 'Background GPS tracking during an active trip',
+        onlyAlertOnce: true,
+      ),
+      iosNotificationOptions: const IOSNotificationOptions(
+        showNotification: true,
+        playSound: false,
+      ),
+      foregroundTaskOptions: ForegroundTaskOptions(
+        // No repeat event needed — the TaskHandler drives its own GPS stream.
+        eventAction: ForegroundTaskEventAction.nothing(),
+        autoRunOnBoot: false,
+        allowWakeLock: true,
+      ),
+    );
+
+    await FlutterForegroundTask.startService(
+      serviceId: 1001,
+      notificationTitle: 'SafePass Trip Active',
+      notificationText: 'Monitoring your trip...',
+      callback: tripBackgroundServiceEntryPoint,
+    );
+  }
+
+  /// Receive position data forwarded from the background isolate and update UI.
+  void _onBackgroundData(Object data) {
+    if (data is! Map) return;
+    final map = Map<String, dynamic>.from(data);
+    final lat = map['lat'] as double?;
+    final lng = map['lng'] as double?;
+    if (lat == null || lng == null) return;
+
+    final gpsPos = GpsPosition(
+      latitude: lat,
+      longitude: lng,
+      speed: map['speed'] as double?,
+    );
+
+    emit(state.copyWith(
+      lastPosition: gpsPos,
+      gpsUpdateCount: state.gpsUpdateCount + 1,
+    ));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Foreground GPS tracking (while app is in foreground)
+  // ---------------------------------------------------------------------------
+
+  /// Start foreground GPS position tracking for real-time map updates.
   void _startGpsTracking(String tripId) {
-    // Check location permission and service.
+    // Warn the user if location services get disabled mid-trip.
     Geolocator.getServiceStatusStream().listen((status) {
       if (status == ServiceStatus.disabled) {
         emit(state.copyWith(
@@ -377,11 +584,6 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
     }
   }
 
-  /// Clear the pending hazard alert after the UI has displayed it.
-  void dismissHazardAlert() {
-    emit(state.copyWith(clearHazardAlert: true));
-  }
-
   /// Upload GPS position to the backend API.
   Future<void> _uploadGpsPosition(String tripId, Position position) async {
     try {
@@ -398,89 +600,140 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
     }
   }
 
-  /// Mark trip as completed (safe arrival confirmed).
-  Future<void> completeTrip() async {
-    emit(state.copyWith(status: TripMonitorStatus.completing));
+  // ---------------------------------------------------------------------------
+  // Cleanup
+  // ---------------------------------------------------------------------------
 
-    try {
-      await _dio.post('/v1/trips/${state.trip!.id}/complete');
-      await _stopTracking();
-
-      emit(state.copyWith(
-        status: TripMonitorStatus.completed,
-        trip: state.trip?.withStatus('completed'),
-      ));
-    } on DioException catch (e) {
-      emit(state.copyWith(
-        status: TripMonitorStatus.error,
-        errorMessage:
-            e.response?.data?['error']?['message'] ?? 'Failed to complete trip',
-      ));
-    }
-  }
-
-  /// Cancel the trip.
-  Future<void> cancelTrip() async {
-    emit(state.copyWith(status: TripMonitorStatus.cancelling));
-
-    try {
-      await _dio.post('/v1/trips/${state.trip!.id}/cancel');
-      await _stopTracking();
-
-      emit(state.copyWith(status: TripMonitorStatus.cancelled));
-    } on DioException catch (e) {
-      emit(state.copyWith(
-        status: TripMonitorStatus.error,
-        errorMessage:
-            e.response?.data?['error']?['message'] ?? 'Failed to cancel trip',
-      ));
-    }
-  }
-
-  /// Trigger an emergency (panic button).
-  ///
-  /// Sends the current GPS position to the backend emergency endpoint,
-  /// which flags the trip as EMERGENCY and alerts monitoring officers.
-  Future<void> triggerEmergency() async {
-    final trip = state.trip;
-    final position = state.lastPosition;
-
-    if (trip == null || position == null) {
-      emit(state.copyWith(
-        errorMessage: 'Cannot trigger emergency — no active trip or GPS signal',
-      ));
-      return;
-    }
-
-    try {
-      await _dio.post('/v1/emergency/trigger', data: {
-        'tripId': trip.id,
-        'latitude': position.latitude,
-        'longitude': position.longitude,
-        'speed': position.speed,
-      });
-
-      // Update local trip status to emergency immediately.
-      emit(state.copyWith(
-        trip: trip.withStatus('emergency'),
-      ));
-    } on DioException catch (e) {
-      emit(state.copyWith(
-        errorMessage:
-            e.response?.data?['error']?['message'] ?? 'Failed to trigger emergency',
-      ));
-    }
-  }
-
-  /// Stop GPS tracking and clean up.
+  /// Stop foreground GPS stream, background service, and remove data callbacks.
   Future<void> _stopTracking() async {
     await _positionSubscription?.cancel();
     _positionSubscription = null;
+    FlutterForegroundTask.removeTaskDataCallback(_onBackgroundData);
+    await FlutterForegroundTask.stopService();
   }
 
   @override
   Future<void> close() {
     _stopTracking();
     return super.close();
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// Background isolate entry point
+// ────────────────────────────────────────────────────────────
+
+/// Entry point for the flutter_foreground_task background isolate.
+///
+/// The `@pragma('vm:entry-point')` annotation prevents the Dart tree-shaker
+/// from removing this function in release builds.
+@pragma('vm:entry-point')
+void tripBackgroundServiceEntryPoint() {
+  FlutterForegroundTask.setTaskHandler(_TripBackgroundTaskHandler());
+}
+
+/// Background task handler — streams GPS positions to the SafePass API
+/// from the background isolate while the app is minimised or killed.
+class _TripBackgroundTaskHandler extends TaskHandler {
+  StreamSubscription<Position>? _positionSub;
+  String? _tripId;
+
+  @override
+  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    // Read the persisted trip ID from secure storage.
+    // FlutterSecureStorage works in background isolates on both platforms.
+    const storage = FlutterSecureStorage();
+    _tripId = await storage.read(key: 'active_trip_id');
+    if (_tripId == null) {
+      // No active trip — nothing to track.
+      await FlutterForegroundTask.stopService();
+      return;
+    }
+
+    // Determine platform-appropriate location settings.
+    final locationSettings = _buildLocationSettings();
+
+    _positionSub = Geolocator.getPositionStream(
+      locationSettings: locationSettings,
+    ).listen((position) {
+      // Forward position to the main isolate for UI map updates.
+      FlutterForegroundTask.sendDataToMain({
+        'lat': position.latitude,
+        'lng': position.longitude,
+        'speed': position.speed,
+      });
+
+      // Upload to backend from the background isolate.
+      _uploadPosition(_tripId!, position);
+    });
+  }
+
+  /// Build platform-specific location settings.
+  ///
+  /// On iOS, [AppleSettings] disables automatic pause and sets the activity
+  /// type to automotive navigation so Core Location maintains accuracy during
+  /// long road trips.
+  ///
+  /// On Android, standard [LocationSettings] is used — the foreground service
+  /// itself keeps the process alive and the location stream active.
+  LocationSettings _buildLocationSettings() {
+    if (Platform.isIOS) {
+      return AppleSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+        pauseLocationUpdatesAutomatically: false,
+        activityType: ActivityType.automotiveNavigation,
+        allowBackgroundLocationUpdates: true,
+        showBackgroundLocationIndicator: true,
+      );
+    }
+    return const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 10,
+    );
+  }
+
+  /// Upload a single GPS position to the SafePass API.
+  ///
+  /// Creates a one-off Dio instance here because the singleton [ApiClient]
+  /// lives in the main isolate and is not accessible from the background.
+  Future<void> _uploadPosition(String tripId, Position position) async {
+    try {
+      const storage = FlutterSecureStorage();
+      final token = await storage.read(key: 'access_token');
+      if (token == null) return;
+
+      // Lightweight Dio instance — no interceptors needed in the background.
+      final dio = Dio(BaseOptions(
+        baseUrl: kApiBaseUrl,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ));
+
+      await dio.post('/v1/trips/$tripId/gps', data: {
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'speed': position.speed,
+        'heading': position.heading,
+        'accuracy': position.accuracy,
+      });
+    } catch (_) {
+      // Background upload failures are silent — the service continues tracking.
+    }
+  }
+
+  @override
+  void onRepeatEvent(DateTime timestamp) {
+    // Not used — position stream drives all updates.
+  }
+
+  @override
+  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
+    await _positionSub?.cancel();
+    _positionSub = null;
   }
 }

@@ -9,6 +9,33 @@ enum ProfileStatus {
   error,
 }
 
+/// Organisation membership details.
+class OrgMembership extends Equatable {
+  final String orgId;
+  final String orgName;
+  final String orgType;
+  final DateTime memberSince;
+
+  const OrgMembership({
+    required this.orgId,
+    required this.orgName,
+    required this.orgType,
+    required this.memberSince,
+  });
+
+  factory OrgMembership.fromJson(Map<String, dynamic> json) => OrgMembership(
+        orgId: json['orgId'] as String? ?? json['id'] as String? ?? '',
+        orgName: json['orgName'] as String? ?? json['name'] as String? ?? '',
+        orgType: json['orgType'] as String? ?? json['type'] as String? ?? '',
+        memberSince: DateTime.tryParse(
+                json['memberSince'] as String? ?? json['joinedAt'] as String? ?? '') ??
+            DateTime.now(),
+      );
+
+  @override
+  List<Object?> get props => [orgId, orgName, orgType, memberSince];
+}
+
 /// A single emergency contact as returned by the API.
 class EmergencyContactModel extends Equatable {
   final String name;
@@ -71,6 +98,15 @@ class ProfileState extends Equatable {
   final bool pushEnabled;
   final bool emailEnabled;
 
+  /// Whether the server has at least one valid (name + phone) emergency
+  /// contact on file as of the last successful load/save. Unlike [contacts]
+  /// — which also holds unsaved local edits — this only reflects persisted
+  /// state, so it's safe to use as a navigation gate.
+  final bool hasEmergencyContact;
+
+  /// Current org membership, or null if not in an org.
+  final OrgMembership? orgMembership;
+
   const ProfileState({
     required this.status,
     this.errorMessage,
@@ -80,6 +116,8 @@ class ProfileState extends Equatable {
     this.contacts = const [],
     this.pushEnabled = true,
     this.emailEnabled = true,
+    this.hasEmergencyContact = false,
+    this.orgMembership,
   });
 
   /// Initial unloaded state.
@@ -91,7 +129,9 @@ class ProfileState extends Equatable {
         phone = null,
         contacts = const [],
         pushEnabled = true,
-        emailEnabled = true;
+        emailEnabled = true,
+        hasEmergencyContact = false,
+        orgMembership = null;
 
   ProfileState copyWith({
     ProfileStatus? status,
@@ -102,6 +142,9 @@ class ProfileState extends Equatable {
     List<EmergencyContactModel>? contacts,
     bool? pushEnabled,
     bool? emailEnabled,
+    bool? hasEmergencyContact,
+    OrgMembership? orgMembership,
+    bool clearOrgMembership = false,
   }) {
     return ProfileState(
       status: status ?? this.status,
@@ -112,6 +155,9 @@ class ProfileState extends Equatable {
       contacts: contacts ?? this.contacts,
       pushEnabled: pushEnabled ?? this.pushEnabled,
       emailEnabled: emailEnabled ?? this.emailEnabled,
+      hasEmergencyContact: hasEmergencyContact ?? this.hasEmergencyContact,
+      orgMembership:
+          clearOrgMembership ? null : (orgMembership ?? this.orgMembership),
     );
   }
 
@@ -125,5 +171,7 @@ class ProfileState extends Equatable {
         contacts,
         pushEnabled,
         emailEnabled,
+        hasEmergencyContact,
+        orgMembership,
       ];
 }
