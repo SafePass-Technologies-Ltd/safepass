@@ -16,3 +16,9 @@
     @apply bg-[rgb(var(--background))] text-[rgb(var(--foreground))];
   }
 }
+
+/* Toast auto-dismiss progress bar animation — drains from 100% → 0% width. */
+@keyframes shrink {
+  from { width: 100%; }
+  to   { width: 0%; }
+}

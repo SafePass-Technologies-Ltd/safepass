@@ -6,9 +6,9 @@
  * route handlers (auth context already resolved).
  */
 import { v4 as uuidv4 } from 'uuid';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { trips, wallets, walletTransactions, users, organizations, tripTagInvites } from '../db/schema';
+import { trips, wallets, walletTransactions, users, organizations, tripTagInvites, messages } from '../db/schema';
 import { env } from '../env';
 import type { Location } from '../db/schema/types';
 import {
@@ -810,12 +810,40 @@ export async function getUserTrips(
 }
 
 /**
- * List all active trips (for admin dashboards).
+ * Row shape returned by getActiveTrips — includes an unreadCount field
+ * representing messages sent by the traveller that the admin has not yet read.
  */
-export async function getActiveTrips(): Promise<typeof trips.$inferSelect[]> {
-  return db.query.trips.findMany({
-    where: inArray(trips.status, ACTIVE_STATUSES),
-    orderBy: desc(trips.createdAt),
-    limit: 200,
-  });
+export type ActiveTripRow = typeof trips.$inferSelect & { unreadCount: number };
+
+/**
+ * List all active trips (for admin dashboards).
+ *
+ * Each trip is enriched with `unreadCount` — the number of messages on that
+ * trip where senderRole = 'user' and isRead = false. This lets the admin list
+ * surface which trips have pending messages without a separate query.
+ */
+export async function getActiveTrips(): Promise<ActiveTripRow[]> {
+  // Use a correlated subquery so the count is computed in a single round-trip.
+  //
+  // NOTE: ${trips.id} inside sql`` resolves to the Drizzle column descriptor
+  // ("trips"."id") which is NOT a correlated reference when the outer table has
+  // no alias. We reference the outer table's column via sql.raw so the database
+  // treats it as a correlated reference to the outer trips row.
+  const rows = await db
+    .select({
+      trip: trips,
+      unreadCount: sql<number>`(
+        SELECT COUNT(*)::int
+        FROM ${messages} m
+        WHERE m.trip_id = trips.id
+          AND m.sender_role = 'user'
+          AND m.is_read = false
+      )`.as('unread_count'),
+    })
+    .from(trips)
+    .where(inArray(trips.status, ACTIVE_STATUSES))
+    .orderBy(desc(trips.createdAt))
+    .limit(200);
+
+  return rows.map((r) => ({ ...r.trip, unreadCount: r.unreadCount }));
 }

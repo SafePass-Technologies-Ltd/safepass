@@ -64,6 +64,8 @@ class AppRoutes {
   static const String incidentReport = '/incidents/report';
   static const String messages = '/messages';
   static const String messageThread = '/messages/:conversationId';
+  // Trip-scoped message thread — used for push notification deep links.
+  static const String tripMessages = '/trips/:tripId/messages';
   static const String markerAction = '/markers/:markerId';
 }
 
@@ -266,8 +268,22 @@ GoRouter createRouter(
               final participantName =
                   state.uri.queryParameters['name'] ?? 'Messages';
               return MessageThreadScreen(
-                conversationId: conversationId,
+                tripId: conversationId,
                 participantName: participantName,
+              );
+            },
+          ),
+          // Trip-scoped message route — used by push notification deep links.
+          // Navigating to /trips/:tripId/messages opens the chat thread for
+          // that specific trip, regardless of whether it's the active trip.
+          GoRoute(
+            path: '/trips/:tripId/messages',
+            name: 'tripMessages',
+            builder: (context, state) {
+              final tripId = state.pathParameters['tripId']!;
+              return MessageThreadScreen(
+                tripId: tripId,
+                participantName: 'Monitoring Officer',
               );
             },
           ),

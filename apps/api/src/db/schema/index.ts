@@ -45,6 +45,9 @@ export { transportVehicles, drivers, documents } from './transport';
 export { subscriptionRequests } from './subscription-requests';
 export { subscriptionRequestStatusEnum } from './enums';
 
+// FCM push notification tokens
+export { fcmTokens } from './fcm-tokens';
+
 // Org membership, invite tokens, scheduled trips, trip tag invites
 export {
   orgSlots,

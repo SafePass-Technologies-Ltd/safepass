@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Search, Filter, RotateCcw, MapPin, Clock } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import type { IncomingMessage } from '@/hooks/useDashboardWebSocket';
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -15,7 +16,6 @@ import { apiClient } from '@/lib/api-client';
 interface TripData {
   id: string;
   userId: string;
-  tripMode: 'driver' | 'passenger';
   origin: { name?: string; latitude: number; longitude: number };
   destination: { name?: string; latitude: number; longitude: number };
   status: TripStatus;
@@ -23,6 +23,8 @@ interface TripData {
   estimatedArrival: string | null;
   vehiclePlateNumber: string | null;
   transportCompany: string | null;
+  /** Count of unread messages from the traveller (senderRole='user', isRead=false). */
+  unreadCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,6 +98,26 @@ export default function TripManagementPage() {
   useEffect(() => {
     fetchTrips();
   }, [fetchTrips]);
+
+  // Real-time per-trip unread count — when a traveller sends a message the
+  // layout broadcasts 'sp:new_message' (senderRole is always 'user' here).
+  // Find the matching row by tripId and bump its unreadCount immediately so
+  // the badge updates without waiting for a manual refresh.
+  useEffect(() => {
+    function onNewMessage(evt: Event) {
+      const msg = (evt as CustomEvent<IncomingMessage>).detail;
+      if (!msg.tripId) return;
+      setTrips((prev) =>
+        prev.map((trip) =>
+          trip.id === msg.tripId
+            ? { ...trip, unreadCount: trip.unreadCount + 1 }
+            : trip
+        )
+      );
+    }
+    window.addEventListener('sp:new_message', onNewMessage);
+    return () => window.removeEventListener('sp:new_message', onNewMessage);
+  }, []);
 
   // Client-side search filter
   const displayedTrips = searchQuery
@@ -196,7 +218,7 @@ export default function TripManagementPage() {
                 <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                   <th className="px-6 py-3">Route</th>
                   <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Mode</th>
+                  <th className="px-6 py-3">Unread</th>
                   <th className="px-6 py-3">Vehicle / Company</th>
                   <th className="px-6 py-3">Started</th>
                 </tr>
@@ -235,9 +257,15 @@ export default function TripManagementPage() {
                         </span>
                       </td>
 
-                      {/* Mode */}
-                      <td className="px-6 py-3 text-sm text-slate-600 capitalize">
-                        {trip.tripMode}
+                      {/* Unread messages from traveller */}
+                      <td className="px-6 py-3">
+                        {trip.unreadCount > 0 ? (
+                          <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-semibold text-white">
+                            {trip.unreadCount}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-slate-400">—</span>
+                        )}
                       </td>
 
                       {/* Vehicle / Company */}

@@ -5,10 +5,11 @@
  * visibility and routing (user ↔ monitoring_officer).
  */
 import { v4 as uuidv4 } from 'uuid';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, ne } from 'drizzle-orm';
 import { db } from '../db';
 import { messages, trips } from '../db/schema';
 import { broadcastNewMessage } from './websocket.service';
+import { sendPushToUser, sendPushToRole } from './push.service';
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -63,7 +64,14 @@ export async function sendMessage(
     senderId: message.senderId,
     senderRole: message.senderRole,
     content: message.content,
+    messageType: message.messageType,
     createdAt: message.createdAt.toISOString(),
+  });
+
+  // Send push notification to the other party.
+  // Non-fatal: push failure must never block message delivery.
+  _sendMessagePush(input.tripId, message).catch((err) => {
+    console.error('[message.service] Push notification failed:', err);
   });
 
   return message;
@@ -90,22 +98,66 @@ export async function getTripMessages(
 }
 
 /**
- * Mark all messages in a trip as read for a specific recipient role.
- * For example, when a monitoring officer opens a trip, mark all 'user'
- * messages as read for them.
+ * Mark messages in a trip as read for a specific recipient role.
+ *
+ * Only marks messages where senderRole != readByRole, i.e. messages that
+ * were NOT sent by the reader. This prevents marking your own outbound
+ * messages as "read" from your own perspective.
+ *
+ * @param tripId     - UUID of the trip whose messages should be marked read.
+ * @param readByRole - The role of the person opening the conversation.
  */
 export async function markMessagesRead(
   tripId: string,
   readByRole: 'user' | 'admin' | 'monitoring_officer'
 ): Promise<void> {
-  // Only mark messages NOT sent by the reader as read.
   await db
     .update(messages)
     .set({ isRead: true })
     .where(
       and(
         eq(messages.tripId, tripId),
-        eq(messages.isRead, false)
+        eq(messages.isRead, false),
+        // Only mark messages sent by someone other than the reader.
+        ne(messages.senderRole, readByRole)
       )
     );
+}
+
+// ────────────────────────────────────────────────────────────
+// Internal helpers
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Determine the push notification recipient and send.
+ *
+ * - User sent the message → notify monitoring_officer role.
+ * - Officer / admin sent → notify the trip's traveller.
+ */
+async function _sendMessagePush(
+  tripId: string,
+  message: typeof messages.$inferSelect
+): Promise<void> {
+  if (message.senderRole === 'user') {
+    await sendPushToRole(
+      'monitoring_officer',
+      'New message from traveller',
+      message.content,
+      { tripId, type: 'new_message' }
+    );
+  } else {
+    // Look up the trip's userId so we can target the traveller directly.
+    const trip = await db.query.trips.findFirst({
+      where: eq(trips.id, tripId),
+      columns: { userId: true },
+    });
+    if (trip) {
+      await sendPushToUser(
+        trip.userId,
+        'Message from monitoring officer',
+        message.content,
+        { tripId, type: 'new_message' }
+      );
+    }
+  }
 }

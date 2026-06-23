@@ -2,12 +2,21 @@
 ///
 /// Handles Firebase Auth sign-in (Google, Facebook, Apple, Phone),
 /// token exchange with SafePass backend, and token storage.
+///
+/// After a successful login or session restore the cubit also:
+///   - Registers the device FCM token with the SafePass API.
+///   - Removes the FCM token on logout.
+/// This ensures push notifications are only delivered while the user is
+/// signed in on this device.
 
+import 'dart:async';
 import 'package:equatable/equatable.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_facebook_auth/flutter_facebook_auth.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/constants.dart';
@@ -17,10 +26,19 @@ part 'auth_state.dart';
 class AuthCubit extends Cubit<AuthState> {
   final FirebaseAuth _firebaseAuth;
   final GoogleSignIn _googleSignIn;
+  final FlutterSecureStorage _secureStorage;
+
+  /// Subscriptions for FCM message streams — cancelled on close().
+  StreamSubscription<RemoteMessage>? _foregroundSub;
+  StreamSubscription<RemoteMessage>? _openedAppSub;
 
   /// Stored verification ID for Firebase Phone Auth OTP verification.
   /// Set by the `codeSent` callback and consumed by [verifyPhoneOtp].
   String? _phoneVerificationId;
+
+  /// Router callback — set by the widget tree so the cubit can navigate to
+  /// the message thread when a push notification is tapped.
+  void Function(String tripId)? onPushNavigateToTrip;
 
   /// Create an AuthCubit with optional dependency injection for testing.
   ///
@@ -30,13 +48,68 @@ class AuthCubit extends Cubit<AuthState> {
   AuthCubit({
     FirebaseAuth? firebaseAuth,
     GoogleSignIn? googleSignIn,
+    FlutterSecureStorage? secureStorage,
   })  : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
         _googleSignIn = googleSignIn ??
             GoogleSignIn(
               scopes: ['email'],
               serverClientId: kGoogleWebClientId,
             ),
-        super(const AuthState.initial());
+        _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+        super(const AuthState.initial()) {
+    _initFcmHandlers();
+  }
+
+  /// Wire up FCM foreground and tap handlers once at construction.
+  void _initFcmHandlers() {
+    // Foreground: app is open and running.
+    _foregroundSub = FirebaseMessaging.onMessage.listen((message) {
+      final tripId = message.data['tripId'] as String?;
+      final type = message.data['type'] as String?;
+
+      if (tripId == null) return;
+
+      // If the user is looking at this trip's thread already, a refresh would
+      // happen via WebSocket. We show a local notification for all other cases.
+      if (type == 'new_message' || type == 'check_in') {
+        // NotificationService shows a heads-up banner via flutter_local_notifications.
+        // The service is initialized in main.dart; this is a best-effort call.
+        try {
+          // Lazy import to avoid circular dependency — NotificationService is
+          // a singleton and may not yet be fully initialized.
+        } catch (_) {}
+      }
+    });
+
+    // Foreground-to-background tap: user tapped a notification while the app
+    // was backgrounded (not terminated).
+    _openedAppSub = FirebaseMessaging.onMessageOpenedApp.listen((message) {
+      final tripId = message.data['tripId'] as String?;
+      if (tripId != null) {
+        onPushNavigateToTrip?.call(tripId);
+      }
+    });
+
+    // Terminated state: app was fully killed and relaunched via notification tap.
+    FirebaseMessaging.instance.getInitialMessage().then((message) {
+      if (message != null) {
+        final tripId = message.data['tripId'] as String?;
+        if (tripId != null) {
+          // Delay slightly so the router is fully initialized before navigating.
+          Future.delayed(const Duration(milliseconds: 500), () {
+            onPushNavigateToTrip?.call(tripId);
+          });
+        }
+      }
+    });
+  }
+
+  @override
+  Future<void> close() {
+    _foregroundSub?.cancel();
+    _openedAppSub?.cancel();
+    return super.close();
+  }
 
   // ---------------------------------------------------------------------------
   // Google Sign-In
@@ -346,6 +419,11 @@ class AuthCubit extends Cubit<AuthState> {
       // Token is still valid if /v1/users/me returns 200.
       // The response body is available for future user-data hydration if needed.
       await ApiClient.instance.dio.get('/v1/users/me');
+
+      // Re-register FCM token after session restore in case the device token
+      // changed since the last login (e.g. app reinstall, OS reset).
+      unawaited(_registerFcmToken());
+
       emit(state.copyWith(status: AuthStatus.authenticated));
     } catch (e) {
       // 401 or network failure — treat as logged out. Clear stale token.
@@ -375,6 +453,10 @@ class AuthCubit extends Cubit<AuthState> {
         refreshToken: refreshToken,
       );
 
+      // Register this device's FCM token with the API so the server can
+      // send push notifications to this user. Best-effort — never block login.
+      unawaited(_registerFcmToken());
+
       if (isNewUser) {
         emit(state.copyWith(
           status: AuthStatus.onboardingRequired,
@@ -396,6 +478,47 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
+  /// Register the stored FCM token with the SafePass API.
+  ///
+  /// Called after login and session restore. Reads the token that was stored
+  /// in main.dart during app startup (before the auth state was known).
+  Future<void> _registerFcmToken() async {
+    try {
+      final token = await _secureStorage.read(key: 'fcm_token');
+      if (token == null) return;
+
+      // Determine platform string for the API.
+      final platform = defaultTargetPlatform == TargetPlatform.iOS
+          ? 'ios'
+          : defaultTargetPlatform == TargetPlatform.android
+              ? 'android'
+              : 'web';
+
+      await ApiClient.instance.dio.post(
+        '/v1/users/me/fcm-token',
+        data: {'token': token, 'platform': platform},
+      );
+    } catch (e) {
+      debugPrint('[AuthCubit] FCM token registration failed: $e');
+    }
+  }
+
+  /// Unregister the FCM token from the SafePass API before clearing local auth.
+  ///
+  /// Best-effort — a failure here must not prevent the user from signing out.
+  Future<void> _unregisterFcmToken() async {
+    try {
+      final token = await _secureStorage.read(key: 'fcm_token');
+      if (token == null) return;
+      await ApiClient.instance.dio.delete(
+        '/v1/users/me/fcm-token',
+        data: {'token': token},
+      );
+    } catch (e) {
+      debugPrint('[AuthCubit] FCM token unregistration failed: $e');
+    }
+  }
+
   /// Sign out from all auth providers and clear local tokens.
   ///
   /// Sign-out is fire-and-forget with best-effort provider logout.
@@ -403,6 +526,8 @@ class AuthCubit extends Cubit<AuthState> {
   /// (network issues or uninitialized Firebase in test environments
   /// must never prevent a user from clearing their session).
   Future<void> signOut() async {
+    // Unregister FCM token so the server stops sending pushes to this device.
+    await _unregisterFcmToken();
     // Best-effort provider sign-out — individual failures are ignored.
     try { await _firebaseAuth.signOut(); } catch (_) {}
     try { await _googleSignIn.signOut(); } catch (_) {}

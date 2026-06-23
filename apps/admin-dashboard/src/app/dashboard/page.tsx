@@ -7,18 +7,22 @@
 /// currentLocation field from the REST response.
 'use client';
 
-import { useState } from 'react';
-import { MapPin, AlertTriangle, Users, Activity } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { MapPin, AlertTriangle, Users, Activity, MessageCircle } from 'lucide-react';
 import { useActiveTrips } from '@/hooks/useActiveTrips';
-import { useTripWebSocket } from '@/hooks/useTripWebSocket';
+import { useDashboardWs } from '@/hooks/useDashboardWebSocket';
 import LiveTripMap from '@/components/map/live-trip-map';
 import type { ActiveTrip } from '@/hooks/useActiveTrips';
+import { apiClient } from '@/lib/api-client';
 
 export default function DashboardPage() {
   // Poll for trip metadata at a slower cadence — position updates come via WS.
   const { trips, isLoading, error, isRefreshing } = useActiveTrips(30_000);
-  const { livePositions, connected } = useTripWebSocket();
+  // Read livePositions and connected from the layout's shared WebSocket context.
+  // useDashboardWs() reads DashboardWsContext — no second connection is opened.
+  const { livePositions, connected } = useDashboardWs();
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState<number | null>(null);
 
   // Overlay live WebSocket GPS positions on top of the REST trip data.
   // The WebSocket position wins when both sources have a value for the same trip.
@@ -37,6 +41,34 @@ export default function DashboardPage() {
     };
   });
 
+  // Poll unread message count every 60s for the badge stat card.
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCount = () => {
+      apiClient<{ count: number }>('/v1/admin/messages/unread-count')
+        .then((data) => { if (!cancelled) setUnreadCount(data.count); })
+        .catch(() => { /* non-blocking */ });
+    };
+    fetchCount();
+    const interval = setInterval(fetchCount, 60_000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Real-time unread count update — increment immediately when a traveller
+  // sends a message without waiting for the next 60s poll cycle.
+  // The layout dispatches 'sp:new_message' for every new_message WS event
+  // where senderRole === 'user', so no extra filtering is needed here.
+  useEffect(() => {
+    function onNewMessage(_evt: Event) {
+      setUnreadCount((prev) => (prev === null ? 1 : prev + 1));
+    }
+    window.addEventListener('sp:new_message', onNewMessage);
+    return () => window.removeEventListener('sp:new_message', onNewMessage);
+  }, []);
+
   // ── Derived stats ──────────────────────────────────────
   const activeCount = trips.filter(
     (t) => t.status === 'active' || t.status === 'delayed'
@@ -53,7 +85,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Stats cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatsCard
           title="Active Trips"
           value={isLoading ? '...' : `${activeCount}`}
@@ -74,6 +106,20 @@ export default function DashboardPage() {
           change={`${trips.length} trips in progress`}
           changeType="neutral"
           icon={Users}
+        />
+        {/* Unread messages badge — drives awareness without a separate sidebar item */}
+        <StatsCard
+          title="Unread Messages"
+          value={unreadCount === null ? '...' : `${unreadCount}`}
+          change={
+            unreadCount === null
+              ? 'Loading…'
+              : unreadCount > 0
+              ? 'From travellers — open a trip to reply'
+              : 'All caught up'
+          }
+          changeType={unreadCount !== null && unreadCount > 0 ? 'negative' : 'neutral'}
+          icon={MessageCircle}
         />
         <StatsCard
           title="Live Feed"

@@ -150,6 +150,71 @@ function Badge({ bg, text, label }: { bg: string; text: string; label: string })
 // Messages section
 // =============================================================================
 
+// ────────────────────────────────────────────────────────────
+// Minimal WebSocket hook scoped to a single trip for the messages section.
+// Connects once, subscribes to the trip, and calls onMessage on new_message events.
+// ────────────────────────────────────────────────────────────
+
+function useTripMessages(tripId: string, onMessage: (msg: Message) => void) {
+  const onMessageRef = useRef(onMessage);
+  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
+
+  useEffect(() => {
+    const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3000/v1/ws';
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+    if (!token) return;
+
+    let ws: WebSocket | null = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
+
+    ws.onopen = () => {
+      ws?.send(JSON.stringify({ type: 'subscribe', tripId }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const envelope = JSON.parse(event.data as string) as {
+          type: string;
+          tripId?: string;
+          payload?: unknown;
+        };
+        if (envelope.type === 'new_message' && envelope.tripId === tripId && envelope.payload) {
+          const payload = envelope.payload as {
+            id: string;
+            senderId: string;
+            senderRole: SenderRole;
+            content: string;
+            messageType?: MessageType;
+            createdAt: string;
+          };
+          onMessageRef.current({
+            id: payload.id,
+            tripId,
+            senderId: payload.senderId,
+            senderRole: payload.senderRole,
+            content: payload.content,
+            messageType: payload.messageType ?? 'text',
+            isRead: false,
+            createdAt: payload.createdAt,
+          });
+        }
+      } catch {
+        // Ignore parse errors.
+      }
+    };
+
+    ws.onerror = () => ws?.close();
+    ws.onclose = () => { ws = null; };
+
+    return () => {
+      ws?.close();
+    };
+  }, [tripId]);
+}
+
+// =============================================================================
+// Messages section
+// =============================================================================
+
 function MessagesSection({ tripId }: { tripId: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
@@ -160,8 +225,9 @@ function MessagesSection({ tripId }: { tripId: string }) {
 
   const fetchMessages = useCallback(async () => {
     try {
+      // Use the trip-scoped endpoint which is available to both officers and users.
       const data = await apiClient<{ messages: Message[] }>(
-        `/v1/messages/conversations/${tripId}/messages`
+        `/v1/trips/${tripId}/messages`
       );
       setMessages(data.messages ?? []);
       setError(null);
@@ -174,7 +240,20 @@ function MessagesSection({ tripId }: { tripId: string }) {
 
   useEffect(() => {
     fetchMessages();
-  }, [fetchMessages]);
+    // Mark user messages as read now that an officer has opened this trip.
+    apiClient(`/v1/trips/${tripId}/messages/read`, { method: 'POST' }).catch(() => {});
+  }, [fetchMessages, tripId]);
+
+  // Append incoming WebSocket messages without a full refetch.
+  const handleIncomingMessage = useCallback((msg: Message) => {
+    setMessages((prev) => {
+      // Deduplicate: if we somehow already have this id (e.g. optimistic update), skip.
+      if (prev.some((m) => m.id === msg.id)) return prev;
+      return [...prev, msg];
+    });
+  }, []);
+
+  useTripMessages(tripId, handleIncomingMessage);
 
   // Scroll to bottom whenever new messages arrive.
   useEffect(() => {
@@ -188,10 +267,10 @@ function MessagesSection({ tripId }: { tripId: string }) {
 
     setSending(true);
     try {
-      // POST /v1/messages expects { conversationId, content }
-      const msg = await apiClient<Message>('/v1/messages', {
+      // POST /v1/trips/:tripId/messages — trip-scoped endpoint, handles role detection.
+      const msg = await apiClient<Message>(`/v1/trips/${tripId}/messages`, {
         method: 'POST',
-        body: { conversationId: tripId, content: text },
+        body: { content: text, messageType: 'text' },
       });
       setMessages((prev) => [...prev, msg]);
       setContent('');

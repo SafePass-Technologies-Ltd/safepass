@@ -7,7 +7,10 @@ import {
   UserVehicleUpdateSchema,
 } from '@safepass/shared';
 import { z } from 'zod';
+import { eq, and } from 'drizzle-orm';
 import { authMiddleware } from '../middleware/auth';
+import { db } from '../db';
+import { fcmTokens } from '../db/schema';
 import {
   getUserById,
   updateUser,
@@ -129,5 +132,70 @@ userRoutes.delete('/me/vehicles/:vehicleId', async (c) => {
 
   return c.json({ success: true }, 200);
 });
+
+// =============================================================================
+// FCM Push Tokens
+// =============================================================================
+
+const FcmTokenSchema = z.object({
+  token: z.string().min(1).max(500),
+  platform: z.enum(['android', 'ios', 'web']),
+});
+
+/**
+ * POST /v1/users/me/fcm-token
+ * Register or refresh a device FCM token for the authenticated user.
+ * Uses an upsert (insert on conflict(token) do update) so re-registrations
+ * after app reinstall or token rotation are handled cleanly.
+ */
+userRoutes.post('/me/fcm-token', zValidator('json', FcmTokenSchema), async (c) => {
+  const user = c.get('user') as { sub: string };
+  const { token, platform } = c.req.valid('json');
+
+  // Upsert: if this token already exists (same physical device re-registering),
+  // update the userId and platform to reflect any changes.
+  await db
+    .insert(fcmTokens)
+    .values({
+      userId: user.sub,
+      token,
+      platform,
+    })
+    .onConflictDoUpdate({
+      target: fcmTokens.token,
+      set: {
+        userId: user.sub,
+        platform,
+        updatedAt: new Date(),
+      },
+    });
+
+  return c.json({ status: 'registered' }, 200);
+});
+
+/**
+ * DELETE /v1/users/me/fcm-token
+ * Unregister a specific device FCM token (called on logout).
+ * Body: { token: string }
+ */
+userRoutes.delete(
+  '/me/fcm-token',
+  zValidator('json', z.object({ token: z.string().min(1) })),
+  async (c) => {
+    const user = c.get('user') as { sub: string };
+    const { token } = c.req.valid('json');
+
+    await db
+      .delete(fcmTokens)
+      .where(
+        and(
+          eq(fcmTokens.userId, user.sub),
+          eq(fcmTokens.token, token)
+        )
+      );
+
+    return c.json({ status: 'removed' }, 200);
+  }
+);
 
 export { userRoutes };

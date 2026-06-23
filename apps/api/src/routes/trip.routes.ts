@@ -24,6 +24,7 @@ import {
   createTripTagInvite,
   acceptTripTagInvite,
   updateTripVehicleFields,
+  type ActiveTripRow,
 } from '../services/trip.service';
 
 // ────────────────────────────────────────────────────────────
@@ -307,7 +308,7 @@ adminTripRoutes.use('*', requireRole('admin', 'monitoring_officer', 'super_admin
  * the response — trips will simply show currentLocation: null in that case.
  */
 adminTripRoutes.get('/active', async (c) => {
-  const activeTrips = await getActiveTrips();
+  const activeTrips: ActiveTripRow[] = await getActiveTrips();
 
   const timeout = new Promise<Map<string, TripLocationRecord>>((resolve) =>
     setTimeout(() => resolve(new Map()), 3_000)

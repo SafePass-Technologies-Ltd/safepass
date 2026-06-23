@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../app/theme.dart';
 import '../cubit/emergency_cubit.dart';
+import '../../messaging/screens/message_thread_screen.dart';
 
 class EmergencyScreen extends StatelessWidget {
   final String tripId;
@@ -250,6 +251,28 @@ class _ActiveEmergencyViewState extends State<_ActiveEmergencyView> {
                     label: const Text("Check In (I'm Safe)"),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.safetyGreen,
+                      minimumSize: const Size(double.infinity, 52),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Message Officer button — lets the user communicate with
+                  // their monitoring officer directly from the emergency screen.
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => MessageThreadScreen(
+                            tripId: widget.tripId,
+                            participantName: 'Monitoring Officer',
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.chat_bubble_outline),
+                    label: const Text('Message Officer'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.darkSlate,
+                      side: const BorderSide(color: AppColors.darkSlate),
                       minimumSize: const Size(double.infinity, 52),
                     ),
                   ),

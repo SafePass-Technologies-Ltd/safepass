@@ -11,9 +11,12 @@
 ///      to the background GPS service without starting a duplicate instance.
 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:go_router/go_router.dart';
 import 'package:safepass_mobile/firebase_options.dart';
 import 'app/theme.dart';
 import 'app/router.dart';
@@ -27,12 +30,48 @@ import 'features/trips/cubit/trip_registration_cubit.dart';
 import 'features/trips/cubit/trip_monitoring_cubit.dart';
 import 'features/wallet/cubit/wallet_cubit.dart';
 
+/// FCM background message handler — must be a top-level function.
+///
+/// Runs in a separate isolate when the app is terminated or backgrounded.
+/// We only need to update the notification badge here; actual navigation
+/// is handled by onMessageOpenedApp in the foreground widget.
+@pragma('vm:entry-point')
+Future<void> _fcmBackgroundHandler(RemoteMessage message) async {
+  // Firebase must be initialized in the background isolate before use.
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // No UI work here — the system notification is shown automatically by FCM.
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // ── Firebase Messaging setup ─────────────────────────────────────────────
+  FirebaseMessaging.onBackgroundMessage(_fcmBackgroundHandler);
+
+  final messaging = FirebaseMessaging.instance;
+
+  // Request permission (iOS requires explicit prompt; Android 13+ also needs it).
+  await messaging.requestPermission(
+    alert: true,
+    badge: true,
+    sound: true,
+  );
+
+  // Retrieve the FCM registration token and stash it in secure storage so
+  // AuthCubit can register it with the SafePass API after login.
+  try {
+    final token = await messaging.getToken();
+    if (token != null) {
+      const storage = FlutterSecureStorage();
+      await storage.write(key: 'fcm_token', value: token);
+    }
+  } catch (_) {
+    // Non-fatal — push will not work but the app should still launch.
+  }
 
   ApiClient.instance.initialize(baseUrl: kApiBaseUrl);
 
@@ -97,6 +136,18 @@ class _AppBodyState extends State<_AppBody> {
     _authCubit = context.read<AuthCubit>();
     _profileCubit = context.read<ProfileCubit>();
     _tripMonitoringCubit = context.read<TripMonitoringCubit>();
+
+    // Wire the push-notification deep-link callback so AuthCubit can navigate
+    // to the correct trip's message thread when a notification is tapped.
+    _authCubit.onPushNavigateToTrip = (tripId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          // Navigate to the trip-scoped message thread.
+          // go_router's context.go is safe here because the widget is mounted.
+          context.push('/trips/$tripId/messages');
+        }
+      });
+    };
 
     // Attempt to restore the previous session from stored tokens.
     // If a valid token exists, this emits AuthStatus.authenticated which

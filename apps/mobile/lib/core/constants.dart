@@ -7,6 +7,16 @@ const String kApiBaseUrl = String.fromEnvironment(
   defaultValue: 'http://10.0.2.2:3000', // Android emulator → host localhost
 );
 
+/// WebSocket base URL — derived from kApiBaseUrl by swapping the scheme.
+/// Override with --dart-define=WS_BASE_URL=ws://... for production.
+final String kWsBaseUrl = String.fromEnvironment(
+  'WS_BASE_URL',
+  defaultValue: kApiBaseUrl
+      .replaceFirst('https://', 'wss://')
+      .replaceFirst('http://', 'ws://') +
+      '/v1/ws',
+);
+
 /// Trip pricing.
 const int kTripPriceNaira = 2000;
 

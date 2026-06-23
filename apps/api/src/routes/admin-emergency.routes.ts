@@ -17,7 +17,11 @@ import {
   escalations,
   checkIns,
   trips,
+  messages,
 } from '../db/schema';
+import { sendMessage } from '../services/message.service';
+import { sendPushToUser } from '../services/push.service';
+import { broadcastTripStatus } from '../services/websocket.service';
 
 // ────────────────────────────────────────────────────────────
 // Emergency Events
@@ -281,7 +285,114 @@ checkinRoutes.post('/', zValidator('json', CheckInCreateSchema), async (c) => {
     })
     .returning();
 
+  // When the check-in method is 'message', create a Message record so the
+  // traveller sees the officer's contact attempt inside the chat thread.
+  if (data.method === 'message') {
+    // Look up the trip owner so we can push-notify them.
+    const trip = await db.query.trips.findFirst({
+      where: eq(trips.id, data.tripId),
+      columns: { userId: true },
+    });
+
+    // Create message in the trip thread — visible to both parties.
+    // Non-fatal: message/push failures must not block check-in creation.
+    const messageContent =
+      data.notes?.trim() || 'Monitoring check-in: Are you okay?';
+
+    sendMessage({
+      tripId: data.tripId,
+      senderId: user.sub,
+      senderRole: 'monitoring_officer',
+      content: messageContent,
+      messageType: 'check_in',
+    })
+      .then(() => {
+        if (trip) {
+          return sendPushToUser(
+            trip.userId,
+            'Monitoring Check-in',
+            'Your officer sent you a message',
+            { tripId: data.tripId, type: 'check_in' }
+          );
+        }
+      })
+      .catch((err) => {
+        console.error('[checkin] message/push failed:', err);
+      });
+  }
+
   return c.json(checkin, 201);
 });
 
-export { emergencyRoutes, escalationRoutes, checkinRoutes };
+/**
+ * PATCH /v1/admin/checkins/:id
+ * Update check-in response status and optional notes.
+ * Broadcasts a WebSocket trip_status event so the dashboard reflects changes.
+ */
+const CheckInUpdateSchema = z.object({
+  responseStatus: z.enum([
+    'pending',
+    'confirmed_safe',
+    'no_response',
+    'concern_raised',
+  ]),
+  notes: z.string().optional(),
+});
+
+checkinRoutes.patch('/:id', zValidator('json', CheckInUpdateSchema), async (c) => {
+  const id = c.req.param('id');
+  const { responseStatus, notes } = c.req.valid('json');
+
+  const existing = await db.query.checkIns.findFirst({
+    where: eq(checkIns.id, id),
+  });
+
+  if (!existing) {
+    return c.json({ error: { code: 404, message: 'Check-in not found' } }, 404);
+  }
+
+  const [updated] = await db
+    .update(checkIns)
+    .set({
+      responseStatus,
+      ...(notes !== undefined ? { notes } : {}),
+    })
+    .where(eq(checkIns.id, id))
+    .returning();
+
+  // Broadcast a generic trip_status update so dashboard clients know to refresh.
+  broadcastTripStatus(existing.tripId, 'checkin_updated');
+
+  return c.json(updated, 200);
+});
+
+// ────────────────────────────────────────────────────────────
+// Admin Messages
+// ────────────────────────────────────────────────────────────
+
+const adminMessageRoutes = new Hono();
+adminMessageRoutes.use('*', authMiddleware);
+adminMessageRoutes.use('*', requireRole('admin', 'monitoring_officer', 'super_admin'));
+
+/**
+ * GET /v1/admin/messages/unread-count
+ * Returns the total count of unread messages sent by users across all active
+ * trips. Used as the notification badge count on the dashboard overview page.
+ */
+adminMessageRoutes.get('/unread-count', async (c) => {
+  // Count messages from travellers (senderRole = 'user') that have not yet
+  // been read, irrespective of which trip they belong to.
+  const rows = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.senderRole, 'user'),
+        eq(messages.isRead, false)
+      )
+    );
+
+  return c.json({ count: rows.length }, 200);
+});
+
+export { emergencyRoutes, escalationRoutes, checkinRoutes, adminMessageRoutes };

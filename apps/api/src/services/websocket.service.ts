@@ -315,14 +315,38 @@ export function broadcastTripStatus(tripId: string, status: string): void {
 
 export function broadcastNewMessage(
   tripId: string,
-  message: { id: string; senderId: string; senderRole: string; content: string; createdAt: string }
+  message: { id: string; senderId: string; senderRole: string; content: string; messageType?: string; createdAt: string }
 ): void {
-  broadcastToTrip(tripId, {
+  const msg: WsServerMessage = {
     type: 'new_message',
     tripId,
     payload: message,
     timestamp: new Date().toISOString(),
-  });
+  };
+
+  // Send to clients explicitly subscribed to this trip (e.g. an officer
+  // watching a specific trip's detail page).
+  broadcastToTrip(tripId, msg);
+
+  // Also push to all admin / super_admin / monitoring_officer connections
+  // that did NOT already receive the message via the trip subscription,
+  // so the dashboard receives new_message events without requiring per-trip
+  // subscriptions — matching the same pattern used by broadcastGpsUpdate.
+  const serialized = JSON.stringify(msg);
+  for (const [, clients] of connections) {
+    for (const client of clients) {
+      if (
+        ['admin', 'super_admin', 'monitoring_officer'].includes(client.role) &&
+        !client.subscribedTrips.has(tripId)
+      ) {
+        try {
+          client.ws.send(serialized);
+        } catch {
+          // Client may have disconnected.
+        }
+      }
+    }
+  }
 }
 
 export function broadcastEmergencyAlert(tripId: string): void {

@@ -21,6 +21,7 @@ import '../../../app/theme.dart';
 import '../cubit/trip_monitoring_cubit.dart';
 import '../../incidents/screens/incident_report_screen.dart' show IncidentReportArgs;
 import '../../../core/services/notification_service.dart';
+import '../../messaging/screens/message_thread_screen.dart';
 
 // ─── animation constants ────────────────────────────────────────────────────
 // Pulse animation duration for the "you are here" ring overlay.
@@ -407,6 +408,39 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         ),
 
         const Spacer(),
+
+        // ── Message officer button — opens the trip's chat thread ──
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [
+              BoxShadow(color: Color(0x1A000000), blurRadius: 8),
+            ],
+          ),
+          child: IconButton(
+            onPressed: () {
+              final tripId = state.trip?.id ?? widget.tripId;
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => MessageThreadScreen(
+                    tripId: tripId,
+                    participantName: 'Monitoring Officer',
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.chat_bubble_outline),
+            color: AppColors.primary,
+            tooltip: 'Message officer',
+            style: IconButton.styleFrom(
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.all(10),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
 
         // ── Cancel button — compact, destructive, top-right ──
         Container(

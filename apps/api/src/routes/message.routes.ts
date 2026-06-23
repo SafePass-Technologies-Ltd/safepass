@@ -143,7 +143,7 @@ messageRoutes.get('/trips/:tripId/messages', async (c) => {
  */
 messageRoutes.post(
   '/trips/:tripId/messages',
-  zValidator('json', MessageCreateSchema),
+  zValidator('json', MessageCreateSchema.omit({ tripId: true })),
   async (c) => {
     const user = c.get('user') as { sub: string; role: string };
     const tripId = c.req.param('tripId');

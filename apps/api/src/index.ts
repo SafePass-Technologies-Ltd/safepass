@@ -12,7 +12,7 @@ import { messageRoutes } from './routes/message.routes';
 import { incidentRoutes, adminIncidentRoutes } from './routes/incident.routes';
 import { markerRoutes, adminMarkerRoutes } from './routes/map-marker.routes';
 import { orgRoutes, adminOrgRoutes } from './routes/organization.routes';
-import { emergencyRoutes, escalationRoutes, checkinRoutes } from './routes/admin-emergency.routes';
+import { emergencyRoutes, escalationRoutes, checkinRoutes, adminMessageRoutes } from './routes/admin-emergency.routes';
 import { emergencyTriggerRoutes } from './routes/emergency.routes';
 import { adminUserRoutes } from './routes/admin-user.routes';
 import { roleUpgradeRoutes } from './routes/role-upgrade.routes';
@@ -154,6 +154,7 @@ adminV1.route('/organizations', adminOrgRoutes);
 adminV1.route('/emergencies', emergencyRoutes);
 adminV1.route('/escalations', escalationRoutes);
 adminV1.route('/checkins', checkinRoutes);
+adminV1.route('/messages', adminMessageRoutes);
 adminV1.route('/role-upgrades', roleUpgradeRoutes);
 adminV1.route('/subscriptions', adminSubscriptionRoutes);
 

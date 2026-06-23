@@ -1,161 +1,115 @@
+/// ConversationsScreen — redirects to the active trip's message thread.
+///
+/// On mobile, users access messaging exclusively through the Active Trip screen
+/// or via push notification deep links. There is no separate conversations list.
+///
+/// If the user has an active trip, this screen immediately pushes
+/// MessageThreadScreen for that trip. If there is no active trip it shows an
+/// informational empty state explaining how to access messages.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../app/theme.dart';
-import '../cubit/messaging_cubit.dart';
+import '../../trips/cubit/trip_monitoring_cubit.dart';
 import 'message_thread_screen.dart';
 
-class ConversationsScreen extends StatelessWidget {
+class ConversationsScreen extends StatefulWidget {
   const ConversationsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => MessagingCubit()..loadConversations(),
-      child: const _ConversationsView(),
-    );
-  }
+  State<ConversationsScreen> createState() => _ConversationsScreenState();
 }
 
-class _ConversationsView extends StatelessWidget {
-  const _ConversationsView();
+class _ConversationsScreenState extends State<ConversationsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Attempt to deep-link to the active trip thread on first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryRedirect());
+  }
+
+  /// Navigate to the active trip's message thread if one exists.
+  void _tryRedirect() {
+    if (!mounted) return;
+    final tripState = context.read<TripMonitoringCubit>().state;
+    final tripId = tripState.trip?.id;
+
+    final isActive = tripState.status == TripMonitorStatus.active ||
+        tripState.status == TripMonitorStatus.gpsUpdating;
+
+    if (isActive && tripId != null) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => MessageThreadScreen(
+            tripId: tripId,
+            participantName: 'Monitoring Officer',
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Messages')),
-      body: BlocBuilder<MessagingCubit, MessagingState>(
-        builder: (context, state) {
-          if (state.status == MessagingStatus.loading) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return BlocListener<TripMonitoringCubit, TripMonitoringState>(
+      // If a trip becomes active while on this screen (edge case), redirect.
+      listenWhen: (prev, curr) =>
+          prev.status != curr.status &&
+          (curr.status == TripMonitorStatus.active ||
+              curr.status == TripMonitorStatus.gpsUpdating),
+      listener: (context, state) => _tryRedirect(),
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Messages')),
+        body: BlocBuilder<TripMonitoringCubit, TripMonitoringState>(
+          builder: (context, state) {
+            // While the cubit is loading (initial state), show a spinner.
+            if (state.status == TripMonitorStatus.loading) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (state.status == MessagingStatus.error) {
+            // No active trip — show informational empty state.
             return Center(
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(32),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.error_outline,
-                        color: AppColors.emergencyRed, size: 48),
-                    const SizedBox(height: 16),
-                    Text(
-                      state.errorMessage ?? 'An error occurred',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.emergencyRed),
+                    const Icon(
+                      Icons.chat_bubble_outline,
+                      size: 64,
+                      color: AppColors.darkSlate,
                     ),
                     const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: () =>
-                          context.read<MessagingCubit>().loadConversations(),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-
-          if (state.conversations.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.chat_bubble_outline,
-                      size: 64, color: AppColors.darkSlate),
-                  SizedBox(height: 16),
-                  Text(
-                    'No conversations yet.',
-                    style: TextStyle(color: AppColors.darkSlate),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.separated(
-            itemCount: state.conversations.length,
-            separatorBuilder: (_, __) => const Divider(height: 1),
-            itemBuilder: (context, index) {
-              final conv = state.conversations[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                  child: Text(
-                    conv.participantName.isNotEmpty
-                        ? conv.participantName[0].toUpperCase()
-                        : '?',
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                title: Text(
-                  conv.participantName,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  conv.lastMessage,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.darkSlate),
-                ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      _formatTime(conv.updatedAt),
-                      style: const TextStyle(fontSize: 11, color: AppColors.darkSlate),
-                    ),
-                    if (conv.unreadCount > 0) ...[
-                      const SizedBox(height: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${conv.unreadCount}',
-                          style: const TextStyle(
-                            color: AppColors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                    const Text(
+                      'No active trip',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.darkSlate,
                       ),
-                    ],
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Messages with your monitoring officer appear here '
+                      'during an active trip. Start a trip to begin messaging.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.darkSlate),
+                    ),
+                    const SizedBox(height: 32),
+                    FilledButton.icon(
+                      onPressed: () => context.go('/trip/register'),
+                      icon: const Icon(Icons.add_location_alt_outlined),
+                      label: const Text('Register a Trip'),
+                    ),
                   ],
                 ),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => MessageThreadScreen(
-                      conversationId: conv.id,
-                      participantName: conv.participantName,
-                    ),
-                  ),
-                ),
-              );
-            },
-          );
-        },
+              ),
+            );
+          },
+        ),
       ),
     );
-  }
-
-  String _formatTime(String isoString) {
-    if (isoString.isEmpty) return '';
-    try {
-      final dt = DateTime.parse(isoString).toLocal();
-      final now = DateTime.now();
-      if (dt.day == now.day && dt.month == now.month && dt.year == now.year) {
-        return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-      }
-      return '${dt.day}/${dt.month}';
-    } catch (_) {
-      return '';
-    }
   }
 }
