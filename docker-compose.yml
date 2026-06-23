@@ -31,6 +31,14 @@ services:
       timeout: 5s
       retries: 5
 
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: safepass-dynamodb
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+
 volumes:
   pgdata:
   redisdata:
