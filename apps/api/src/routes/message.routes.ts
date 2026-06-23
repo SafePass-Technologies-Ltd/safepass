@@ -5,8 +5,12 @@
  */
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
+import { desc, sql } from 'drizzle-orm';
 import { MessageCreateSchema } from '@safepass/shared';
 import { authMiddleware } from '../middleware/auth';
+import { db } from '../db';
+import { messages, trips, users } from '../db/schema';
 import { getTripById } from '../services/trip.service';
 import {
   sendMessage,
@@ -16,6 +20,95 @@ import {
 
 const messageRoutes = new Hono();
 messageRoutes.use('*', authMiddleware);
+
+// ── Conversation-based endpoints (admin dashboard) ─────────────────────────
+
+/**
+ * GET /v1/messages/conversations
+ * Admin-only: returns all trips that have at least one message, formatted as
+ * conversations. The conversation id is the trip id.
+ */
+messageRoutes.get('/messages/conversations', async (c) => {
+  const user = c.get('user') as { sub: string; role: string };
+  const isAdmin = ['admin', 'monitoring_officer', 'super_admin'].includes(user.role);
+  if (!isAdmin) {
+    return c.json({ error: { code: 403, message: 'Admins only' } }, 403);
+  }
+
+  // Trips that have at least one message, newest activity first.
+  const rows = await db
+    .selectDistinctOn([messages.tripId], {
+      tripId: messages.tripId,
+      lastContent: messages.content,
+      lastAt: messages.createdAt,
+      userId: trips.userId,
+      userName: users.fullName,
+      userEmail: users.email,
+    })
+    .from(messages)
+    .innerJoin(trips, sql`${trips.id} = ${messages.tripId}`)
+    .innerJoin(users, sql`${users.id} = ${trips.userId}`)
+    .orderBy(messages.tripId, desc(messages.createdAt));
+
+  const conversations = rows.map((r) => ({
+    id: r.tripId,
+    updatedAt: r.lastAt.toISOString(),
+    lastMessage: { content: r.lastContent, createdAt: r.lastAt.toISOString() },
+    participants: [{ id: r.userId, name: r.userName, email: r.userEmail }],
+  }));
+
+  return c.json({ conversations });
+});
+
+/**
+ * GET /v1/messages/conversations/:tripId/messages
+ * Admin-only: messages for a specific trip conversation.
+ */
+messageRoutes.get('/messages/conversations/:tripId/messages', async (c) => {
+  const user = c.get('user') as { sub: string; role: string };
+  const isAdmin = ['admin', 'monitoring_officer', 'super_admin'].includes(user.role);
+  if (!isAdmin) {
+    return c.json({ error: { code: 403, message: 'Admins only' } }, 403);
+  }
+
+  const tripId = c.req.param('tripId');
+  const msgs = await getTripMessages(tripId);
+  return c.json({ messages: msgs.map((m) => ({ ...m, conversationId: m.tripId })) });
+});
+
+/**
+ * POST /v1/messages
+ * Admin-only: send a message to a trip conversation.
+ * Body: { conversationId: string (= tripId), content: string }
+ */
+messageRoutes.post(
+  '/messages',
+  zValidator('json', z.object({ conversationId: z.string().uuid(), content: z.string().min(1) })),
+  async (c) => {
+    const user = c.get('user') as { sub: string; role: string };
+    const isAdmin = ['admin', 'monitoring_officer', 'super_admin'].includes(user.role);
+    if (!isAdmin) {
+      return c.json({ error: { code: 403, message: 'Admins only' } }, 403);
+    }
+
+    const { conversationId, content } = c.req.valid('json');
+    const trip = await getTripById(conversationId);
+    if (!trip) {
+      return c.json({ error: { code: 404, message: 'Trip not found' } }, 404);
+    }
+
+    const message = await sendMessage({
+      tripId: conversationId,
+      senderId: user.sub,
+      senderRole: 'monitoring_officer',
+      content,
+    });
+
+    return c.json({ ...message, conversationId: message.tripId }, 201);
+  }
+);
+
+// ── Trip-scoped endpoints (mobile app) ────────────────────────────────────
 
 /**
  * GET /v1/trips/:tripId/messages

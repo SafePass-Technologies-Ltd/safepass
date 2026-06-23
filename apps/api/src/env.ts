@@ -29,6 +29,12 @@ const envSchema = z.object({
   // Resend — transactional email (role upgrade approval/rejection notices).
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().default('SafePass <onboarding@resend.dev>'),
+  // Google Maps — geocoding and place search
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  // DynamoDB — GPS location storage with 60-second TTL.
+  // Point to DynamoDB Local in development; omit in production to use real AWS DynamoDB.
+  DYNAMODB_ENDPOINT: z.string().url().optional(),
+  DYNAMODB_REGION: z.string().default('us-east-1'),
 });
 
 const parsed = envSchema.safeParse(process.env);

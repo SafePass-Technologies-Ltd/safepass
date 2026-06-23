@@ -9,6 +9,7 @@ import type { Server } from 'node:http';
 import { app } from './index';
 import { env } from './env';
 import { attachWebSocketServer } from './services/websocket.service';
+import { initDynamoTable } from './services/dynamo.service';
 
 console.log(`🚀 SafePass API starting...`);
 console.log(`   Environment: ${env.NODE_ENV}`);
@@ -24,3 +25,12 @@ const httpServer = serve(
 
 // Attach WebSocket server to the same HTTP server for real-time communication.
 attachWebSocketServer(httpServer as Server);
+
+// Initialise DynamoDB table for GPS location storage (non-fatal — API boots
+// regardless so a missing DynamoDB doesn't block REST endpoints).
+initDynamoTable().catch((err: Error) => {
+  console.warn(
+    '[DynamoDB] Table init failed (may be unavailable in this environment):',
+    err.message
+  );
+});

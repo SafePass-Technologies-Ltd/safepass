@@ -16,9 +16,13 @@ import { emergencyRoutes, escalationRoutes, checkinRoutes } from './routes/admin
 import { emergencyTriggerRoutes } from './routes/emergency.routes';
 import { adminUserRoutes } from './routes/admin-user.routes';
 import { roleUpgradeRoutes } from './routes/role-upgrade.routes';
+import { orgMembershipRoutes } from './routes/org-membership.routes';
+import { geocodingRoutes } from './routes/geocoding.routes';
 import { vehicleRoutes } from './routes/vehicle.routes';
 import { driverRoutes } from './routes/driver.routes';
 import { documentRoutes } from './routes/document.routes';
+import { scheduledTripRoutes } from './routes/scheduled-trip.routes';
+import { orgSubscriptionRoutes, adminSubscriptionRoutes } from './routes/subscription.routes';
 import { env } from './env';
 
 const app = new Hono();
@@ -92,6 +96,10 @@ v1.route('/auth', authRoutes);
 // User profiles + vehicles
 v1.route('/users', userRoutes);
 
+// Scheduled / calendar trips — must be registered BEFORE tripRoutes
+// to prevent GET /trips/:id from swallowing the /trips/scheduled path.
+v1.route('/trips', scheduledTripRoutes);
+
 // Trip lifecycle + GPS updates
 v1.route('/trips', tripRoutes);
 
@@ -112,6 +120,15 @@ v1.route('/markers', markerRoutes);
 
 // Organization management (corporate + transport partner)
 v1.route('/organizations', orgRoutes);
+
+// Org membership: slots, invite tokens, join/leave
+v1.route('/org', orgMembershipRoutes);
+
+// Org subscription plan requests (C-20, T-20)
+v1.route('/org/subscription', orgSubscriptionRoutes);
+
+// Geocoding: reverse (GPS → address) + autocomplete + place resolve
+v1.route('/geocoding', geocodingRoutes);
 
 // Transport partner fleet management
 v1.route('/vehicles', vehicleRoutes);
@@ -138,6 +155,7 @@ adminV1.route('/emergencies', emergencyRoutes);
 adminV1.route('/escalations', escalationRoutes);
 adminV1.route('/checkins', checkinRoutes);
 adminV1.route('/role-upgrades', roleUpgradeRoutes);
+adminV1.route('/subscriptions', adminSubscriptionRoutes);
 
 v1.route('/admin', adminV1);
 

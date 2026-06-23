@@ -10,13 +10,14 @@ import {
   type JwtPayload,
 } from '../middleware/auth';
 import type { AuthProvider } from '@safepass/shared';
+import { createWallet } from './wallet.service';
 
 export interface TokenExchangeResult {
   accessToken: string;
   refreshToken: string;
   user: {
     id: string;
-    email: string;
+    email: string | null;
     fullName: string;
     phone: string | null;
     role: string;
@@ -84,6 +85,8 @@ export async function exchangeFirebaseToken(
     const [created] = await db.insert(users).values(newUser).returning();
     existingUser = created;
     isNew = true;
+    // Auto-provision wallet for new users (balance starts at 0).
+    await createWallet({ ownerType: 'user', ownerId: existingUser.id });
   }
 
   // 3. Issue JWT tokens

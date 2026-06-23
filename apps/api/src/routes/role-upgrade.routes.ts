@@ -115,6 +115,9 @@ async function notifyRequester(
     ? await db.query.organizations.findFirst({ where: eq(organizations.id, request.organizationId) })
     : null;
 
+  // Phone auth users may have no email — skip notification in that case.
+  if (!requester.email) return;
+
   if (outcome === 'approved') {
     await sendRoleUpgradeApprovedEmail({
       to: requester.email,

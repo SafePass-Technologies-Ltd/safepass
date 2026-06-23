@@ -16,6 +16,9 @@ import type { IncomingMessage } from 'node:http';
 import type { Server } from 'node:http';
 import { verifyAccessToken } from '../middleware/auth';
 import type { JwtPayload } from '../middleware/auth';
+import { getAllTripLocations } from './dynamo.service';
+// trip.service is imported lazily inside the subscribe_all_trips handler to
+// avoid a circular dependency (trip.service → websocket.service → trip.service).
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -23,14 +26,22 @@ import type { JwtPayload } from '../middleware/auth';
 
 /** Inbound WebSocket message envelope (sent by client). */
 export interface WsClientMessage {
-  type: 'subscribe' | 'unsubscribe' | 'gps_update' | 'ping';
+  type: 'subscribe' | 'unsubscribe' | 'gps_update' | 'ping' | 'subscribe_all_trips';
   tripId?: string;
   payload?: unknown;
 }
 
 /** Outbound WebSocket message envelope (sent by server). */
 export interface WsServerMessage {
-  type: 'gps_update' | 'trip_status' | 'new_message' | 'emergency_alert' | 'subscribed' | 'error' | 'pong';
+  type:
+    | 'gps_update'
+    | 'trip_status'
+    | 'new_message'
+    | 'emergency_alert'
+    | 'subscribed'
+    | 'error'
+    | 'pong'
+    | 'all_trip_locations';
   tripId?: string;
   payload?: unknown;
   timestamp: string;
@@ -216,6 +227,39 @@ function handleClientMessage(client: ConnectedClient, msg: WsClientMessage): voi
       } satisfies WsServerMessage));
       break;
 
+    case 'subscribe_all_trips': {
+      // Only privileged roles may request the global trip feed.
+      if (!['admin', 'super_admin', 'monitoring_officer'].includes(client.role)) {
+        client.ws.send(JSON.stringify(error('Not authorized')));
+        break;
+      }
+
+      // Lazy-import trip.service to avoid a circular module dependency.
+      // Fetch all currently active trip IDs then batch-read their last known
+      // GPS positions from DynamoDB and deliver as a single snapshot message.
+      import('./trip.service')
+        .then(({ getActiveTrips }) => getActiveTrips())
+        .then(async (activeTrips) => {
+          const tripIds = activeTrips.map((t) => t.id);
+          const locations = await getAllTripLocations(tripIds);
+
+          const payload: Record<string, unknown> = {};
+          for (const [tripId, loc] of locations) {
+            payload[tripId] = loc;
+          }
+
+          client.ws.send(
+            JSON.stringify({
+              type: 'all_trip_locations',
+              payload,
+              timestamp: new Date().toISOString(),
+            } satisfies WsServerMessage)
+          );
+        })
+        .catch(() => { /* non-critical — client will fall back to REST */ });
+      break;
+    }
+
     default:
       client.ws.send(JSON.stringify(error(`Unknown message type: ${msg.type}`)));
   }
@@ -229,12 +273,35 @@ export function broadcastGpsUpdate(
   tripId: string,
   location: { latitude: number; longitude: number; speed?: number; heading?: number }
 ): void {
-  broadcastToTrip(tripId, {
+  const msg: WsServerMessage = {
     type: 'gps_update',
     tripId,
     payload: location,
     timestamp: new Date().toISOString(),
-  });
+  };
+
+  // Send to clients that explicitly subscribed to this trip
+  // (mobile passengers, monitoring officers watching a specific trip).
+  broadcastToTrip(tripId, msg);
+
+  // Also push to all admin / super_admin / monitoring_officer connections
+  // that did NOT already receive the message via the trip subscription,
+  // so the live map updates without requiring per-trip subscriptions.
+  const serialized = JSON.stringify(msg);
+  for (const [, clients] of connections) {
+    for (const client of clients) {
+      if (
+        ['admin', 'super_admin', 'monitoring_officer'].includes(client.role) &&
+        !client.subscribedTrips.has(tripId)
+      ) {
+        try {
+          client.ws.send(serialized);
+        } catch {
+          // Client may have disconnected.
+        }
+      }
+    }
+  }
 }
 
 export function broadcastTripStatus(tripId: string, status: string): void {

@@ -15,7 +15,7 @@ const REFRESH_SECRET = new TextEncoder().encode(env.JWT_REFRESH_SECRET);
 
 export interface JwtPayload {
   sub: string; // user ID (UUID)
-  email: string;
+  email: string | null;
   role: string;
   orgId?: string;
 }
