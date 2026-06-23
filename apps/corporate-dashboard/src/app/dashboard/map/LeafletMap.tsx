@@ -22,7 +22,7 @@ const shadowUrl = 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png
 
 // Patch once at module level — safe because this file is only ever executed
 // in the browser (dynamic import with ssr:false).
-delete (L.Icon.Default.prototype as Record<string, unknown>)._getIconUrl;
+delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({ iconUrl, iconRetinaUrl, shadowUrl });
 
 // ── Auto-fit bounds whenever the trips list changes ───────────────────────────

@@ -6,7 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Map, Users, Wallet, Flag, LogOut, Menu, X, ChevronRight, Bell,
+  Map, Users, Wallet, Flag, LogOut, Menu, X, ChevronRight, Bell, Ticket, CreditCard,
 } from 'lucide-react';
 import { getUserSession } from '@/lib/auth-utils';
 import { apiClient } from '@/lib/api-client';
@@ -20,9 +20,11 @@ function getInitials(fullName: string): string {
 const navigation = [
   { name: 'Live Trip Map', href: '/dashboard', icon: Map, description: 'Monitor staff trips' },
   { name: 'Staff', href: '/dashboard/staff', icon: Users, description: 'Manage staff members' },
+  { name: 'Slot Management', href: '/dashboard/slots', icon: Ticket, description: 'Invite tokens & member slots' },
   { name: 'Trip Registration', href: '/dashboard/trips', icon: Flag, description: 'Register staff trips' },
   { name: 'Live Staff Map', href: '/dashboard/map', icon: Map, description: 'Real-time staff locations' },
   { name: 'Wallet', href: '/dashboard/wallet', icon: Wallet, description: 'Corporate wallet' },
+  { name: 'Subscription', href: '/dashboard/subscription', icon: CreditCard, description: 'Manage plan and member slots' },
   { name: 'Alerts', href: '/dashboard/alerts', icon: Bell, description: 'Emergency alerts for staff' },
 ];
 

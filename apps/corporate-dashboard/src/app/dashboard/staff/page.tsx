@@ -5,7 +5,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Users, UserPlus, Trash2, Search, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { Users, UserPlus, Trash2, Search, Loader2, Ticket } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { getUserSession } from '@/lib/auth-utils';
 
@@ -121,13 +122,22 @@ export default function StaffPage() {
             {staff.length} staff member{staff.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary/90"
-        >
-          <UserPlus className="h-4 w-4" />
-          Add Staff
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/slots"
+            className="flex items-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
+          >
+            <Ticket className="h-4 w-4" />
+            Manage Slots &amp; Tokens
+          </Link>
+          <Link
+            href="/dashboard/slots"
+            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary/90"
+          >
+            <UserPlus className="h-4 w-4" />
+            Add Staff
+          </Link>
+        </div>
       </div>
 
       {/* Error */}

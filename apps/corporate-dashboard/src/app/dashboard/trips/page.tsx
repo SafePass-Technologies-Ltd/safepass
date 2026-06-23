@@ -12,7 +12,6 @@ interface Trip {
   destination: { name: string };
   vehiclePlateNumber: string | null;
   driverName: string | null;
-  passengerCount: number;
   tripMode: string;
   status: string;
   createdAt: string;
@@ -25,7 +24,6 @@ const defaultForm = {
   vehiclePlateNumber: '',
   driverName: '',
   driverPhone: '',
-  passengerCount: 1,
   tripMode: 'passenger' as 'driver' | 'passenger',
 };
 
@@ -75,7 +73,6 @@ export default function TripsPage() {
           vehiclePlateNumber: form.vehiclePlateNumber.trim() || undefined,
           driverName: form.driverName.trim() || undefined,
           driverPhone: form.driverPhone.trim() || undefined,
-          passengerCount: form.passengerCount,
           tripMode: form.tripMode,
           organizationId: orgId,
         }),
@@ -206,19 +203,6 @@ export default function TripsPage() {
               />,
             )}
             {field(
-              'Passenger Count *',
-              <input
-                type="number"
-                required
-                min={1}
-                value={form.passengerCount}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, passengerCount: Math.max(1, parseInt(e.target.value) || 1) }))
-                }
-                className={inputCls}
-              />,
-            )}
-            {field(
               'Trip Mode *',
               <div className="flex gap-2">
                 {(['driver', 'passenger'] as const).map((mode) => (
@@ -269,7 +253,7 @@ export default function TripsPage() {
             <table className="w-full">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
-                  {['Staff ID', 'Origin', 'Destination', 'Mode', 'Passengers', 'Status', 'Date'].map((h) => (
+                  {['Staff ID', 'Origin', 'Destination', 'Mode', 'Status', 'Date'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">
                       {h}
                     </th>
@@ -279,7 +263,7 @@ export default function TripsPage() {
               <tbody className="divide-y divide-slate-100">
                 {trips.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">
+                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-400">
                       No trips registered yet.
                     </td>
                   </tr>
@@ -296,7 +280,6 @@ export default function TripsPage() {
                           {t.tripMode}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-500">{t.passengerCount}</td>
                       <td className="px-4 py-3">
                         <StatusBadge status={t.status} />
                       </td>
@@ -316,14 +299,13 @@ export default function TripsPage() {
 }
 
 function exportCsv(trips: Trip[]) {
-  const headers = ['ID', 'Staff ID', 'Origin', 'Destination', 'Mode', 'Passengers', 'Status', 'Date'];
+  const headers = ['ID', 'Staff ID', 'Origin', 'Destination', 'Mode', 'Status', 'Date'];
   const rows = trips.map((t) => [
     t.id,
     t.userId,
     t.origin.name,
     t.destination.name,
     t.tripMode,
-    String(t.passengerCount),
     t.status,
     new Date(t.createdAt).toISOString(),
   ]);
