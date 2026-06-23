@@ -8,20 +8,21 @@
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import { db } from '../db';
-import { trips, wallets, walletTransactions } from '../db/schema';
+import { trips, wallets, walletTransactions, users, organizations, tripTagInvites } from '../db/schema';
 import { env } from '../env';
 import type { Location } from '../db/schema/types';
 import {
   broadcastGpsUpdate,
   broadcastTripStatus,
 } from './websocket.service';
+import { saveTripLocation } from './dynamo.service';
+import { createWallet } from './wallet.service';
 
 // ────────────────────────────────────────────────────────────
 // Enum column types (for Drizzle strict enum comparisons)
 // ────────────────────────────────────────────────────────────
 
 type TripStatus = typeof trips.$inferSelect['status'];
-type TripMode = typeof trips.$inferSelect['tripMode'];
 type VehicleType = typeof trips.$inferSelect['vehicleType'];
 
 // ────────────────────────────────────────────────────────────
@@ -30,17 +31,18 @@ type VehicleType = typeof trips.$inferSelect['vehicleType'];
 
 export interface TripCreateInput {
   userId: string;
+  /** The caller's role from the JWT — used to auto-populate transport_company. */
+  callerRole?: string;
   organizationId?: string;
-  tripMode: TripMode;
   userVehicleId?: string;
   origin: Location;
   destination: Location;
   vehicleType?: string;
   vehiclePlateNumber?: string;
+  vehicleDescription?: string;
   transportCompany?: string;
   driverName?: string;
   driverPhone?: string;
-  passengerCount?: number;
   routePolyline?: string;
 }
 
@@ -109,12 +111,6 @@ function asTripStatus(s: string): TripStatus {
   return 'draft';
 }
 
-/** Narrow a string to TripMode, defaulting to 'passenger'. */
-function asTripMode(m: string): TripMode {
-  if (m === 'driver' || m === 'passenger') return m;
-  return 'passenger';
-}
-
 /** Narrow a string to a VehicleType or null. */
 function asVehicleType(v: string | undefined | null): VehicleType | null {
   if (!v) return null;
@@ -128,10 +124,26 @@ function asVehicleType(v: string | undefined | null): VehicleType | null {
 
 /**
  * Create a new trip. Defaults to 'draft' status.
+ *
+ * For Transport Partner org members, transport_company is auto-populated from
+ * the linked organization's name — the caller's input value is ignored for
+ * that field so it cannot be spoofed client-side.
  */
 export async function createTrip(
   input: TripCreateInput
 ): Promise<typeof trips.$inferSelect> {
+  // Resolve transport company: transport_partner members always inherit their
+  // organization's name regardless of what the client sends.
+  let resolvedTransportCompany = input.transportCompany ?? null;
+  if (input.callerRole === 'transport_partner' && input.organizationId) {
+    const org = await db.query.organizations.findFirst({
+      where: eq(organizations.id, input.organizationId),
+    });
+    if (org) {
+      resolvedTransportCompany = org.name;
+    }
+  }
+
   const [trip] = await db
     .insert(trips)
     .values({
@@ -139,23 +151,235 @@ export async function createTrip(
       userId: input.userId,
       organizationId: input.organizationId ?? null,
       registeredBy: input.userId,
-      tripMode: asTripMode(input.tripMode),
       userVehicleId: input.userVehicleId ?? null,
       origin: input.origin,
       destination: input.destination,
       status: 'draft' as TripStatus,
       vehicleType: asVehicleType(input.vehicleType),
       vehiclePlateNumber: input.vehiclePlateNumber ?? null,
-      transportCompany: input.transportCompany ?? null,
+      vehicleDescription: input.vehicleDescription ?? null,
+      transportCompany: resolvedTransportCompany,
       driverName: input.driverName ?? null,
       driverPhone: input.driverPhone ?? null,
-      passengerCount: input.passengerCount ?? 1,
       routePolyline: input.routePolyline ?? null,
       paymentIds: [],
     })
     .returning();
 
   return trip;
+}
+
+// ────────────────────────────────────────────────────────────
+// Trip field update
+// ────────────────────────────────────────────────────────────
+
+export interface TripUpdateVehicleInput {
+  vehiclePlateNumber?: string | null;
+  vehicleDescription?: string | null;
+  transportCompany?: string | null;
+}
+
+/**
+ * Update vehicle fields on a trip.
+ *
+ * Vehicle fields are locked once the trip leaves 'draft' status to prevent
+ * retroactive alterations of vehicle records after monitoring has started.
+ */
+export async function updateTripVehicleFields(
+  tripId: string,
+  userId: string,
+  input: TripUpdateVehicleInput
+): Promise<typeof trips.$inferSelect> {
+  const trip = await db.query.trips.findFirst({
+    where: and(eq(trips.id, tripId), eq(trips.userId, userId)),
+  });
+
+  if (!trip) {
+    throw Object.assign(new Error('Trip not found'), { statusCode: 404 });
+  }
+
+  if (trip.status !== 'draft') {
+    throw Object.assign(
+      new Error('Vehicle fields cannot be changed once a trip is active.'),
+      { statusCode: 400 }
+    );
+  }
+
+  const [updated] = await db
+    .update(trips)
+    .set({
+      ...(input.vehiclePlateNumber !== undefined && { vehiclePlateNumber: input.vehiclePlateNumber }),
+      ...(input.vehicleDescription !== undefined && { vehicleDescription: input.vehicleDescription }),
+      ...(input.transportCompany !== undefined && { transportCompany: input.transportCompany }),
+      updatedAt: new Date(),
+    })
+    .where(eq(trips.id, tripId))
+    .returning();
+
+  return updated;
+}
+
+// ────────────────────────────────────────────────────────────
+// Trip Tag Invite
+// ────────────────────────────────────────────────────────────
+
+export interface TripTagInviteCreateInput {
+  initiatorUserId: string;
+  taggedUserId: string;
+  organizationId: string;
+  tripId: string;
+  /** Expiry window for the invite (defaults to 30 minutes from now). */
+  expiresInMinutes?: number;
+}
+
+/**
+ * Create a TripTagInvite.
+ *
+ * Guard: the initiator's trip must have a vehicle_plate_number set before
+ * tagging is allowed. This ensures the tagged member's copied trip always
+ * carries meaningful vehicle info.
+ */
+export async function createTripTagInvite(
+  input: TripTagInviteCreateInput
+): Promise<typeof tripTagInvites.$inferSelect> {
+  // Load the initiator's trip to check for vehicle plate.
+  const initiatorTrip = await db.query.trips.findFirst({
+    where: and(
+      eq(trips.id, input.tripId),
+      eq(trips.userId, input.initiatorUserId)
+    ),
+  });
+
+  if (!initiatorTrip) {
+    throw Object.assign(new Error('Trip not found'), { statusCode: 404 });
+  }
+
+  if (!initiatorTrip.vehiclePlateNumber) {
+    throw Object.assign(
+      new Error('Vehicle plate number is required before tagging members on a trip.'),
+      { statusCode: 400 }
+    );
+  }
+
+  const expiresAt = new Date(
+    Date.now() + (input.expiresInMinutes ?? 30) * 60 * 1000
+  );
+
+  const [invite] = await db
+    .insert(tripTagInvites)
+    .values({
+      id: uuidv4(),
+      tripId: input.tripId,
+      initiatorUserId: input.initiatorUserId,
+      taggedUserId: input.taggedUserId,
+      organizationId: input.organizationId,
+      status: 'pending',
+      expiresAt,
+    })
+    .returning();
+
+  return invite;
+}
+
+/**
+ * Accept a TripTagInvite.
+ *
+ * Creates a new Trip row for the tagged member, copying all vehicle fields
+ * from the initiator's trip. The copied trip has:
+ *   - vehicle_plate_number, vehicle_description, transport_company from initiator
+ *   - user_vehicle_id set to null (their personal vehicle record is not used)
+ *   - vehicle_copied_from_initiator = true
+ *   - vehicle_source_initiator_name = initiator's full_name
+ */
+export async function acceptTripTagInvite(
+  inviteId: string,
+  taggedUserId: string
+): Promise<typeof trips.$inferSelect> {
+  const invite = await db.query.tripTagInvites.findFirst({
+    where: and(
+      eq(tripTagInvites.id, inviteId),
+      eq(tripTagInvites.taggedUserId, taggedUserId)
+    ),
+  });
+
+  if (!invite) {
+    throw Object.assign(new Error('Invite not found'), { statusCode: 404 });
+  }
+
+  if (invite.status !== 'pending') {
+    throw Object.assign(
+      new Error(`Invite is already ${invite.status}`),
+      { statusCode: 400 }
+    );
+  }
+
+  if (new Date() > invite.expiresAt) {
+    // Mark as expired if we catch it at acceptance time.
+    await db
+      .update(tripTagInvites)
+      .set({ status: 'window_expired' })
+      .where(eq(tripTagInvites.id, inviteId));
+    throw Object.assign(new Error('Invite has expired'), { statusCode: 400 });
+  }
+
+  // Fetch the initiator's trip to copy vehicle fields.
+  const initiatorTrip = await db.query.trips.findFirst({
+    where: eq(trips.id, invite.tripId),
+  });
+
+  if (!initiatorTrip) {
+    throw Object.assign(new Error('Initiator trip not found'), { statusCode: 404 });
+  }
+
+  // Fetch the initiator's full name.
+  const initiator = await db.query.users.findFirst({
+    where: eq(users.id, invite.initiatorUserId),
+  });
+
+  const newTripId = uuidv4();
+
+  const [taggedTrip, updatedInvite] = await db.transaction(async (tx) => {
+    // Create a new trip for the tagged member with copied vehicle info.
+    const [newTrip] = await tx
+      .insert(trips)
+      .values({
+        id: newTripId,
+        userId: taggedUserId,
+        organizationId: invite.organizationId,
+        registeredBy: invite.initiatorUserId,
+        userVehicleId: null, // explicitly null — vehicle comes from initiator's trip
+        origin: initiatorTrip.origin,
+        destination: initiatorTrip.destination,
+        status: 'draft' as TripStatus,
+        vehicleType: initiatorTrip.vehicleType,
+        vehiclePlateNumber: initiatorTrip.vehiclePlateNumber,
+        vehicleDescription: initiatorTrip.vehicleDescription,
+        transportCompany: initiatorTrip.transportCompany,
+        vehicleCopiedFromInitiator: true,
+        vehicleSourceInitiatorName: initiator?.fullName ?? null,
+        driverName: initiatorTrip.driverName,
+        driverPhone: initiatorTrip.driverPhone,
+        routePolyline: initiatorTrip.routePolyline,
+        paymentIds: [],
+      })
+      .returning();
+
+    // Mark invite as accepted and link to the newly created trip.
+    const [inv] = await tx
+      .update(tripTagInvites)
+      .set({
+        status: 'accepted',
+        acceptedAt: new Date(),
+        linkedTripId: newTripId,
+      })
+      .where(eq(tripTagInvites.id, inviteId))
+      .returning();
+
+    return [newTrip, inv] as const;
+  });
+
+  void updatedInvite; // invite is updated but caller only needs the trip
+  return taggedTrip;
 }
 
 /**
@@ -176,54 +400,70 @@ export async function startTrip(
 
   assertValidTransition(trip.status, 'active');
 
-  // Find the user's wallet.
-  const wallet = await db.query.wallets.findFirst({
-    where: and(
-      eq(wallets.ownerType, 'user'),
-      eq(wallets.ownerId, userId)
-    ),
-  });
+  // Check if trip is org-covered (user is an org member)
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  const isOrgCovered = !!(user?.organizationId || trip.organizationId);
 
-  if (!wallet || !wallet.isActive) {
-    throw Object.assign(
-      new Error('No active wallet found. Please set up your wallet first.'),
-      { statusCode: 400 }
-    );
-  }
+  let updatedTrip: typeof trips.$inferSelect;
 
-  const tripPrice = env.TRIP_PRICE_NGN;
+  if (!isOrgCovered) {
+    const wallet = await createWallet({ ownerType: 'user', ownerId: userId });
+    if (!wallet.isActive) {
+      throw Object.assign(
+        new Error('Your wallet is frozen. Please contact support.'),
+        { statusCode: 400 }
+      );
+    }
 
-  if (wallet.balance < tripPrice) {
-    throw Object.assign(
-      new Error(
-        `Insufficient balance. Trip costs ₦${tripPrice}. Your balance is ₦${wallet.balance}.`
-      ),
-      { statusCode: 402 }
-    );
-  }
+    const tripPrice = env.TRIP_PRICE_NGN;
 
-  // Atomic deduction within a transaction.
-  const [updatedTrip] = await db.transaction(async (tx) => {
-    const newBalance = wallet.balance - tripPrice;
+    if (wallet.balance < tripPrice) {
+      throw Object.assign(
+        new Error(
+          `Insufficient balance. Trip costs ₦${tripPrice}. Your balance is ₦${wallet.balance}.`
+        ),
+        { statusCode: 402 }
+      );
+    }
 
-    await tx
-      .update(wallets)
-      .set({ balance: newBalance, updatedAt: new Date() })
-      .where(eq(wallets.id, wallet.id));
+    // Atomic deduction within a transaction.
+    const [deductedTrip] = await db.transaction(async (tx) => {
+      const newBalance = wallet.balance - tripPrice;
 
-    await tx.insert(walletTransactions).values({
-      id: uuidv4(),
-      walletId: wallet.id,
-      transactionType: 'trip_charge',
-      amount: -tripPrice,
-      balanceBefore: wallet.balance,
-      balanceAfter: newBalance,
-      tripId: tripId,
-      description: `Trip charge: ₦${tripPrice}`,
-      status: 'completed',
+      await tx
+        .update(wallets)
+        .set({ balance: newBalance, updatedAt: new Date() })
+        .where(eq(wallets.id, wallet.id));
+
+      await tx.insert(walletTransactions).values({
+        id: uuidv4(),
+        walletId: wallet.id,
+        transactionType: 'trip_charge',
+        amount: -tripPrice,
+        balanceBefore: wallet.balance,
+        balanceAfter: newBalance,
+        tripId: tripId,
+        description: `Trip charge: ₦${tripPrice}`,
+        status: 'completed',
+      });
+
+      const [updated] = await tx
+        .update(trips)
+        .set({
+          status: 'active' as TripStatus,
+          startedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(trips.id, tripId))
+        .returning();
+
+      return [updated];
     });
 
-    const [updated] = await tx
+    updatedTrip = deductedTrip;
+  } else {
+    // Org-covered trip: skip wallet check and just transition to active.
+    const [updated] = await db
       .update(trips)
       .set({
         status: 'active' as TripStatus,
@@ -233,8 +473,8 @@ export async function startTrip(
       .where(eq(trips.id, tripId))
       .returning();
 
-    return [updated];
-  });
+    updatedTrip = updated;
+  }
 
   // Broadcast trip status change to WebSocket subscribers.
   broadcastTripStatus(tripId, 'active');
@@ -270,13 +510,26 @@ export async function updateGpsPosition(
     );
   }
 
-  // Update trip's last-activity timestamp.
   await db
     .update(trips)
     .set({ updatedAt: new Date() })
     .where(eq(trips.id, tripId));
 
-  // Broadcast GPS position to all WebSocket clients subscribed to this trip.
+  // Persist to DynamoDB (24-hour TTL) for WebSocket snapshot delivery and
+  // admin /active page-load enrichment.
+  // Fire-and-forget: a DynamoDB hiccup must never block the GPS update flow.
+  saveTripLocation(tripId, {
+    latitude: data.latitude,
+    longitude: data.longitude,
+    speed: data.speed ?? null,
+    heading: data.heading ?? null,
+    timestamp: new Date().toISOString(),
+  }).catch((err: unknown) => {
+    console.warn('[DynamoDB] saveTripLocation failed for trip', tripId, (err as Error)?.message);
+  });
+
+  // Broadcast GPS position to all WebSocket clients subscribed to this trip
+  // and to all connected admin/monitoring_officer clients for the live map.
   broadcastGpsUpdate(tripId, {
     latitude: data.latitude,
     longitude: data.longitude,
@@ -388,18 +641,117 @@ export async function adminUpdateTripStatus(
 // ────────────────────────────────────────────────────────────
 
 /**
- * Get a single trip by ID, with an optional ownership check.
+ * Get a single trip by ID.
+ *
+ * Access logic (in priority order):
+ *  1. No userId provided → admin/unrestricted path, return any trip.
+ *  2. userId matches trips.user_id → direct ownership, return the trip.
+ *  3. orgId (from JWT) matches trips.organization_id → org-member access.
+ *  4. JWT orgId absent (stale token) → live-lookup the caller's current
+ *     organizationId from the users table and retry the org check. This
+ *     handles the window between a user joining an org and their next
+ *     token refresh.
+ *  5. The caller is the tagged user on an accepted tripTagInvite whose
+ *     initiator's trip is `tripId` — grant read access so the tagged
+ *     member can see the trip they were tagged on.
+ *  6. None of the above → return null (caller gets 404).
  */
 export async function getTripById(
   tripId: string,
-  userId?: string
+  userId?: string,
+  orgId?: string,
 ): Promise<typeof trips.$inferSelect | null> {
-  const where = userId
-    ? and(eq(trips.id, tripId), eq(trips.userId, userId))
-    : eq(trips.id, tripId);
+  // Unrestricted admin path.
+  if (!userId) {
+    const trip = await db.query.trips.findFirst({ where: eq(trips.id, tripId) });
+    return trip ?? null;
+  }
 
-  const trip = await db.query.trips.findFirst({ where });
-  return trip ?? null;
+  // ── Check 1: Direct ownership (fast path, single indexed lookup). ──
+  const ownedTrip = await db.query.trips.findFirst({
+    where: and(eq(trips.id, tripId), eq(trips.userId, userId)),
+  });
+  if (ownedTrip) {
+    console.debug('[getTripById] GRANTED via direct ownership tripId=%s userId=%s', tripId, userId);
+    return ownedTrip;
+  }
+
+  // ── Check 2: Org-membership. ──
+  // Resolve the effective orgId: prefer the JWT claim (already decoded, no DB
+  // hit), fall back to a live users table lookup for callers whose token was
+  // issued before they joined an organisation (stale JWT window).
+  const liveUser = orgId
+    ? null
+    : await db.query.users.findFirst({ where: eq(users.id, userId) });
+
+  const effectiveOrgId = orgId ?? liveUser?.organizationId ?? undefined;
+
+  // Log the raw values so we can see exactly what each lookup returned.
+  console.debug(
+    '[getTripById] ownership=miss jwtOrgId=%s liveUserOrgId=%s effectiveOrgId=%s',
+    orgId ?? 'none',
+    liveUser?.organizationId ?? 'none',
+    effectiveOrgId ?? 'none',
+  );
+
+  if (effectiveOrgId) {
+    const orgTrip = await db.query.trips.findFirst({
+      where: and(eq(trips.id, tripId), eq(trips.organizationId, effectiveOrgId)),
+    });
+    if (orgTrip) {
+      console.debug('[getTripById] GRANTED via org-membership tripId=%s orgId=%s', tripId, effectiveOrgId);
+      return orgTrip;
+    }
+    // Log the trip's actual org so we can see if there is an org mismatch.
+    const rawTrip = await db.query.trips.findFirst({ where: eq(trips.id, tripId) });
+    console.debug(
+      '[getTripById] org-check miss — trip.organization_id=%s caller.effectiveOrgId=%s tripExists=%s',
+      rawTrip?.organizationId ?? 'null',
+      effectiveOrgId,
+      rawTrip ? 'yes' : 'no',
+    );
+  } else {
+    // No org at all — still do a raw trip lookup so we can log the trip's org.
+    const rawTrip = await db.query.trips.findFirst({ where: eq(trips.id, tripId) });
+    console.debug(
+      '[getTripById] org-check skipped (no org) — trip.organization_id=%s tripExists=%s',
+      rawTrip?.organizationId ?? 'null',
+      rawTrip ? 'yes' : 'no',
+    );
+  }
+
+  // ── Check 3: TripTagInvite — tagged user reading the initiator's trip. ──
+  //
+  // When a trip tag invite is accepted, `acceptTripTagInvite` creates a *new*
+  // trip row owned by the tagged user (linked via tripTagInvites.linked_trip_id).
+  // The tagged user should also be able to read the *original* initiator trip
+  // (the one they were invited onto) so the mobile app can surface full context.
+  //
+  // We grant access if an accepted invite exists where:
+  //   initiator_trip_id = tripId  AND  tagged_user_id = userId
+  const taggedInvite = await db.query.tripTagInvites.findFirst({
+    where: and(
+      eq(tripTagInvites.tripId, tripId),
+      eq(tripTagInvites.taggedUserId, userId),
+      eq(tripTagInvites.status, 'accepted'),
+    ),
+  });
+
+  if (taggedInvite) {
+    const taggedTrip = await db.query.trips.findFirst({ where: eq(trips.id, tripId) });
+    if (taggedTrip) {
+      console.debug(
+        '[getTripById] GRANTED via tripTagInvite inviteId=%s tripId=%s taggedUserId=%s',
+        taggedInvite.id,
+        tripId,
+        userId,
+      );
+      return taggedTrip;
+    }
+  }
+
+  console.debug('[getTripById] DENIED all checks failed tripId=%s userId=%s', tripId, userId);
+  return null;
 }
 
 /**

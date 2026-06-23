@@ -1,18 +1,41 @@
 /// Admin Dashboard — Main Page (Live Trip Map + Stats).
 ///
-/// Week 2: Google Maps with live trip markers, real-time stats via SWR,
-/// and WebSocket-ready architecture for Week 3 sub-second updates.
+/// GPS positions are delivered in real-time via WebSocket (useTripWebSocket).
+/// SWR continues to poll every 30s for trip metadata (status, route, vehicle
+/// info) which changes infrequently and is not on the WebSocket channel.
+/// The two data sources are merged: WebSocket positions override the
+/// currentLocation field from the REST response.
 'use client';
 
 import { useState } from 'react';
 import { MapPin, AlertTriangle, Users, Activity } from 'lucide-react';
 import { useActiveTrips } from '@/hooks/useActiveTrips';
+import { useTripWebSocket } from '@/hooks/useTripWebSocket';
 import LiveTripMap from '@/components/map/live-trip-map';
 import type { ActiveTrip } from '@/hooks/useActiveTrips';
 
 export default function DashboardPage() {
-  const { trips, isLoading, error, isRefreshing } = useActiveTrips(10_000);
+  // Poll for trip metadata at a slower cadence — position updates come via WS.
+  const { trips, isLoading, error, isRefreshing } = useActiveTrips(30_000);
+  const { livePositions, connected } = useTripWebSocket();
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+
+  // Overlay live WebSocket GPS positions on top of the REST trip data.
+  // The WebSocket position wins when both sources have a value for the same trip.
+  const tripsWithLivePosition: ActiveTrip[] = trips.map((trip) => {
+    const live = livePositions.get(trip.id);
+    if (!live) return trip;
+    return {
+      ...trip,
+      currentLocation: {
+        latitude: live.latitude,
+        longitude: live.longitude,
+        speed: live.speed ?? undefined,
+        heading: live.heading ?? undefined,
+        timestamp: live.timestamp,
+      },
+    };
+  });
 
   // ── Derived stats ──────────────────────────────────────
   const activeCount = trips.filter(
@@ -53,10 +76,10 @@ export default function DashboardPage() {
           icon={Users}
         />
         <StatsCard
-          title="Refresh"
-          value={isRefreshing ? '⟳' : '✓'}
-          change={isRefreshing ? 'Polling API...' : 'Live (10s interval)'}
-          changeType="neutral"
+          title="Live Feed"
+          value={connected ? '●' : '○'}
+          change={connected ? `WebSocket live · ${livePositions.size} positions` : 'Reconnecting...'}
+          changeType={connected ? 'positive' : 'neutral'}
           icon={Activity}
         />
       </div>
@@ -68,9 +91,9 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Live trip map */}
+      {/* Live trip map — receives merged trip data with real-time GPS positions */}
       <LiveTripMap
-        trips={trips}
+        trips={tripsWithLivePosition}
         isLoading={isLoading && trips.length === 0}
         selectedTripId={selectedTripId}
         onTripClick={handleTripClick}

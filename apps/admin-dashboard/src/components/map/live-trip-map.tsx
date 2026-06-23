@@ -9,7 +9,7 @@
 /// Requires NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in environment.
 'use client';
 
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useRef, useEffect } from 'react';
 import { APIProvider, Map, AdvancedMarker, Pin, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import { Shield } from 'lucide-react';
 import type { ActiveTrip } from '@/hooks/useActiveTrips';
@@ -52,30 +52,47 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 // ────────────────────────────────────────────────────────────
-// Map bounds auto-fit
+// Pan to selected trip (replaces FitBounds)
 // ────────────────────────────────────────────────────────────
 
-function FitBounds({ trips }: { trips: ActiveTrip[] }) {
+function PanToSelected({
+  trips,
+  selectedTripId,
+}: {
+  trips: ActiveTrip[];
+  selectedTripId?: string | null;
+}) {
   const map = useMap();
+  const hasFitInitial = useRef(false);
 
-  const bounds = useMemo(() => {
-    if (trips.length === 0) return null;
+  // One-time initial fit when trips first load.
+  useEffect(() => {
+    if (hasFitInitial.current || !map || trips.length === 0) return;
     const bounds = new google.maps.LatLngBounds();
+    let hasPoints = false;
     for (const trip of trips) {
       const loc = trip.currentLocation ?? trip.origin;
       if (loc.latitude && loc.longitude) {
         bounds.extend({ lat: loc.latitude, lng: loc.longitude });
+        hasPoints = true;
       }
     }
-    return bounds;
-  }, [trips]);
-
-  // Fit map to bounds when trips change (only if map is idle).
-  useMemo(() => {
-    if (map && bounds && !bounds.isEmpty()) {
+    if (hasPoints) {
       map.fitBounds(bounds, { top: 40, right: 40, bottom: 40, left: 40 });
+      hasFitInitial.current = true;
     }
-  }, [map, bounds]);
+  }, [map, trips]);
+
+  // Pan to selected trip when user clicks a pin.
+  useEffect(() => {
+    if (!map || !selectedTripId) return;
+    const trip = trips.find((t) => t.id === selectedTripId);
+    if (!trip) return;
+    const loc = trip.currentLocation ?? trip.origin;
+    if (loc.latitude && loc.longitude) {
+      map.panTo({ lat: loc.latitude, lng: loc.longitude });
+    }
+  }, [map, selectedTripId, trips]);
 
   return null;
 }
@@ -138,7 +155,7 @@ export default function LiveTripMap({
           disableDefaultUI={false}
           className="h-[600px] w-full"
         >
-          <FitBounds trips={trips} />
+          <PanToSelected trips={trips} selectedTripId={selectedTripId} />
 
           {trips
             .filter((trip) => {

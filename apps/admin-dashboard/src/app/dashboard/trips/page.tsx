@@ -23,7 +23,6 @@ interface TripData {
   estimatedArrival: string | null;
   vehiclePlateNumber: string | null;
   transportCompany: string | null;
-  passengerCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -200,7 +199,6 @@ export default function TripManagementPage() {
                   <th className="px-6 py-3">Mode</th>
                   <th className="px-6 py-3">Vehicle / Company</th>
                   <th className="px-6 py-3">Started</th>
-                  <th className="px-6 py-3">Passengers</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -262,10 +260,6 @@ export default function TripManagementPage() {
                         )}
                       </td>
 
-                      {/* Passengers */}
-                      <td className="px-6 py-3 text-sm text-slate-500">
-                        {trip.tripMode === 'passenger' ? trip.passengerCount : '—'}
-                      </td>
                     </tr>
                   );
                 })}

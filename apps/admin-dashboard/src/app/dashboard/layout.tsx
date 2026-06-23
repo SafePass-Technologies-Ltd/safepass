@@ -14,7 +14,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   Map,
   AlertTriangle,
-  MessageSquare,
   Users,
   Wallet,
   Flag,
@@ -22,11 +21,9 @@ import {
   Menu,
   X,
   ChevronRight,
-  CheckCircle,
   MapPin,
-  Car,
-  Siren,
   ShieldCheck,
+  CreditCard,
 } from 'lucide-react';
 import { useActiveTrips } from '@/hooks/useActiveTrips';
 import { apiClient } from '@/lib/api-client';
@@ -57,12 +54,6 @@ const navigation = [
     description: 'Review, verify, and manage reported incidents',
   },
   {
-    name: 'Messages',
-    href: '/dashboard/messages',
-    icon: MessageSquare,
-    description: 'In-app messaging with users',
-  },
-  {
     name: 'Users',
     href: '/dashboard/users',
     icon: Users,
@@ -75,34 +66,22 @@ const navigation = [
     description: 'Wallet balances and transactions',
   },
   {
-    name: 'Check-ins',
-    href: '/dashboard/checkins',
-    icon: CheckCircle,
-    description: 'Passenger check-in log',
-  },
-  {
     name: 'Map Markers',
     href: '/dashboard/markers',
     icon: MapPin,
     description: 'Verify and manage map markers',
   },
   {
-    name: 'Escalations',
-    href: '/dashboard/escalations',
-    icon: Siren,
-    description: 'Emergency escalation workflow',
-  },
-  {
-    name: 'Vehicle Verification',
-    href: '/dashboard/vehicle-verification',
-    icon: Car,
-    description: 'Approve and verify transport vehicles',
-  },
-  {
     name: 'Role Upgrades',
     href: '/dashboard/role-upgrades',
     icon: ShieldCheck,
     description: 'Approve corporate, transport, and admin access requests',
+  },
+  {
+    name: 'Subscriptions',
+    href: '/dashboard/subscriptions',
+    icon: CreditCard,
+    description: 'Review and activate org subscription plan requests',
   },
 ];
 

@@ -16,7 +16,16 @@ export async function apiClient<T = unknown>(
 ): Promise<T> {
   const { method = 'GET', body, headers = {} } = options;
 
-  const token = localStorage.getItem('access_token');
+  // Guard against SSR: localStorage is only available in the browser.
+  const token =
+    typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+
+  // Refuse to fire an unauthenticated request — throw immediately so the
+  // caller gets a clear 401 rather than the server returning one after
+  // receiving a request with no Authorization header.
+  if (!token) {
+    throw new ApiError(401, 'No access token found — please sign in again');
+  }
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method,

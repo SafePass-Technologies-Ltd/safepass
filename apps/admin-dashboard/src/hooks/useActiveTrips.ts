@@ -33,7 +33,6 @@ export interface ActiveTrip {
   vehiclePlateNumber?: string | null;
   transportCompany?: string | null;
   driverName?: string | null;
-  passengerCount?: number | null;
   startedAt?: string | null;
   createdAt: string;
 }
@@ -48,6 +47,16 @@ async function fetchActiveTrips(): Promise<ActiveTripsData> {
 }
 
 /**
+ * Derive the SWR cache key only when a token is present in localStorage.
+ * Returning null tells SWR to skip the fetch — prevents a 401 from firing
+ * on first render or after sign-out before the page redirects.
+ */
+function getSwrKey(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('access_token') ? 'admin-active-trips' : null;
+}
+
+/**
  * SWR hook for active trips with polling.
  *
  * @param refreshInterval — Polling interval in ms (default: 10_000).
@@ -55,7 +64,7 @@ async function fetchActiveTrips(): Promise<ActiveTripsData> {
  */
 export function useActiveTrips(refreshInterval = 10_000) {
   const { data, error, isLoading, isValidating, mutate } = useSWR<ActiveTripsData>(
-    'admin-active-trips',
+    getSwrKey,
     fetchActiveTrips,
     {
       refreshInterval,
