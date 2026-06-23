@@ -1,5 +1,7 @@
-import { pgTable, uuid, varchar, text, integer, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
-import { tripModeEnum, tripStatusEnum, vehicleTypeEnum } from './enums';
+// Note: current GPS position is stored in DynamoDB (trip_locations table) with a 24-hour TTL,
+// not in PostgreSQL. See apps/api/src/services/dynamo.service.ts.
+import { pgTable, uuid, varchar, text, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
+import { tripStatusEnum, vehicleTypeEnum } from './enums';
 import type { Location } from './types';
 import { users } from './users';
 import { userVehicles } from './user-vehicles';
@@ -14,7 +16,6 @@ export const trips = pgTable(
       .references(() => users.id),
     registeredBy: uuid('registered_by').references(() => users.id),
     organizationId: uuid('organization_id').references(() => organizations.id),
-    tripMode: tripModeEnum('trip_mode').notNull().default('passenger'),
     userVehicleId: uuid('user_vehicle_id').references(() => userVehicles.id),
     origin: jsonb('origin').notNull().$type<Location>(),
     destination: jsonb('destination').notNull().$type<Location>(),
@@ -25,10 +26,12 @@ export const trips = pgTable(
     actualArrival: timestamp('actual_arrival', { withTimezone: true }),
     vehicleType: vehicleTypeEnum('vehicle_type'),
     vehiclePlateNumber: varchar('vehicle_plate_number', { length: 20 }),
+    vehicleDescription: text('vehicle_description'),
     transportCompany: varchar('transport_company', { length: 255 }),
+    vehicleCopiedFromInitiator: boolean('vehicle_copied_from_initiator').notNull().default(false),
+    vehicleSourceInitiatorName: text('vehicle_source_initiator_name'),
     driverName: varchar('driver_name', { length: 255 }),
     driverPhone: varchar('driver_phone', { length: 20 }),
-    passengerCount: integer('passenger_count').default(1),
     routePolyline: text('route_polyline'),
     paymentIds: jsonb('payment_ids').$type<string[]>().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

@@ -42,14 +42,13 @@ export const subscriptionPlanEnum = pgEnum('subscription_plan', [
   'enterprise',
   'standard',
   'fleet',
+  'custom',
   'none',
 ]);
 
 export const orgVerificationEnum = pgEnum('org_verification', ['pending', 'verified', 'rejected']);
 
 // --- Trip ---
-
-export const tripModeEnum = pgEnum('trip_mode', ['driver', 'passenger']);
 
 export const tripStatusEnum = pgEnum('trip_status', [
   'draft',
@@ -204,6 +203,15 @@ export const checkInResponseEnum = pgEnum('checkin_response', [
   'confirmed_safe',
   'no_response',
   'concern_raised',
+]);
+
+// --- Subscription Requests ---
+
+export const subscriptionRequestStatusEnum = pgEnum('subscription_request_status', [
+  'pending',
+  'approved',
+  'rejected',
+  'cancelled',
 ]);
 
 // --- Documents ---

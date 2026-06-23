@@ -8,7 +8,8 @@ export const users = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     authProvider: authProviderEnum('auth_provider').notNull(),
     authProviderId: varchar('auth_provider_id', { length: 255 }).notNull(),
-    email: varchar('email', { length: 255 }).notNull(),
+    // Nullable: phone auth users do not have an email from their provider.
+    email: varchar('email', { length: 255 }),
     fullName: varchar('full_name', { length: 255 }).notNull(),
     phone: varchar('phone', { length: 20 }),
     role: userRoleEnum('role').notNull().default('user'),
