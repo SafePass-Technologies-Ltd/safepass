@@ -1,0 +1,67 @@
+# SafePass — CI (lint / test / build)
+#
+# Runs for every PR and every push to main across the 4 TypeScript
+# workspaces (apps/api + the 3 Next.js dashboards). apps/mobile (Flutter) is
+# intentionally out of scope here — it has its own CI concerns and is not
+# part of this pnpm/Turborepo pipeline.
+#
+# CACHING TRADEOFF (documented per task instructions): we rely on
+# Turborepo's own task-graph caching (`turbo run lint/test/build`, which
+# already skips unchanged packages via content hashing) rather than adding
+# `dorny/paths-filter` job-level filtering on top of it. Turbo's cache keys
+# are already scoped per-package, so a change to only apps/api does not
+# re-run corporate-dashboard's build — path-filtering the *job* itself would
+# just duplicate that skip logic at a coarser (whole-job) granularity while
+# adding workflow complexity. If build times become a real bottleneck (e.g.
+# once a hosted Turbo remote cache is wired up), revisit this tradeoff then.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same PR/branch to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.32.0"
+
+jobs:
+  lint-test-build:
+    name: Lint, Test, Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        # Turbo scopes this to apps/api, apps/admin-dashboard,
+        # apps/corporate-dashboard, apps/transport-dashboard, and
+        # packages/shared automatically — apps/mobile has no `lint` script
+        # wired into this pnpm workspace's turbo pipeline (Flutter uses
+        # `dart analyze` separately, out of scope here).
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

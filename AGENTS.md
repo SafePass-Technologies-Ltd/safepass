@@ -196,6 +196,62 @@ safepass/
 
 ---
 
+## Infrastructure & CI/CD
+
+### Terraform Structure
+
+```
+terraform/
+├── bootstrap/                  # One-time, LOCAL-state config that creates the S3 state bucket + DynamoDB lock table. Apply manually, once, before anything else.
+├── modules/                    # Reusable modules — no environment-specific values
+│   ├── networking/             # Dedicated VPC, 2 AZs, public+private subnets, single NAT
+│   ├── ecs/                    # Fargate cluster, ALB, /health target group, rolling-deploy service
+│   ├── rds/                    # PostgreSQL 16 Multi-AZ
+│   ├── dynamodb/               # Real-time trip/session state table (60s GPS TTL)
+│   ├── s3/                     # Evidence bucket — Object Lock (GOVERNANCE mode), KMS encryption, Glacier lifecycle
+│   ├── ecr/                    # API container image registry
+│   ├── cloudfront/             # CDN in front of the ALB
+│   ├── iam-oidc/               # GitHub OIDC provider + deploy role + ECS task/execution roles
+│   └── secrets/                # Secrets Manager containers (placeholder values only — never real secrets in Terraform)
+└── environments/
+    └── production/              # Wires all modules together; only environment today. A `staging/` folder can be added later by copying this directory, changing `environment = "staging"`, and pointing backend.tf's state `key` at `staging/terraform.tfstate` (same state bucket/lock table — no re-bootstrap needed).
+```
+
+Terraform CLI `>= 1.15.7`, `hashicorp/aws` provider `~> 6.52` — pinned in each config's `required_version`/`required_providers` block.
+
+### Bootstrapping the State Backend (one-time, manual)
+
+The S3 bucket + DynamoDB table that hold Terraform's own remote state cannot be created by the Terraform config that uses them (chicken-and-egg). Run once, manually, with AWS admin credentials:
+
+```bash
+cd terraform/bootstrap
+terraform init
+terraform apply -var="aws_region=us-east-1" -var="project=safepass"
+# note the state_bucket_name / lock_table_name outputs — they must match
+# terraform/environments/production/backend.tf
+```
+
+The very first `terraform apply` of `terraform/environments/production` (which creates the GitHub OIDC role that CI itself needs) must also be run manually by a human with AWS credentials — every apply after that goes through GitHub Actions.
+
+### Plan/Apply Gating
+
+- `terraform-plan.yml`: runs on every PR touching `terraform/environments/production/**` or `terraform/modules/**`. Runs `fmt -check`, `validate`, `plan`, posts the plan as a PR comment. Never applies.
+- `terraform-apply.yml`: runs on push to `main` for the same paths. Targets the GitHub Environment named `production`. **A repo admin must manually create this Environment in GitHub Settings > Environments and add required reviewers** — this cannot be expressed in YAML. Until that's configured, the environment reference is a no-op pass-through.
+
+### OIDC Auth Model
+
+GitHub Actions never uses static AWS access keys. Each workflow calls `aws-actions/configure-aws-credentials` with `role-to-assume: ${{ vars.AWS_ROLE_ARN }}`, which assumes the IAM role provisioned by `terraform/modules/iam-oidc` via the GitHub OIDC identity provider. The role's trust policy is scoped to this repo only (`repo:<org>/<repo>:ref:refs/heads/main` and `:pull_request`). Permissions are split: a broad infra-provisioning policy (for `terraform apply`) and a narrower deploy-only policy (ECR push + ECS update, for `deploy-api.yml`).
+
+### API Deployment
+
+`deploy-api.yml` runs after CI passes on `main` for changes under `apps/api/` or `packages/shared/`: builds `apps/api/Dockerfile` (multi-stage, pnpm workspace-aware — build context is the repo root), pushes to ECR, renders a new ECS task definition revision with the new image, and deploys with `force-new-deployment`. The ECS service's rolling-deploy settings (`minimum_healthy_percent=100`, `maximum_percent=200`) guarantee new tasks are healthy before old ones drain — required for the safety-critical WebSocket/panic-alert path (see `docs/SafePass/risk_log.md` R-001).
+
+### Dashboards Deploy via Vercel, Not This Pipeline
+
+`apps/admin-dashboard`, `apps/corporate-dashboard`, `apps/transport-dashboard` deploy via **Vercel's native Git integration** (preview deploys per PR, production deploy on merge to `main`) — configured entirely in the Vercel project settings, outside this repo's CI/CD code. `ci.yml` only runs lint/test/build for these apps as required PR checks; no workflow here deploys them, and there is no Vercel Terraform provider or CLI deploy step anywhere in this repo.
+
+---
+
 ## Document Map
 
 | Document | Use When |

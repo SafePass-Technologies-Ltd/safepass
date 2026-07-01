@@ -1,0 +1,79 @@
+# SafePass — Terraform Apply (main only, manual approval gated)
+#
+# Runs `terraform apply` against terraform/environments/production on push
+# to main when terraform paths changed. Targets the GitHub Environment named
+# "production" — GitHub blocks this job until a required reviewer approves
+# it in the Environment's deployment queue.
+#
+# IMPORTANT (cannot be expressed in YAML): the "production" Environment's
+# required-reviewers list is NOT configured here. A repo admin must create
+# this Environment in GitHub (Settings > Environments > New environment >
+# "production") and add at least one required reviewer under "Deployment
+# protection rules" BEFORE this workflow will actually gate anything. Until
+# that's done, referencing `environment: production` with no protection
+# rules configured is a no-op pass-through — the job runs immediately.
+#
+# AUTH: OIDC only, same deploy role as terraform-plan.yml (broader
+# infra-provisioning permissions on this role are documented in
+# terraform/modules/iam-oidc/main.tf).
+name: Terraform Apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/environments/production/**"
+      - "terraform/modules/**"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # Only one apply at a time against production state — Terraform's own S3
+  # backend locking also protects this, but serializing at the workflow
+  # level avoids queuing multiple runs that would just fail on lock contention.
+  group: tf-apply-production
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.15.7"
+  AWS_REGION: "us-east-1"
+  TF_WORKING_DIR: terraform/environments/production
+
+jobs:
+  apply:
+    name: Apply
+    runs-on: ubuntu-latest
+    # This is the manual-approval gate. GitHub Environment protection rules
+    # (required reviewers) are configured in the GitHub UI, not here — see
+    # the header comment above.
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          TF_VAR_github_org: ${{ github.repository_owner }}
+          TF_VAR_github_repo: ${{ github.event.repository.name }}
+          TF_VAR_container_image: ${{ vars.ECR_IMAGE_URI || 'placeholder:latest' }}
+          TF_VAR_db_master_password: ${{ secrets.DB_MASTER_PASSWORD }}
+        run: terraform apply -auto-approve -input=false

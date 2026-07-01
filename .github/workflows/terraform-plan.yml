@@ -1,0 +1,108 @@
+# SafePass — Terraform Plan (PR check)
+#
+# Runs `terraform fmt -check`, `terraform validate`, and `terraform plan`
+# against terraform/environments/production whenever a PR touches that
+# directory or terraform/modules/**, and posts the plan output as a PR
+# comment for human review before merge.
+#
+# AUTH: assumes the deploy role via GitHub OIDC (aws-actions/configure-aws-
+# credentials) — no static AWS access keys are stored in GitHub secrets.
+# The role ARN itself is not a secret (it's an account-scoped identifier);
+# it is stored as a repo variable (vars.AWS_ROLE_ARN), not as a secret,
+# though a secret works too if preferred.
+#
+# This workflow only PLANS — it never applies. Apply only happens on merge
+# to main via terraform-apply.yml, gated behind manual approval.
+name: Terraform Plan
+
+on:
+  pull_request:
+    paths:
+      - "terraform/environments/production/**"
+      - "terraform/modules/**"
+
+# OIDC requires these permissions explicitly.
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write # to post the plan as a PR comment
+
+concurrency:
+  group: tf-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  TF_VERSION: "1.15.7"
+  AWS_REGION: "us-east-1"
+  TF_WORKING_DIR: terraform/environments/production
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform fmt (check)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+      - name: Terraform plan
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        # -var values that are non-secret come from repo vars; sensitive
+        # values (db_master_password) come from GitHub secrets and are never
+        # echoed by `terraform plan`'s stdout (Terraform redacts sensitive
+        # variables in plan output automatically).
+        env:
+          TF_VAR_github_org: ${{ github.repository_owner }}
+          TF_VAR_github_repo: ${{ github.event.repository.name }}
+          TF_VAR_container_image: ${{ vars.ECR_IMAGE_URI || 'placeholder:latest' }}
+          TF_VAR_db_master_password: ${{ secrets.DB_MASTER_PASSWORD }}
+        run: |
+          terraform plan -no-color -input=false -out=tfplan | tee plan_output.txt
+          echo "exitcode=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Post plan as PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const planPath = path.join(process.env.TF_WORKING_DIR, 'plan_output.txt');
+            let output = fs.readFileSync(planPath, 'utf8');
+            // GitHub comments cap around 65536 chars — truncate defensively.
+            const maxLen = 60000;
+            if (output.length > maxLen) {
+              output = output.slice(0, maxLen) + '\n... (truncated)';
+            }
+            const body = `#### Terraform Plan — production\n\`\`\`\n${output}\n\`\`\``;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+        env:
+          TF_WORKING_DIR: terraform/environments/production

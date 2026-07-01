@@ -1,0 +1,110 @@
+# SafePass — Deploy API to ECS Fargate
+#
+# Triggers on push to main when apps/api, packages/shared (its workspace
+# dependency), or the Dockerfile change. Waits for the CI workflow to pass
+# on the same commit before deploying (via workflow_run), builds the Docker
+# image, pushes it to ECR, registers a new ECS task definition revision with
+# the new image, and forces a new rolling deployment.
+#
+# ZERO-DOWNTIME NOTE (risk_log.md R-001 — safety-critical WebSocket path):
+# the ECS service's deployment_minimum_healthy_percent=100 /
+# deployment_maximum_percent=200 (configured in terraform/modules/ecs) means
+# ECS starts new tasks alongside the old ones and only drains old tasks
+# once new ones pass the /health check — never a "kill old task first"
+# strategy that would drop active WebSocket/panic-alert connections.
+name: Deploy API
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-api-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: "us-east-1"
+  ECR_REPOSITORY: safepass-production-api
+  ECS_CLUSTER: safepass-production-cluster
+  ECS_SERVICE: safepass-production-api
+  CONTAINER_NAME: api
+
+jobs:
+  deploy:
+    name: Build, Push, Deploy
+    runs-on: ubuntu-latest
+    # Only deploy if CI succeeded on this commit, and only if apps/api or
+    # its shared dependency actually changed (workflow_run doesn't support
+    # path filters directly, so we check changed files explicitly below).
+    if: github.event.workflow_run.conclusion == 'success'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Check for relevant changes
+        id: changes
+        run: |
+          git fetch --depth=2 origin ${{ github.event.workflow_run.head_sha }}
+          if git diff --name-only HEAD~1 HEAD | grep -qE '^(apps/api/|packages/shared/)'; then
+            echo "relevant=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "relevant=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        if: steps.changes.outputs.relevant == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        if: steps.changes.outputs.relevant == 'true'
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        if: steps.changes.outputs.relevant == 'true'
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          docker build -f apps/api/Dockerfile -t "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" -t "$REGISTRY/$ECR_REPOSITORY:latest" .
+          docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+          echo "image=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download current task definition
+        if: steps.changes.outputs.relevant == 'true'
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${ECS_SERVICE}" \
+            --query 'taskDefinition' > task-def.json
+
+      - name: Render new task definition with updated image
+        if: steps.changes.outputs.relevant == 'true'
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build.outputs.image }}
+
+      - name: Deploy to ECS (rolling update)
+        if: steps.changes.outputs.relevant == 'true'
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true
+          force-new-deployment: true
