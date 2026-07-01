@@ -271,13 +271,14 @@ resource "aws_ecs_service" "api" {
     container_port   = var.container_port
   }
 
-  # ECS spreads tasks across AZs by default via the subnet list; explicit
-  # placement constraint reinforces "spread across Availability Zones" per
-  # architecture.md's Multi-AZ reliability requirement.
-  ordered_placement_strategy {
-    type  = "spread"
-    field = "attribute:ecs.availability-zone"
-  }
+  # NOTE: ordered_placement_strategy is NOT supported with launch_type =
+  # "FARGATE" (AWS API rejects it: "Placement strategies are not supported
+  # with FARGATE launch type") -- that's an EC2-launch-type-only feature.
+  # AZ spread on Fargate is automatic and implicit: the scheduler distributes
+  # tasks across every AZ present in network_configuration.subnets (which
+  # already spans both private subnets/AZs from the networking module), so
+  # architecture.md's Multi-AZ reliability requirement is satisfied without
+  # an explicit placement strategy.
 
   depends_on = [aws_lb_listener.http]
 
