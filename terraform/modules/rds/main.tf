@@ -46,12 +46,6 @@ variable "master_username" {
   sensitive = true
 }
 
-variable "master_password" {
-  description = "Master DB password. Supplied via -var or TF_VAR_master_password from Secrets Manager / CI secret at apply time — never hardcoded."
-  type        = string
-  sensitive   = true
-}
-
 resource "aws_db_subnet_group" "main" {
   name       = "${var.project}-${var.environment}-db-subnets"
   subnet_ids = var.private_subnet_ids
@@ -98,7 +92,14 @@ resource "aws_db_instance" "main" {
 
   db_name  = var.db_name
   username = var.master_username
-  password = var.master_password
+
+  # AWS RDS natively generates, stores, and can auto-rotate the master
+  # password in a Secrets Manager secret it owns — no password ever passes
+  # through Terraform vars, GitHub secrets, or state in plaintext. This
+  # replaces the previous dual-source-of-truth setup (a GitHub Actions
+  # secret AND a manually-populated Secrets Manager placeholder that could
+  # drift out of sync with each other).
+  manage_master_user_password = true
 
   multi_az               = true # per architecture.md: "AWS RDS Multi-AZ with automatic failover"
   db_subnet_group_name   = aws_db_subnet_group.main.name
@@ -132,4 +133,9 @@ output "db_name" {
 
 output "security_group_id" {
   value = aws_security_group.db.id
+}
+
+output "master_user_secret_arn" {
+  description = "ARN of the Secrets Manager secret AWS created to hold the RDS master credentials (JSON: username/password/host/port/dbname/engine). Consumed by the ECS module to inject DB credentials into the running container."
+  value       = aws_db_instance.main.master_user_secret[0].secret_arn
 }

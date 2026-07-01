@@ -25,10 +25,11 @@ locals {
   # `aws secretsmanager put-secret-value` after apply (see AGENTS.md
   # Infrastructure section for the exact command).
   secrets = {
-    db_credentials = jsonencode({
-      username = "REPLACE_ME"
-      password = "REPLACE_ME"
-    })
+    # NOTE: db_credentials intentionally lives here NO LONGER — RDS
+    # natively manages and rotates its own master credentials secret via
+    # manage_master_user_password (see terraform/modules/rds/main.tf). That
+    # secret is created and owned by AWS, not this module, and is wired
+    # into ECS directly as DB_CREDENTIALS in environments/production/main.tf.
     jwt_secrets = jsonencode({
       access_secret  = "REPLACE_ME"
       refresh_secret = "REPLACE_ME"

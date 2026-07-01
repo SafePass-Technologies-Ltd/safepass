@@ -24,8 +24,8 @@
 # by whoever owns that pre-existing role — not enforced or created here):
 #   - Terraform state access (all workflows that run `terraform plan/apply`):
 #       s3:GetObject, s3:PutObject, s3:ListBucket on the TF state bucket
-#       dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem on the TF
-#       lock table
+#       (locking uses S3 conditional writes via `use_lockfile` — no separate
+#       DynamoDB lock table permissions needed)
 #   - Infra-provisioning (terraform-apply.yml's `terraform apply` path),
 #     scoped to the services this stack's modules manage:
 #       ecs:*, ecr:*, rds:*, dynamodb:*, s3:*, cloudfront:*,
@@ -138,4 +138,9 @@ output "ecs_task_execution_role_arn" {
 
 output "ecs_task_role_arn" {
   value = aws_iam_role.ecs_task.arn
+}
+
+output "ecs_task_role_name" {
+  description = "Role name (not ARN) — used by the environment root to attach additional inline policies for resources created after this module (e.g. the RDS-managed master credentials secret), without creating a module dependency cycle."
+  value       = aws_iam_role.ecs_task.name
 }

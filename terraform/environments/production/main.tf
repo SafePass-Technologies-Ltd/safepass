@@ -71,6 +71,12 @@ module "secrets" {
 # role that the ECS service itself assumes at runtime. See
 # terraform/modules/iam-ecs/main.tf's header comment for the minimum
 # permissions the existing external CI role needs.
+#
+# Deliberately does NOT reference module.rds here (see the runtime secret
+# access policy below) — module.rds depends on module.ecs's security group,
+# and module.ecs depends on this module's role ARNs, so wiring the RDS
+# secret ARN into this module's inputs would create iam -> rds -> ecs -> iam,
+# a circular module dependency.
 module "iam" {
   source = "../../modules/iam-ecs"
 
@@ -95,7 +101,27 @@ module "rds" {
 
   instance_class       = var.rds_instance_class
   allocated_storage_gb = var.rds_allocated_storage_gb
-  master_password      = var.db_master_password
+}
+
+# Grants the ECS task role read access to the RDS-managed master credentials
+# secret. Declared here (not inside modules/iam-ecs) because it depends on
+# module.rds, which itself depends on module.ecs's security group — routing
+# it through the iam module's inputs would create a circular dependency
+# (see the comment on module "iam" above). This resource only adds to an
+# already-created role, so it introduces no cycle.
+resource "aws_iam_role_policy" "ecs_task_rds_secret" {
+  name = "rds-master-secret-access"
+  role = module.iam.ecs_task_role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "ReadRdsMasterSecret"
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = [module.rds.master_user_secret_arn]
+    }]
+  })
 }
 
 # --- ECS Fargate + ALB ---
@@ -122,9 +148,13 @@ module "ecs" {
     AWS_REGION = var.aws_region
   }
 
-  secrets = {
-    for k, arn in module.secrets.secret_arns : upper(k) => arn
-  }
+  secrets = merge(
+    { for k, arn in module.secrets.secret_arns : upper(k) => arn },
+    # AWS-managed RDS master credentials (JSON: username/password/host/port/
+    # dbname/engine) — injected as DB_CREDENTIALS, replacing the old
+    # manually-populated Secrets Manager placeholder of the same name.
+    { DB_CREDENTIALS = module.rds.master_user_secret_arn }
+  )
 }
 
 # --- CloudFront (in front of the ALB) ---

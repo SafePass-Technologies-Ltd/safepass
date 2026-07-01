@@ -1,12 +1,17 @@
 # SafePass — Terraform State Backend Bootstrap
 #
-# CHICKEN-AND-EGG PROBLEM: Terraform's S3+DynamoDB remote backend must already
-# exist before any other Terraform config (terraform/environments/production)
-# can use it as its `backend "s3" {}` target. This config creates that S3
-# bucket + DynamoDB lock table using purely LOCAL state (no remote backend
-# here, intentionally) and is applied exactly ONCE, manually, by a human with
-# AWS admin credentials, before CI ever runs `terraform init` against
+# CHICKEN-AND-EGG PROBLEM: Terraform's S3 remote backend must already exist
+# before any other Terraform config (terraform/environments/production) can
+# use it as its `backend "s3" {}` target. This config creates that S3 bucket
+# using purely LOCAL state (no remote backend here, intentionally) and is
+# applied exactly ONCE, manually, by a human with AWS admin credentials,
+# before CI ever runs `terraform init` against
 # terraform/environments/production.
+#
+# State locking uses the S3 backend's native lockfile support
+# (`use_lockfile = true`, Terraform >= 1.10) rather than a separate DynamoDB
+# table — Terraform performs conditional writes directly against the state
+# bucket, so no DynamoDB table is provisioned or required here.
 #
 # After this is applied once, this directory is rarely touched again. Do NOT
 # point CI at this directory — it has no remote backend, and using CI here
@@ -17,17 +22,16 @@
 #   1. cd terraform/bootstrap
 #   2. terraform init
 #   3. terraform apply -var="aws_region=eu-west-2" -var="project=safepass"
-#   4. Note the outputs (state_bucket_name, lock_table_name) — these feed the
-#      `bucket`/`dynamodb_table` values in
+#   4. Note the output (state_bucket_name) — it feeds the `bucket` value in
 #      terraform/environments/production/backend.tf
-#   5. Commit the backend.tf values (bucket/table names are not secret) so CI
-#      can `terraform init` against the now-existing backend.
+#   5. Commit the backend.tf value (bucket name is not secret) so CI can
+#      `terraform init` against the now-existing backend.
 #   6. From this point forward, terraform/environments/production is applied
 #      via GitHub Actions (terraform-plan.yml / terraform-apply.yml) using
 #      OIDC-assumed credentials — never local static keys. The OIDC provider
 #      and deploy role are pre-existing, configured by the user directly in
 #      AWS (outside any Terraform in this repo); its ARN is supplied to
-#      workflows via the `AWS_ROLE_ARN` GitHub repo variable. See
+#      workflows via the `AWS_ROLE_TO_ASSUME` GitHub secret. See
 #      terraform/modules/iam-ecs/main.tf's header comment for the minimum
 #      permissions that pre-existing role needs.
 
@@ -58,7 +62,7 @@ variable "aws_region" {
 }
 
 variable "project" {
-  description = "Project name prefix used for bucket/table naming."
+  description = "Project name prefix used for bucket naming."
   type        = string
   default     = "safepass"
 }
@@ -68,6 +72,10 @@ variable "project" {
 # "production/terraform.tfstate", later "staging/terraform.tfstate") rather
 # than provisioning one bucket per environment — simpler to bootstrap once
 # and scales fine via key prefixing when a staging env is added later.
+#
+# This bucket also holds Terraform's native S3-backend lockfiles (via
+# `use_lockfile = true` in each environment's backend.tf) — no separate
+# DynamoDB lock table is needed.
 resource "aws_s3_bucket" "tf_state" {
   bucket = "${var.project}-terraform-state"
 
@@ -101,25 +109,6 @@ resource "aws_s3_bucket_public_access_block" "tf_state" {
   restrict_public_buckets = true
 }
 
-# DynamoDB table for state locking (Terraform's S3 backend uses this to
-# prevent concurrent `apply` runs from corrupting state). Single table shared
-# across environments — the lock key is derived from the state file path, so
-# per-environment isolation is automatic; no need for a table-per-env.
-resource "aws_dynamodb_table" "tf_lock" {
-  name         = "${var.project}-terraform-locks"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-}
-
 output "state_bucket_name" {
   value = aws_s3_bucket.tf_state.bucket
-}
-
-output "lock_table_name" {
-  value = aws_dynamodb_table.tf_lock.name
 }

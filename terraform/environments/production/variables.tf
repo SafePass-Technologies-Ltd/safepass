@@ -61,12 +61,3 @@ variable "container_image" {
   description = "Full ECR image URI:tag for the API container, e.g. <account>.dkr.ecr.<region>.amazonaws.com/safepass-production-api:<git-sha>. Updated on each deploy by GitHub Actions via a new task definition revision — Terraform's own applies do not need to touch this after first apply (see the ECS module's `ignore_changes = [task_definition]`)."
   type        = string
 }
-
-# --- Secrets (never hardcoded — supplied via TF_VAR_* env vars in CI, sourced
-# from GitHub Actions OIDC-authenticated Secrets Manager reads or from a
-# CI-level secret store, never checked into source control) ---
-variable "db_master_password" {
-  description = "RDS master password. Supply via TF_VAR_db_master_password at apply time."
-  type        = string
-  sensitive   = true
-}

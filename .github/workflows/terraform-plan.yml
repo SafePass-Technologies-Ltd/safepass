@@ -71,13 +71,12 @@ jobs:
       - name: Terraform plan
         id: plan
         working-directory: ${{ env.TF_WORKING_DIR }}
-        # -var values that are non-secret come from repo vars; sensitive
-        # values (db_master_password) come from GitHub secrets and are never
-        # echoed by `terraform plan`'s stdout (Terraform redacts sensitive
-        # variables in plan output automatically).
+        # -var values that are non-secret come from repo vars. The RDS master
+        # password is no longer a Terraform var at all — AWS generates and
+        # owns it natively via manage_master_user_password (see
+        # terraform/modules/rds/main.tf).
         env:
           TF_VAR_container_image: ${{ vars.ECR_IMAGE_URI || 'placeholder:latest' }}
-          TF_VAR_db_master_password: ${{ secrets.DB_MASTER_PASSWORD }}
         run: |
           terraform plan -no-color -input=false -out=tfplan | tee plan_output.txt
           echo "exitcode=$?" >> "$GITHUB_OUTPUT"

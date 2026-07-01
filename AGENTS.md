@@ -202,11 +202,11 @@ safepass/
 
 ```
 terraform/
-├── bootstrap/                  # One-time, LOCAL-state config that creates the S3 state bucket + DynamoDB lock table. Apply manually, once, before anything else.
+├── bootstrap/                  # One-time, LOCAL-state config that creates the S3 state bucket (locking uses S3 use_lockfile, no DynamoDB table). Apply manually, once, before anything else.
 ├── modules/                    # Reusable modules — no environment-specific values
 │   ├── networking/             # Dedicated VPC, 2 AZs, public+private subnets, single NAT
 │   ├── ecs/                    # Fargate cluster, ALB, /health target group, rolling-deploy service
-│   ├── rds/                    # PostgreSQL 16 Multi-AZ
+│   ├── rds/                    # PostgreSQL 16 Multi-AZ. Master password is AWS-managed (manage_master_user_password) — AWS creates/rotates its own Secrets Manager secret; never a Terraform var or GitHub secret.
 │   ├── dynamodb/               # Real-time trip/session state table (60s GPS TTL)
 │   ├── s3/                     # Evidence bucket — Object Lock (GOVERNANCE mode), KMS encryption, Glacier lifecycle
 │   ├── ecr/                    # API container image registry
@@ -214,20 +214,20 @@ terraform/
 │   ├── iam-ecs/                 # ECS task execution + task roles only — GitHub Actions OIDC is pre-existing, not managed here
 │   └── secrets/                # Secrets Manager containers (placeholder values only — never real secrets in Terraform)
 └── environments/
-    └── production/              # Wires all modules together; only environment today. A `staging/` folder can be added later by copying this directory, changing `environment = "staging"`, and pointing backend.tf's state `key` at `staging/terraform.tfstate` (same state bucket/lock table — no re-bootstrap needed).
+    └── production/              # Wires all modules together; only environment today. A `staging/` folder can be added later by copying this directory, changing `environment = "staging"`, and pointing backend.tf's state `key` at `staging/terraform.tfstate` (same state bucket — no re-bootstrap needed).
 ```
 
 Terraform CLI `>= 1.15.7`, `hashicorp/aws` provider `~> 6.52` — pinned in each config's `required_version`/`required_providers` block.
 
 ### Bootstrapping the State Backend (one-time, manual)
 
-The S3 bucket + DynamoDB table that hold Terraform's own remote state cannot be created by the Terraform config that uses them (chicken-and-egg). Run once, manually, with AWS admin credentials:
+The S3 bucket that holds Terraform's own remote state cannot be created by the Terraform config that uses it (chicken-and-egg). State locking uses the S3 backend's native `use_lockfile` support — no DynamoDB table is required. Run once, manually, with AWS admin credentials:
 
 ```bash
 cd terraform/bootstrap
 terraform init
 terraform apply -var="aws_region=eu-west-2" -var="project=safepass"
-# note the state_bucket_name / lock_table_name outputs — they must match
+# note the state_bucket_name output — it must match
 # terraform/environments/production/backend.tf
 ```
 
@@ -240,12 +240,12 @@ The very first `terraform apply` of `terraform/environments/production` (which c
 
 ### OIDC Auth Model
 
-GitHub Actions never uses static AWS access keys. Each workflow calls `aws-actions/configure-aws-credentials` with `role-to-assume: ${{ vars.AWS_ROLE_ARN }}`, which assumes a **pre-existing** IAM role via a **pre-existing** OIDC identity provider — both already configured in AWS outside this repo's Terraform. This Terraform config deliberately does NOT create or manage the OIDC provider or the CI deploy role: AWS allows only one `aws_iam_openid_connect_provider` per URL per account, so a second one for `https://token.actions.githubusercontent.com` would conflict with the one that already exists. The role's ARN is supplied to workflows purely via the `AWS_ROLE_ARN` GitHub repo variable.
+GitHub Actions never uses static AWS access keys. Each workflow calls `aws-actions/configure-aws-credentials` with `role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}`, which assumes a **pre-existing** IAM role via a **pre-existing** OIDC identity provider — both already configured in AWS outside this repo's Terraform. This Terraform config deliberately does NOT create or manage the OIDC provider or the CI deploy role: AWS allows only one `aws_iam_openid_connect_provider` per URL per account, so a second one for `https://token.actions.githubusercontent.com` would conflict with the one that already exists. The role's ARN is supplied to workflows purely via the `AWS_ROLE_TO_ASSUME` GitHub secret.
 
 Terraform only manages the ECS task execution role and ECS task role (via `terraform/modules/iam-ecs`) — these are assumed by the ECS service itself at runtime, unrelated to OIDC/CI auth.
 
 Minimum permissions the existing external CI role needs (for reference/audit by whoever owns that role — not enforced by this repo):
-- Terraform state access (all `terraform plan`/`apply` workflows): `s3:GetObject`, `s3:PutObject`, `s3:ListBucket` on the TF state bucket; `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:DeleteItem` on the TF lock table.
+- Terraform state access (all `terraform plan`/`apply` workflows): `s3:GetObject`, `s3:PutObject`, `s3:ListBucket` on the TF state bucket (locking uses S3 conditional writes via `use_lockfile` — no DynamoDB lock table permissions needed).
 - Infra-provisioning (`terraform-apply.yml`'s `terraform apply` path): `ecs:*`, `ecr:*`, `rds:*`, `dynamodb:*`, `s3:*`, `cloudfront:*`, `secretsmanager:*`, `elasticloadbalancing:*`, ec2 networking actions (vpc/subnet/route-table/internet-gateway/nat-gateway/security-group/describe*), and `iam:PassRole` for the two roles this module creates (`ecs_task_execution` and `ecs_task`).
 - Deploy-only (the narrower path used by `deploy-api.yml`): ECR push actions (`ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`, `ecr:PutImage`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:BatchGetImage`) plus `ecs:RegisterTaskDefinition` and `ecs:UpdateService` (with `iam:PassRole` scoped to `iam:PassedToService = ecs-tasks.amazonaws.com`).
 
