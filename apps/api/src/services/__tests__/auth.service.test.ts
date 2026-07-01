@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const hoisted = vi.hoisted(() => ({
   mockVerifyIdToken: vi.fn(),
   mockFindFirst: vi.fn(),
+  mockWalletFindFirst: vi.fn(),
   mockInsert: vi.fn(),
   mockValues: vi.fn(),
   mockReturning: vi.fn(),
@@ -42,6 +43,11 @@ vi.mock('../../db', () => ({
     query: {
       users: {
         findFirst: hoisted.mockFindFirst,
+      },
+      // createWallet() checks for an existing wallet before inserting one —
+      // auto-provisioned for every newly created user in exchangeFirebaseToken.
+      wallets: {
+        findFirst: hoisted.mockWalletFindFirst,
       },
     },
     insert: hoisted.mockInsert,
@@ -118,6 +124,9 @@ beforeEach(() => {
   hoisted.mockValues.mockReturnValue({ returning: hoisted.mockReturning });
   hoisted.mockIssueAccessToken.mockResolvedValue('mock-access-token');
   hoisted.mockIssueRefreshToken.mockResolvedValue('mock-refresh-token');
+  // No pre-existing wallet by default — createWallet() proceeds to insert one
+  // via the same db.insert(...).values(...).returning() chain used above.
+  hoisted.mockWalletFindFirst.mockResolvedValue(null);
 });
 
 // ────────────────────────────────────────────────────────────
