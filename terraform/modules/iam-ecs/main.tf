@@ -161,11 +161,6 @@ output "ecs_task_execution_role_arn" {
   value = aws_iam_role.ecs_task_execution.arn
 }
 
-output "ecs_task_execution_role_name" {
-  description = "Role name (not ARN) -- used by the environment root to grant the RDS-managed master credentials secret to the EXECUTION role too (secrets injection uses this role, not the task role), without creating a module dependency cycle. See ecs_task_role_name for why this can't be passed in as a module input."
-  value       = aws_iam_role.ecs_task_execution.name
-}
-
 output "ecs_task_role_arn" {
   value = aws_iam_role.ecs_task.arn
 }

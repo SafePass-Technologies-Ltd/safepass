@@ -104,34 +104,17 @@ module "rds" {
 }
 
 # Grants the ECS task role read access to the RDS-managed master credentials
-# secret. Declared here (not inside modules/iam-ecs) because it depends on
-# module.rds, which itself depends on module.ecs's security group — routing
-# it through the iam module's inputs would create a circular dependency
-# (see the comment on module "iam" above). This resource only adds to an
-# already-created role, so it introduces no cycle.
+# secret -- the running app fetches this itself at startup (see
+# apps/api/src/env.ts's resolveDatabaseUrl) via DB_SECRET_ARN below, using
+# this role's credentials through the AWS SDK. Declared here (not inside
+# modules/iam-ecs) because it depends on module.rds, which itself depends on
+# module.ecs's security group — routing it through the iam module's inputs
+# would create a circular dependency (see the comment on module "iam"
+# above). This resource only adds to an already-created role, so it
+# introduces no cycle.
 resource "aws_iam_role_policy" "ecs_task_rds_secret" {
   name = "rds-master-secret-access"
   role = module.iam.ecs_task_role_name
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Sid      = "ReadRdsMasterSecret"
-      Effect   = "Allow"
-      Action   = ["secretsmanager:GetSecretValue"]
-      Resource = [module.rds.master_user_secret_arn]
-    }]
-  })
-}
-
-# Same as above but for the EXECUTION role -- the container definition's
-# `secrets` block (used below in module "ecs" to inject DB_USER/DB_PASSWORD)
-# is resolved by the ECS agent using the execution role at task launch, not
-# the task role. See terraform/modules/iam-ecs/main.tf's header comment on
-# ecs_task_execution_secrets for why both roles need this.
-resource "aws_iam_role_policy" "ecs_task_execution_rds_secret" {
-  name = "rds-master-secret-access"
-  role = module.iam.ecs_task_execution_role_name
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -163,30 +146,29 @@ module "ecs" {
   task_role_arn           = module.iam.ecs_task_role_arn
   task_execution_role_arn = module.iam.ecs_task_execution_role_arn
 
-  # Plain (non-secret) env vars: connection host/port/dbname are not
-  # sensitive on their own (no credentials) and aren't part of the
-  # AWS-managed master secret (which only holds username/password), so
-  # they're passed directly rather than via Secrets Manager.
+  # Plain (non-secret) env vars. DB_SECRET_ARN is an ARN, not a credential --
+  # apps/api/src/env.ts fetches the actual username/password from it at
+  # startup via the AWS SDK (using the task role's secretsmanager:GetSecretValue
+  # grant above), then assembles DATABASE_URL from that plus DB_HOST/DB_PORT/
+  # DB_NAME. This keeps the app itself in control of connection-string
+  # construction instead of relying on ECS's secrets injection (which can't
+  # concatenate JSON fields into one string) or a Docker entrypoint script.
   environment_variables = {
-    NODE_ENV   = "production"
-    AWS_REGION = var.aws_region
-    DB_HOST    = module.rds.address
-    DB_PORT    = tostring(module.rds.port)
-    DB_NAME    = module.rds.db_name
+    NODE_ENV      = "production"
+    AWS_REGION    = var.aws_region
+    DB_HOST       = module.rds.address
+    DB_PORT       = tostring(module.rds.port)
+    DB_NAME       = module.rds.db_name
+    DB_SECRET_ARN = module.rds.master_user_secret_arn
   }
 
   # Maps each container env var to a Secrets Manager valueFrom. Using the
   # ":<jsonKey>::" suffix (ECS's JSON-key-selector syntax) pulls a single
   # field out of a JSON secret directly as that env var's value, instead of
-  # dumping the whole JSON blob in — required here because apps/api's env.ts
+  # dumping the whole JSON blob in -- required here because apps/api's env.ts
   # validates flat vars (JWT_ACCESS_SECRET, FIREBASE_PROJECT_ID, etc.), not
-  # JSON blobs. DATABASE_URL itself still can't be assembled this way (ECS
-  # secrets have no string-concatenation), so apps/api/docker-entrypoint.sh
-  # composes it from DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD at container
-  # startup instead.
+  # JSON blobs.
   secrets = {
-    DB_USER                = "${module.rds.master_user_secret_arn}:username::"
-    DB_PASSWORD            = "${module.rds.master_user_secret_arn}:password::"
     JWT_ACCESS_SECRET      = "${module.secrets.secret_arns["jwt_secrets"]}:access_secret::"
     JWT_REFRESH_SECRET     = "${module.secrets.secret_arns["jwt_secrets"]}:refresh_secret::"
     FIREBASE_PROJECT_ID    = "${module.secrets.secret_arns["firebase_admin"]}:project_id::"
