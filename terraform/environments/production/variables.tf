@@ -61,3 +61,9 @@ variable "container_image" {
   description = "Full ECR image URI:tag for the API container, e.g. <account>.dkr.ecr.<region>.amazonaws.com/safepass-production-api:<git-sha>. Updated on each deploy by GitHub Actions via a new task definition revision — Terraform's own applies do not need to touch this after first apply (see the ECS module's `ignore_changes = [task_definition]`)."
   type        = string
 }
+
+variable "enable_cloudfront" {
+  description = "Whether to create the CloudFront distribution in front of the ALB. AWS blocks CloudFront creation on newly created / unverified accounts (\"AccessDenied: account must be verified\") until AWS Support clears the account -- set to false to apply the rest of the stack in the meantime, then flip back to true once verified."
+  type        = bool
+  default     = true
+}

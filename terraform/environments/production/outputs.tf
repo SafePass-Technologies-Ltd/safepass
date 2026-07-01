@@ -29,7 +29,8 @@ output "alb_dns_name" {
 }
 
 output "cloudfront_domain_name" {
-  value = module.cloudfront.distribution_domain_name
+  description = "CloudFront distribution domain, or null while enable_cloudfront = false."
+  value       = var.enable_cloudfront ? module.cloudfront[0].distribution_domain_name : null
 }
 
 output "rds_endpoint" {

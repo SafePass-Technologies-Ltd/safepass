@@ -57,7 +57,7 @@ resource "aws_db_subnet_group" "main" {
 
 resource "aws_security_group" "db" {
   name        = "${var.project}-${var.environment}-db-sg"
-  description = "Allow PostgreSQL access only from the API's ECS service security group"
+  description = "Allow PostgreSQL access only from the API ECS service security group"
   vpc_id      = var.vpc_id
 
   ingress {

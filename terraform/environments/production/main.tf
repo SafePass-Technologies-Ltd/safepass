@@ -158,7 +158,13 @@ module "ecs" {
 }
 
 # --- CloudFront (in front of the ALB) ---
+# count-gated by enable_cloudfront: AWS blocks CloudFront creation on
+# unverified accounts (see AccessDenied error referenced in variables.tf's
+# enable_cloudfront description) -- set to false to apply everything else
+# in the meantime, then flip back to true once AWS Support verifies the
+# account and re-apply.
 module "cloudfront" {
+  count  = var.enable_cloudfront ? 1 : 0
   source = "../../modules/cloudfront"
 
   project      = var.project
