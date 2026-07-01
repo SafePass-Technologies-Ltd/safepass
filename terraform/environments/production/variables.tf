@@ -65,5 +65,5 @@ variable "container_image" {
 variable "enable_cloudfront" {
   description = "Whether to create the CloudFront distribution in front of the ALB. AWS blocks CloudFront creation on newly created / unverified accounts (\"AccessDenied: account must be verified\") until AWS Support clears the account -- set to false to apply the rest of the stack in the meantime, then flip back to true once verified."
   type        = bool
-  default     = true
+  default     = false
 }
