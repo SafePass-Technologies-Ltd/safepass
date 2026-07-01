@@ -71,30 +71,13 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_managed" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# The container definition's `secrets` block (Secrets Manager -> env var
-# injection) is resolved by the ECS AGENT using the EXECUTION role at task
-# launch time -- NOT the task role (which only governs the running
-# application's own runtime AWS calls). Without this, tasks fail to start
-# with a ResourceInitializationError ("unable to pull secrets") whenever any
-# container definition references a Secrets Manager valueFrom, which is
-# indistinguishable from the outside from a generic unhealthy/crash-looping
-# task -- the ECS console/events tab is the only place this shows up clearly.
-data "aws_iam_policy_document" "ecs_task_execution_secrets" {
-  count = length(var.secret_arns) > 0 ? 1 : 0
-
-  statement {
-    sid       = "ReadSecretsForInjection"
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = var.secret_arns
-  }
-}
-
-resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
-  count  = length(var.secret_arns) > 0 ? 1 : 0
-  name   = "secrets-injection-access"
-  role   = aws_iam_role.ecs_task_execution.id
-  policy = data.aws_iam_policy_document.ecs_task_execution_secrets[0].json
-}
+# NOTE: the execution role deliberately has NO Secrets Manager permissions.
+# All secrets (DB, JWT, Firebase, payment gateways) are fetched by the app
+# itself at runtime via the TASK role (see ecs_task_runtime below and
+# apps/api/src/env.ts) -- not injected by ECS's container-definition
+# `secrets` mechanism, which would require the execution role to read them
+# instead and would leave resolved values sitting in the task's env var
+# metadata.
 
 # --- ECS task role (the running API container's own runtime permissions) ---
 # Least privilege: Secrets Manager read (for DB/JWT/Firebase/payment

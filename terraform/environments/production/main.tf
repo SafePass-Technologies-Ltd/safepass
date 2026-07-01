@@ -146,36 +146,28 @@ module "ecs" {
   task_role_arn           = module.iam.ecs_task_role_arn
   task_execution_role_arn = module.iam.ecs_task_execution_role_arn
 
-  # Plain (non-secret) env vars. DB_SECRET_ARN is an ARN, not a credential --
-  # apps/api/src/env.ts fetches the actual username/password from it at
-  # startup via the AWS SDK (using the task role's secretsmanager:GetSecretValue
-  # grant above), then assembles DATABASE_URL from that plus DB_HOST/DB_PORT/
-  # DB_NAME. This keeps the app itself in control of connection-string
-  # construction instead of relying on ECS's secrets injection (which can't
-  # concatenate JSON fields into one string) or a Docker entrypoint script.
+  # Plain (non-secret) env vars -- every *_SECRET_ARN below is just an ARN,
+  # not a credential. apps/api/src/env.ts fetches the actual secret material
+  # itself at startup via the AWS SDK (using the task role's
+  # secretsmanager:GetSecretValue grant above / in modules/iam-ecs), rather
+  # than via ECS's native container-definition `secrets` injection. That
+  # keeps secret material out of the task definition and container env var
+  # metadata entirely -- only the app process (via its own task-role
+  # identity) ever touches it, and every fetch is individually auditable in
+  # CloudTrail. It also means the execution role no longer needs
+  # secretsmanager permissions at all (only ECR/CloudWatch), and lets
+  # DATABASE_URL be assembled from multiple secret fields, which ECS's
+  # injection can't do.
   environment_variables = {
-    NODE_ENV      = "production"
-    AWS_REGION    = var.aws_region
-    DB_HOST       = module.rds.address
-    DB_PORT       = tostring(module.rds.port)
-    DB_NAME       = module.rds.db_name
-    DB_SECRET_ARN = module.rds.master_user_secret_arn
-  }
-
-  # Maps each container env var to a Secrets Manager valueFrom. Using the
-  # ":<jsonKey>::" suffix (ECS's JSON-key-selector syntax) pulls a single
-  # field out of a JSON secret directly as that env var's value, instead of
-  # dumping the whole JSON blob in -- required here because apps/api's env.ts
-  # validates flat vars (JWT_ACCESS_SECRET, FIREBASE_PROJECT_ID, etc.), not
-  # JSON blobs.
-  secrets = {
-    JWT_ACCESS_SECRET      = "${module.secrets.secret_arns["jwt_secrets"]}:access_secret::"
-    JWT_REFRESH_SECRET     = "${module.secrets.secret_arns["jwt_secrets"]}:refresh_secret::"
-    FIREBASE_PROJECT_ID    = "${module.secrets.secret_arns["firebase_admin"]}:project_id::"
-    FIREBASE_CLIENT_EMAIL  = "${module.secrets.secret_arns["firebase_admin"]}:client_email::"
-    FIREBASE_PRIVATE_KEY   = "${module.secrets.secret_arns["firebase_admin"]}:private_key::"
-    PAYSTACK_SECRET_KEY    = "${module.secrets.secret_arns["payment_gateways"]}:paystack_secret_key::"
-    FLUTTERWAVE_SECRET_KEY = "${module.secrets.secret_arns["payment_gateways"]}:flutterwave_secret_key::"
+    NODE_ENV            = "production"
+    AWS_REGION          = var.aws_region
+    DB_HOST             = module.rds.address
+    DB_PORT             = tostring(module.rds.port)
+    DB_NAME             = module.rds.db_name
+    DB_SECRET_ARN       = module.rds.master_user_secret_arn
+    JWT_SECRET_ARN      = module.secrets.secret_arns["jwt_secrets"]
+    FIREBASE_SECRET_ARN = module.secrets.secret_arns["firebase_admin"]
+    PAYMENT_SECRET_ARN  = module.secrets.secret_arns["payment_gateways"]
   }
 }
 

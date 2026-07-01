@@ -10,45 +10,47 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../../.env') });
 
 // ─────────────────────────────────────────────
-// DATABASE_URL resolution
+// Secret resolution (pulled in-app, not baked in at build/deploy time)
 //
-// Local dev sets DATABASE_URL directly (see .env.example / docker-compose)
-// -- that path is untouched below. In production, ECS injects the RDS
-// master credentials as a Secrets Manager ARN (DB_SECRET_ARN) rather than a
-// full connection string, because:
-//   - AWS's RDS-managed master-password secret only contains
-//     username/password (see terraform/modules/rds/main.tf's
-//     manage_master_user_password), not host/port/dbname.
-//   - ECS's own container-definition secrets mechanism can only inject a
-//     secret's value verbatim (or a single JSON key via its ":key::"
-//     selector) -- it can't concatenate multiple fields into one connection
-//     string.
-// So when DB_SECRET_ARN is present and DATABASE_URL isn't, fetch the
-// secret here (using the task role's existing secretsmanager:GetSecretValue
-// grant -- see terraform/environments/production/main.tf's
-// aws_iam_role_policy.ecs_task_rds_secret) and assemble DATABASE_URL from
-// it plus the plain DB_HOST/DB_PORT/DB_NAME env vars. Falls through to the
-// schema's plain z.string().url() check either way, so a missing/invalid
-// result still fails startup loudly rather than silently.
+// Local dev sets every value below directly via .env (see .env.example) --
+// that path is untouched. In production, ECS only injects ARNs as plain
+// (non-secret) env vars; this app fetches the actual secret material
+// itself, at startup, via the AWS SDK using the ECS task role's scoped
+// secretsmanager:GetSecretValue grant (see
+// terraform/environments/production/main.tf's
+// aws_iam_role_policy.ecs_task_rds_secret, and the task role's general
+// runtime-access policy in terraform/modules/iam-ecs/main.tf for the
+// jwt_secrets/firebase_admin/payment_gateways secrets).
+//
+// Deliberately NOT using ECS's native container-definition `secrets`
+// injection (Secrets Manager valueFrom) for any of this: that mechanism
+// requires the EXECUTION role (not the task role) to read every secret,
+// widening its permissions beyond ECR/CloudWatch for no benefit, and it
+// writes the resolved values into the task's container-level env var
+// metadata. Fetching in-app instead means secret material only ever
+// exists in this process's own memory, only the task role (this app's
+// own identity) can read it, and every fetch is individually auditable in
+// CloudTrail against that role -- and it lets DATABASE_URL be assembled
+// from multiple fields, which ECS's injection can't do at all (see below).
+async function loadJsonSecret(arn: string): Promise<Record<string, string>> {
+  const client = new SecretsManagerClient({ region: process.env.AWS_REGION });
+  const response = await client.send(new GetSecretValueCommand({ SecretId: arn }));
+
+  if (!response.SecretString) {
+    throw new Error(`Secret ${arn} has no SecretString`);
+  }
+
+  return JSON.parse(response.SecretString) as Record<string, string>;
+}
+
 async function resolveDatabaseUrl(): Promise<void> {
   if (process.env.DATABASE_URL || !process.env.DB_SECRET_ARN) return;
 
-  const client = new SecretsManagerClient({ region: process.env.AWS_REGION });
-  const response = await client.send(
-    new GetSecretValueCommand({ SecretId: process.env.DB_SECRET_ARN })
-  );
-
-  if (!response.SecretString) {
-    throw new Error(
-      `DB_SECRET_ARN (${process.env.DB_SECRET_ARN}) has no SecretString`
-    );
-  }
-
-  const { username, password } = JSON.parse(response.SecretString) as {
-    username: string;
-    password: string;
-  };
-
+  // AWS's RDS-managed master-password secret only contains
+  // username/password (see terraform/modules/rds/main.tf's
+  // manage_master_user_password), not host/port/dbname, so those come from
+  // the plain DB_HOST/DB_PORT/DB_NAME env vars instead.
+  const { username, password } = await loadJsonSecret(process.env.DB_SECRET_ARN);
   const host = process.env.DB_HOST;
   const port = process.env.DB_PORT ?? '5432';
   const dbName = process.env.DB_NAME ?? 'safepass';
@@ -62,7 +64,40 @@ async function resolveDatabaseUrl(): Promise<void> {
   process.env.DATABASE_URL = `postgresql://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
 }
 
-await resolveDatabaseUrl();
+async function resolveJwtSecrets(): Promise<void> {
+  if (process.env.JWT_ACCESS_SECRET || !process.env.JWT_SECRET_ARN) return;
+
+  const secret = await loadJsonSecret(process.env.JWT_SECRET_ARN);
+  process.env.JWT_ACCESS_SECRET = secret.access_secret;
+  process.env.JWT_REFRESH_SECRET = secret.refresh_secret;
+}
+
+async function resolveFirebaseCredentials(): Promise<void> {
+  if (process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_SECRET_ARN) return;
+
+  const secret = await loadJsonSecret(process.env.FIREBASE_SECRET_ARN);
+  process.env.FIREBASE_PROJECT_ID = secret.project_id;
+  process.env.FIREBASE_CLIENT_EMAIL = secret.client_email;
+  process.env.FIREBASE_PRIVATE_KEY = secret.private_key;
+}
+
+async function resolvePaymentGatewayKeys(): Promise<void> {
+  if (process.env.PAYSTACK_SECRET_KEY || !process.env.PAYMENT_SECRET_ARN) return;
+
+  // Read directly via process.env (not part of the zod schema below) by
+  // apps/api/src/services/payment.service.ts, so just populate them --
+  // nothing here needs to validate their presence.
+  const secret = await loadJsonSecret(process.env.PAYMENT_SECRET_ARN);
+  if (secret.paystack_secret_key) process.env.PAYSTACK_SECRET_KEY = secret.paystack_secret_key;
+  if (secret.flutterwave_secret_key) process.env.FLUTTERWAVE_SECRET_KEY = secret.flutterwave_secret_key;
+}
+
+await Promise.all([
+  resolveDatabaseUrl(),
+  resolveJwtSecrets(),
+  resolveFirebaseCredentials(),
+  resolvePaymentGatewayKeys(),
+]);
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
