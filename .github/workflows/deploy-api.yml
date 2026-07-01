@@ -6,6 +6,13 @@
 # image, pushes it to ECR, registers a new ECS task definition revision with
 # the new image, and forces a new rolling deployment.
 #
+# CHANGE DETECTION: workflow_run doesn't support path filters directly, so
+# relevance is checked explicitly against a moving "deployed-api" git tag
+# (not a fixed HEAD~1) -- this correctly covers every commit since the LAST
+# deploy, however many commits were batched into a single push. A fixed
+# HEAD~1 diff would silently miss earlier commits in a multi-commit push
+# whenever the last commit alone didn't touch apps/api/ or packages/shared/.
+#
 # ZERO-DOWNTIME NOTE (risk_log.md R-001 — safety-critical WebSocket path):
 # the ECS service's deployment_minimum_healthy_percent=100 /
 # deployment_maximum_percent=200 (configured in terraform/modules/ecs) means
@@ -22,7 +29,10 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  # write (not read) so this workflow can move the deployed-api marker tag
+  # after a successful deploy -- see the "Check for relevant changes" and
+  # "Mark this commit as deployed" steps.
+  contents: write
 
 concurrency:
   group: deploy-api-production
@@ -48,12 +58,25 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+          # Full history (not the default shallow clone) so the relevance
+          # check can diff against the deployed-api tag, which may be many
+          # commits back, and so the tag itself can be moved/pushed later.
+          fetch-depth: 0
 
       - name: Check for relevant changes
         id: changes
         run: |
-          git fetch --depth=2 origin ${{ github.event.workflow_run.head_sha }}
-          if git diff --name-only HEAD~1 HEAD | grep -qE '^(apps/api/|packages/shared/)'; then
+          # Diff against the deployed-api tag (everything since the last
+          # successful deploy) rather than a fixed HEAD~1, so a push that
+          # batches several commits together is checked in full -- not just
+          # its last commit. On the very first run ever (tag doesn't exist
+          # yet), treat it as relevant so the initial deploy always happens.
+          if git rev-parse -q --verify refs/tags/deployed-api >/dev/null; then
+            BASE=refs/tags/deployed-api
+          else
+            BASE=$(git rev-list --max-parents=0 HEAD | tail -1)
+          fi
+          if git diff --name-only "$BASE" HEAD | grep -qE '^(apps/api/|packages/shared/)'; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=false" >> "$GITHUB_OUTPUT"
@@ -114,3 +137,12 @@ jobs:
           service: ${{ env.ECS_SERVICE }}
           wait-for-service-stability: true
           force-new-deployment: true
+
+      - name: Mark this commit as deployed
+        if: steps.changes.outputs.relevant == 'true'
+        # Moves the deployed-api tag to this commit so the next run's
+        # "Check for relevant changes" step diffs from here, not an
+        # arbitrary fixed offset. Runs only after a successful deploy above.
+        run: |
+          git tag -f deployed-api ${{ github.event.workflow_run.head_sha }}
+          git push origin deployed-api --force
