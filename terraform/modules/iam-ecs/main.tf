@@ -71,6 +71,31 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_managed" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# The container definition's `secrets` block (Secrets Manager -> env var
+# injection) is resolved by the ECS AGENT using the EXECUTION role at task
+# launch time -- NOT the task role (which only governs the running
+# application's own runtime AWS calls). Without this, tasks fail to start
+# with a ResourceInitializationError ("unable to pull secrets") whenever any
+# container definition references a Secrets Manager valueFrom, which is
+# indistinguishable from the outside from a generic unhealthy/crash-looping
+# task -- the ECS console/events tab is the only place this shows up clearly.
+data "aws_iam_policy_document" "ecs_task_execution_secrets" {
+  count = length(var.secret_arns) > 0 ? 1 : 0
+
+  statement {
+    sid       = "ReadSecretsForInjection"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = var.secret_arns
+  }
+}
+
+resource "aws_iam_role_policy" "ecs_task_execution_secrets" {
+  count  = length(var.secret_arns) > 0 ? 1 : 0
+  name   = "secrets-injection-access"
+  role   = aws_iam_role.ecs_task_execution.id
+  policy = data.aws_iam_policy_document.ecs_task_execution_secrets[0].json
+}
+
 # --- ECS task role (the running API container's own runtime permissions) ---
 # Least privilege: Secrets Manager read (for DB/JWT/Firebase/payment
 # secrets) + S3 evidence bucket read/write + DynamoDB read/write on the
@@ -134,6 +159,11 @@ resource "aws_iam_role_policy" "ecs_task_runtime" {
 
 output "ecs_task_execution_role_arn" {
   value = aws_iam_role.ecs_task_execution.arn
+}
+
+output "ecs_task_execution_role_name" {
+  description = "Role name (not ARN) -- used by the environment root to grant the RDS-managed master credentials secret to the EXECUTION role too (secrets injection uses this role, not the task role), without creating a module dependency cycle. See ecs_task_role_name for why this can't be passed in as a module input."
+  value       = aws_iam_role.ecs_task_execution.name
 }
 
 output "ecs_task_role_arn" {

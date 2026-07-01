@@ -124,7 +124,17 @@ resource "aws_db_instance" "main" {
 }
 
 output "endpoint" {
-  value = aws_db_instance.main.endpoint
+  description = "host:port combined string."
+  value       = aws_db_instance.main.endpoint
+}
+
+output "address" {
+  description = "DB host only (no port) — for wiring discrete DB_HOST into the ECS task, since AWS-managed master secret only contains username/password, not connection details."
+  value       = aws_db_instance.main.address
+}
+
+output "port" {
+  value = aws_db_instance.main.port
 }
 
 output "db_name" {
@@ -136,6 +146,6 @@ output "security_group_id" {
 }
 
 output "master_user_secret_arn" {
-  description = "ARN of the Secrets Manager secret AWS created to hold the RDS master credentials (JSON: username/password/host/port/dbname/engine). Consumed by the ECS module to inject DB credentials into the running container."
+  description = "ARN of the Secrets Manager secret AWS created to hold the RDS master credentials (JSON: username + password only — host/port/dbname are NOT included, use the address/port/db_name outputs above for those). Consumed by the environment root to inject DB_USER/DB_PASSWORD into the running container via JSON-key-selector valueFrom."
   value       = aws_db_instance.main.master_user_secret[0].secret_arn
 }

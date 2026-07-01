@@ -124,6 +124,26 @@ resource "aws_iam_role_policy" "ecs_task_rds_secret" {
   })
 }
 
+# Same as above but for the EXECUTION role -- the container definition's
+# `secrets` block (used below in module "ecs" to inject DB_USER/DB_PASSWORD)
+# is resolved by the ECS agent using the execution role at task launch, not
+# the task role. See terraform/modules/iam-ecs/main.tf's header comment on
+# ecs_task_execution_secrets for why both roles need this.
+resource "aws_iam_role_policy" "ecs_task_execution_rds_secret" {
+  name = "rds-master-secret-access"
+  role = module.iam.ecs_task_execution_role_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "ReadRdsMasterSecret"
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = [module.rds.master_user_secret_arn]
+    }]
+  })
+}
+
 # --- ECS Fargate + ALB ---
 module "ecs" {
   source = "../../modules/ecs"
@@ -143,18 +163,38 @@ module "ecs" {
   task_role_arn           = module.iam.ecs_task_role_arn
   task_execution_role_arn = module.iam.ecs_task_execution_role_arn
 
+  # Plain (non-secret) env vars: connection host/port/dbname are not
+  # sensitive on their own (no credentials) and aren't part of the
+  # AWS-managed master secret (which only holds username/password), so
+  # they're passed directly rather than via Secrets Manager.
   environment_variables = {
     NODE_ENV   = "production"
     AWS_REGION = var.aws_region
+    DB_HOST    = module.rds.address
+    DB_PORT    = tostring(module.rds.port)
+    DB_NAME    = module.rds.db_name
   }
 
-  secrets = merge(
-    { for k, arn in module.secrets.secret_arns : upper(k) => arn },
-    # AWS-managed RDS master credentials (JSON: username/password/host/port/
-    # dbname/engine) — injected as DB_CREDENTIALS, replacing the old
-    # manually-populated Secrets Manager placeholder of the same name.
-    { DB_CREDENTIALS = module.rds.master_user_secret_arn }
-  )
+  # Maps each container env var to a Secrets Manager valueFrom. Using the
+  # ":<jsonKey>::" suffix (ECS's JSON-key-selector syntax) pulls a single
+  # field out of a JSON secret directly as that env var's value, instead of
+  # dumping the whole JSON blob in — required here because apps/api's env.ts
+  # validates flat vars (JWT_ACCESS_SECRET, FIREBASE_PROJECT_ID, etc.), not
+  # JSON blobs. DATABASE_URL itself still can't be assembled this way (ECS
+  # secrets have no string-concatenation), so apps/api/docker-entrypoint.sh
+  # composes it from DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD at container
+  # startup instead.
+  secrets = {
+    DB_USER                = "${module.rds.master_user_secret_arn}:username::"
+    DB_PASSWORD            = "${module.rds.master_user_secret_arn}:password::"
+    JWT_ACCESS_SECRET      = "${module.secrets.secret_arns["jwt_secrets"]}:access_secret::"
+    JWT_REFRESH_SECRET     = "${module.secrets.secret_arns["jwt_secrets"]}:refresh_secret::"
+    FIREBASE_PROJECT_ID    = "${module.secrets.secret_arns["firebase_admin"]}:project_id::"
+    FIREBASE_CLIENT_EMAIL  = "${module.secrets.secret_arns["firebase_admin"]}:client_email::"
+    FIREBASE_PRIVATE_KEY   = "${module.secrets.secret_arns["firebase_admin"]}:private_key::"
+    PAYSTACK_SECRET_KEY    = "${module.secrets.secret_arns["payment_gateways"]}:paystack_secret_key::"
+    FLUTTERWAVE_SECRET_KEY = "${module.secrets.secret_arns["payment_gateways"]}:flutterwave_secret_key::"
+  }
 }
 
 # --- CloudFront (in front of the ALB) ---

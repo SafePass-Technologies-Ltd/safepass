@@ -51,6 +51,13 @@ COPY --from=build /repo/packages/shared ./packages/shared
 
 WORKDIR /repo/apps/api
 
+# Assembles DATABASE_URL from discrete DB_HOST/DB_PORT/DB_NAME/DB_USER/
+# DB_PASSWORD when it isn't already set (production/ECS) — see the script's
+# own header comment for why. No-op in local dev, which sets DATABASE_URL
+# directly.
+COPY apps/api/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
+
 # Matches the ALB/ECS health check target group's expected port (see
 # terraform/modules/ecs container_port variable, default 3000).
 EXPOSE 3000
@@ -60,4 +67,5 @@ EXPOSE 3000
 RUN useradd --system --uid 10001 safepass
 USER safepass
 
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "dist/server.js"]
