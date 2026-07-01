@@ -24,11 +24,12 @@
 #      can `terraform init` against the now-existing backend.
 #   6. From this point forward, terraform/environments/production is applied
 #      via GitHub Actions (terraform-plan.yml / terraform-apply.yml) using
-#      OIDC-assumed credentials — never local static keys.
-#   7. Also apply the IAM OIDC provider + deploy role from
-#      terraform/modules/iam-oidc via the production environment's first
-#      manual apply (or bootstrap it here too) — Actions needs that role to
-#      exist before its first OIDC-authenticated run.
+#      OIDC-assumed credentials — never local static keys. The OIDC provider
+#      and deploy role are pre-existing, configured by the user directly in
+#      AWS (outside any Terraform in this repo); its ARN is supplied to
+#      workflows via the `AWS_ROLE_ARN` GitHub repo variable. See
+#      terraform/modules/iam-ecs/main.tf's header comment for the minimum
+#      permissions that pre-existing role needs.
 
 terraform {
   required_version = ">= 1.15.7"

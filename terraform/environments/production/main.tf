@@ -20,8 +20,6 @@ provider "aws" {
   region = var.aws_region
 }
 
-data "aws_caller_identity" "current" {}
-
 # --- Networking ---
 module "networking" {
   source = "../../modules/networking"
@@ -63,22 +61,21 @@ module "secrets" {
   environment = var.environment
 }
 
-# --- IAM: GitHub OIDC + ECS task roles ---
-# NOTE: this module's github_actions role is what CI assumes; on a truly
-# first-ever apply this creates a bootstrap ordering wrinkle (CI can't OIDC
-# in until this exists). The very first apply of this environment must be
-# run manually by a human with AWS credentials (same operator who ran
-# terraform/bootstrap) — every apply after that goes through CI normally.
+# --- IAM: ECS task roles only ---
+# NOTE: CI authenticates to AWS via the user's pre-existing GitHub Actions
+# OIDC provider + IAM deploy role, configured in AWS outside this repo's
+# Terraform — its ARN is supplied to workflows via the `AWS_ROLE_ARN` GitHub
+# repo variable (see `role-to-assume: ${{ vars.AWS_ROLE_ARN }}` in
+# .github/workflows/*.yml). This module does not create or manage that
+# provider/role; it only manages the ECS task execution role and ECS task
+# role that the ECS service itself assumes at runtime. See
+# terraform/modules/iam-ecs/main.tf's header comment for the minimum
+# permissions the existing external CI role needs.
 module "iam" {
-  source = "../../modules/iam-oidc"
+  source = "../../modules/iam-ecs"
 
   project     = var.project
   environment = var.environment
-  github_org  = var.github_org
-  github_repo = var.github_repo
-
-  state_bucket_arn = "arn:aws:s3:::safepass-terraform-state"
-  lock_table_arn   = "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/safepass-terraform-locks"
 
   secret_arns         = values(module.secrets.secret_arns)
   evidence_bucket_arn = module.s3_evidence.bucket_arn

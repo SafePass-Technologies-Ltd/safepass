@@ -211,7 +211,7 @@ terraform/
 │   ├── s3/                     # Evidence bucket — Object Lock (GOVERNANCE mode), KMS encryption, Glacier lifecycle
 │   ├── ecr/                    # API container image registry
 │   ├── cloudfront/             # CDN in front of the ALB
-│   ├── iam-oidc/               # GitHub OIDC provider + deploy role + ECS task/execution roles
+│   ├── iam-ecs/                 # ECS task execution + task roles only — GitHub Actions OIDC is pre-existing, not managed here
 │   └── secrets/                # Secrets Manager containers (placeholder values only — never real secrets in Terraform)
 └── environments/
     └── production/              # Wires all modules together; only environment today. A `staging/` folder can be added later by copying this directory, changing `environment = "staging"`, and pointing backend.tf's state `key` at `staging/terraform.tfstate` (same state bucket/lock table — no re-bootstrap needed).
@@ -240,7 +240,14 @@ The very first `terraform apply` of `terraform/environments/production` (which c
 
 ### OIDC Auth Model
 
-GitHub Actions never uses static AWS access keys. Each workflow calls `aws-actions/configure-aws-credentials` with `role-to-assume: ${{ vars.AWS_ROLE_ARN }}`, which assumes the IAM role provisioned by `terraform/modules/iam-oidc` via the GitHub OIDC identity provider. The role's trust policy is scoped to this repo only (`repo:<org>/<repo>:ref:refs/heads/main` and `:pull_request`). Permissions are split: a broad infra-provisioning policy (for `terraform apply`) and a narrower deploy-only policy (ECR push + ECS update, for `deploy-api.yml`).
+GitHub Actions never uses static AWS access keys. Each workflow calls `aws-actions/configure-aws-credentials` with `role-to-assume: ${{ vars.AWS_ROLE_ARN }}`, which assumes a **pre-existing** IAM role via a **pre-existing** OIDC identity provider — both already configured in AWS outside this repo's Terraform. This Terraform config deliberately does NOT create or manage the OIDC provider or the CI deploy role: AWS allows only one `aws_iam_openid_connect_provider` per URL per account, so a second one for `https://token.actions.githubusercontent.com` would conflict with the one that already exists. The role's ARN is supplied to workflows purely via the `AWS_ROLE_ARN` GitHub repo variable.
+
+Terraform only manages the ECS task execution role and ECS task role (via `terraform/modules/iam-ecs`) — these are assumed by the ECS service itself at runtime, unrelated to OIDC/CI auth.
+
+Minimum permissions the existing external CI role needs (for reference/audit by whoever owns that role — not enforced by this repo):
+- Terraform state access (all `terraform plan`/`apply` workflows): `s3:GetObject`, `s3:PutObject`, `s3:ListBucket` on the TF state bucket; `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:DeleteItem` on the TF lock table.
+- Infra-provisioning (`terraform-apply.yml`'s `terraform apply` path): `ecs:*`, `ecr:*`, `rds:*`, `dynamodb:*`, `s3:*`, `cloudfront:*`, `secretsmanager:*`, `elasticloadbalancing:*`, ec2 networking actions (vpc/subnet/route-table/internet-gateway/nat-gateway/security-group/describe*), and `iam:PassRole` for the two roles this module creates (`ecs_task_execution` and `ecs_task`).
+- Deploy-only (the narrower path used by `deploy-api.yml`): ECR push actions (`ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`, `ecr:PutImage`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`, `ecr:BatchGetImage`) plus `ecs:RegisterTaskDefinition` and `ecs:UpdateService` (with `iam:PassRole` scoped to `iam:PassedToService = ecs-tasks.amazonaws.com`).
 
 ### API Deployment
 

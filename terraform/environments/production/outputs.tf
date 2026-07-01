@@ -45,11 +45,6 @@ output "evidence_bucket_name" {
   value = module.s3_evidence.bucket_name
 }
 
-output "github_actions_role_arn" {
-  description = "ARN GitHub Actions workflows assume via OIDC — set as AWS_ROLE_ARN in each workflow's env or as a repo variable."
-  value       = module.iam.github_actions_role_arn
-}
-
 output "ecs_task_execution_role_arn" {
   value = module.iam.ecs_task_execution_role_arn
 }

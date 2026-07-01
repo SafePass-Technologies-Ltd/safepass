@@ -31,18 +31,6 @@ variable "availability_zones" {
   default     = ["us-east-1a", "us-east-1b"]
 }
 
-# --- GitHub OIDC trust scoping ---
-variable "github_org" {
-  description = "GitHub org/user owning this repository."
-  type        = string
-}
-
-variable "github_repo" {
-  description = "GitHub repository name."
-  type        = string
-  default     = "safepass"
-}
-
 # --- Sizing (kept as variables so a future staging env can override cheaply) ---
 variable "rds_instance_class" {
   type    = string
