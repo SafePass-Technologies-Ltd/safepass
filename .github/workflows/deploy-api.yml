@@ -29,7 +29,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  AWS_REGION: "us-east-1"
+  AWS_REGION: "eu-west-2"
   ECR_REPOSITORY: safepass-production-api
   ECS_CLUSTER: safepass-production-cluster
   ECS_SERVICE: safepass-production-api
@@ -63,7 +63,7 @@ jobs:
         if: steps.changes.outputs.relevant == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR

@@ -226,7 +226,7 @@ The S3 bucket + DynamoDB table that hold Terraform's own remote state cannot be 
 ```bash
 cd terraform/bootstrap
 terraform init
-terraform apply -var="aws_region=us-east-1" -var="project=safepass"
+terraform apply -var="aws_region=eu-west-2" -var="project=safepass"
 # note the state_bucket_name / lock_table_name outputs — they must match
 # terraform/environments/production/backend.tf
 ```

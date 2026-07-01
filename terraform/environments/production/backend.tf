@@ -19,7 +19,7 @@ terraform {
   backend "s3" {
     bucket         = "safepass-terraform-state"
     key            = "production/terraform.tfstate"
-    region         = "us-east-1"
+    region         = "eu-west-2"
     dynamodb_table = "safepass-terraform-locks"
     encrypt        = true
   }

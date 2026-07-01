@@ -64,8 +64,8 @@ module "secrets" {
 # --- IAM: ECS task roles only ---
 # NOTE: CI authenticates to AWS via the user's pre-existing GitHub Actions
 # OIDC provider + IAM deploy role, configured in AWS outside this repo's
-# Terraform — its ARN is supplied to workflows via the `AWS_ROLE_ARN` GitHub
-# repo variable (see `role-to-assume: ${{ vars.AWS_ROLE_ARN }}` in
+# Terraform — its ARN is supplied to workflows via the `AWS_ROLE_TO_ASSUME` GitHub
+# repo variable (see `role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}` in
 # .github/workflows/*.yml). This module does not create or manage that
 # provider/role; it only manages the ECS task execution role and ECS task
 # role that the ECS service itself assumes at runtime. See

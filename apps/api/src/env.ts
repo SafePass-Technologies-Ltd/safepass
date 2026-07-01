@@ -34,7 +34,7 @@ const envSchema = z.object({
   // DynamoDB — GPS location storage with 60-second TTL.
   // Point to DynamoDB Local in development; omit in production to use real AWS DynamoDB.
   DYNAMODB_ENDPOINT: z.string().url().optional(),
-  DYNAMODB_REGION: z.string().default('us-east-1'),
+  DYNAMODB_REGION: z.string().default('eu-west-2'),
 });
 
 const parsed = envSchema.safeParse(process.env);

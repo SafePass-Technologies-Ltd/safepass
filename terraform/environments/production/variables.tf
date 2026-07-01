@@ -10,7 +10,7 @@
 variable "aws_region" {
   description = "AWS region for all resources."
   type        = string
-  default     = "us-east-1"
+  default     = "eu-west-2"
 }
 
 variable "project" {
@@ -28,7 +28,7 @@ variable "environment" {
 variable "availability_zones" {
   description = "Exactly 2 AZs for Multi-AZ RDS + ECS spread."
   type        = list(string)
-  default     = ["us-east-1a", "us-east-1b"]
+  default     = ["eu-west-2a", "eu-west-2b"]
 }
 
 # --- Sizing (kept as variables so a future staging env can override cheaply) ---

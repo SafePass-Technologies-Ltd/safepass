@@ -16,7 +16,7 @@
 # locally via `aws configure` or equivalent):
 #   1. cd terraform/bootstrap
 #   2. terraform init
-#   3. terraform apply -var="aws_region=us-east-1" -var="project=safepass"
+#   3. terraform apply -var="aws_region=eu-west-2" -var="project=safepass"
 #   4. Note the outputs (state_bucket_name, lock_table_name) — these feed the
 #      `bucket`/`dynamodb_table` values in
 #      terraform/environments/production/backend.tf
@@ -54,7 +54,7 @@ provider "aws" {
 variable "aws_region" {
   description = "AWS region to create the state backend resources in."
   type        = string
-  default     = "us-east-1"
+  default     = "eu-west-2"
 }
 
 variable "project" {

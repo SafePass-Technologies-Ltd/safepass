@@ -8,7 +8,7 @@
 # AUTH: assumes the deploy role via GitHub OIDC (aws-actions/configure-aws-
 # credentials) — no static AWS access keys are stored in GitHub secrets.
 # The role ARN itself is not a secret (it's an account-scoped identifier);
-# it is stored as a repo variable (vars.AWS_ROLE_ARN), not as a secret,
+# it is stored as a repo variable (secrets.AWS_ROLE_TO_ASSUME), not as a secret,
 # though a secret works too if preferred.
 #
 # This workflow only PLANS — it never applies. Apply only happens on merge
@@ -33,7 +33,7 @@ concurrency:
 
 env:
   TF_VERSION: "1.15.7"
-  AWS_REGION: "us-east-1"
+  AWS_REGION: "eu-west-2"
   TF_WORKING_DIR: terraform/environments/production
 
 jobs:
@@ -47,7 +47,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform

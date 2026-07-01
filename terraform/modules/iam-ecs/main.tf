@@ -16,8 +16,8 @@
 # provider per URL per account, so a second `aws_iam_openid_connect_provider`
 # for "https://token.actions.githubusercontent.com" would conflict with (or
 # fail to import cleanly against) the one that already exists. The existing
-# role's ARN is supplied to CI workflows via the `AWS_ROLE_ARN` GitHub repo
-# variable (see `role-to-assume: ${{ vars.AWS_ROLE_ARN }}` in
+# role's ARN is supplied to CI workflows via the `AWS_ROLE_TO_ASSUME` GitHub repo
+# variable (see `role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}` in
 # .github/workflows/*.yml) — Terraform never touches it.
 #
 # MINIMUM PERMISSIONS THE EXISTING EXTERNAL ROLE NEEDS (for reference/audit
