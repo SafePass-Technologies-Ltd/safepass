@@ -12,6 +12,7 @@
 import {
   DynamoDBClient,
   CreateTableCommand,
+  UpdateTimeToLiveCommand,
   ResourceInUseException,
 } from '@aws-sdk/client-dynamodb';
 import {
@@ -78,10 +79,19 @@ export async function initDynamoTable(): Promise<void> {
           { AttributeName: 'tripId', AttributeType: 'S' },
         ],
         BillingMode: 'PAY_PER_REQUEST',
-        // TTL attribute — DynamoDB removes items automatically after expiry.
+      })
+    );
+
+    // TTL cannot be set on CreateTableCommand — it's a separate control-plane
+    // call. DynamoDB removes items automatically after 'ttl' (Unix epoch
+    // seconds) elapses.
+    await client.send(
+      new UpdateTimeToLiveCommand({
+        TableName: TABLE_NAME,
         TimeToLiveSpecification: { AttributeName: 'ttl', Enabled: true },
       })
     );
+
     console.log('[DynamoDB] trip_locations table created');
   } catch (err) {
     if (err instanceof ResourceInUseException) {

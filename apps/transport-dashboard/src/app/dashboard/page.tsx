@@ -30,6 +30,14 @@ function StatsCard({ title, value, change, changeType, icon: Icon }: {
   changeType: 'positive' | 'negative' | 'neutral';
   icon: React.ComponentType<{ className?: string }>;
 }) {
+  // Color the change indicator based on direction — neutral stays the
+  // default slate tone used for informational (non-trend) captions.
+  const changeColor = {
+    positive: 'text-green-600',
+    negative: 'text-red-600',
+    neutral: 'text-slate-500',
+  }[changeType];
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 transition-shadow hover:shadow-md">
       <div className="flex items-center justify-between">
@@ -37,7 +45,7 @@ function StatsCard({ title, value, change, changeType, icon: Icon }: {
         <Icon className="h-5 w-5 text-slate-400" />
       </div>
       <p className="mt-2 text-3xl font-bold text-slate-dark">{value}</p>
-      <p className="mt-1 text-xs text-slate-500">{change}</p>
+      <p className={`mt-1 text-xs ${changeColor}`}>{change}</p>
     </div>
   );
 }

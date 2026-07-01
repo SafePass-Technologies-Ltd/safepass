@@ -24,7 +24,6 @@ import {
   Wallet,
   ChevronRight,
   ArrowUpRight,
-  CreditCard,
 } from 'lucide-react';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api-client';

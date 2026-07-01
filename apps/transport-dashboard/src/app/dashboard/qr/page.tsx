@@ -117,6 +117,7 @@ export default function QrPage() {
 
                 {qr?.url ? (
                   <div className="flex flex-col items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- qr.url is a locally generated data: URI (base64 PNG), not a remote asset next/image can optimize */}
                     <img
                       src={qr.url}
                       alt={`QR code for ${v.plateNumber}`}

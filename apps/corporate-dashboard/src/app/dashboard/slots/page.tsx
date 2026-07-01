@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Ticket, Copy, Check, RefreshCw, Loader2, Search, Download,
-  AlertTriangle, X, ChevronDown, Users, Plus, Link,
+  AlertTriangle, X, Users, Plus, Link,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
@@ -513,7 +513,11 @@ export default function SlotManagementPage() {
   function toggleRow(slotId: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      next.has(slotId) ? next.delete(slotId) : next.add(slotId);
+      if (next.has(slotId)) {
+        next.delete(slotId);
+      } else {
+        next.add(slotId);
+      }
       return next;
     });
   }
