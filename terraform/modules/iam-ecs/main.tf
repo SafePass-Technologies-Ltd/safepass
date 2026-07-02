@@ -38,7 +38,10 @@
 #       ecr push actions (ecr:GetAuthorizationToken,
 #       ecr:BatchCheckLayerAvailability, ecr:PutImage,
 #       ecr:InitiateLayerUpload, ecr:UploadLayerPart,
-#       ecr:CompleteLayerUpload, ecr:BatchGetImage) plus
+#       ecr:CompleteLayerUpload, ecr:BatchGetImage) plus ecr:DescribeImages
+#       (deploy-api.yml probes for an existing SHA tag before building, since
+#       the repo is immutable and re-running the workflow for an
+#       already-deployed commit must skip the push rather than fail) plus
 #       ecs:RegisterTaskDefinition and ecs:UpdateService (with
 #       iam:PassRole scoped to iam:PassedToService = ecs-tasks.amazonaws.com).
 
