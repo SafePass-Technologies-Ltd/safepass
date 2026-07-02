@@ -30,7 +30,12 @@ COPY --from=deps /repo/node_modules ./node_modules
 COPY --from=deps /repo/apps/api/node_modules ./apps/api/node_modules
 COPY --from=deps /repo/packages/shared/node_modules ./packages/shared/node_modules
 COPY . .
-RUN pnpm --filter @safepass/shared build 2>/dev/null || true
+# Must fail the build (not swallow errors) -- apps/api's package.json
+# points @safepass/shared's "main"/"types" at ./dist/*, so if this build
+# fails silently, the API resolves to a nonexistent/stale dist and crashes
+# at runtime (ERR_MODULE_NOT_FOUND / ERR_UNSUPPORTED_DIR_IMPORT) instead of
+# failing fast here in CI.
+RUN pnpm --filter @safepass/shared build
 RUN pnpm --filter @safepass/api build
 
 # --- Stage 4: production runtime -------------------------------------------
