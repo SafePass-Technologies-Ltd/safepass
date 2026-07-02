@@ -62,6 +62,11 @@ variable "container_image" {
   type        = string
 }
 
+variable "admin_dashboard_url" {
+  description = "Public URL of the admin dashboard (Next.js app, deployed separately from this Terraform stack) -- embedded in API-generated links/emails (e.g. role-upgrade approval notices). Required (no default) so it can't silently fall back to the app's localhost dev default in production; supplied via TF_VAR_admin_dashboard_url in CI (see .github/workflows/terraform-*.yml)."
+  type        = string
+}
+
 variable "enable_cloudfront" {
   description = "Whether to create the CloudFront distribution in front of the ALB. AWS blocks CloudFront creation on newly created / unverified accounts (\"AccessDenied: account must be verified\") until AWS Support clears the account -- set to false to apply the rest of the stack in the meantime, then flip back to true once verified."
   type        = bool

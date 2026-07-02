@@ -168,10 +168,20 @@ module "ecs" {
     JWT_SECRET_ARN      = module.secrets.secret_arns["jwt_secrets"]
     FIREBASE_SECRET_ARN = module.secrets.secret_arns["firebase_admin"]
     PAYMENT_SECRET_ARN  = module.secrets.secret_arns["payment_gateways"]
+    # Consolidated Redis/Resend/Google Maps credentials -- see
+    # terraform/modules/secrets/main.tf's external_services entry and
+    # apps/api/src/env.ts's resolveExternalServices.
+    EXTERNAL_SERVICES_SECRET_ARN = module.secrets.secret_arns["external_services"]
     # Real-time state table (GPS positions today) -- apps/api/src/services/
     # dynamo.service.ts reads this instead of hardcoding a table name, so it
     # always targets whatever this module actually provisions.
     DYNAMODB_TABLE_NAME = module.dynamodb.table_name
+    # Plain (non-secret) URL -- unlike the above, this isn't a credential,
+    # so it's just a Terraform var rather than a Secrets Manager entry (see
+    # variables.tf's admin_dashboard_url). Without this, the app's zod
+    # schema default (http://localhost:3001) would silently leak into
+    # production-built links/emails.
+    ADMIN_DASHBOARD_URL = var.admin_dashboard_url
   }
 }
 

@@ -92,11 +92,39 @@ async function resolvePaymentGatewayKeys(): Promise<void> {
   if (secret.flutterwave_secret_key) process.env.FLUTTERWAVE_SECRET_KEY = secret.flutterwave_secret_key;
 }
 
+/**
+ * Resolves the remaining third-party credentials (Redis, Resend, Google
+ * Maps) from a single consolidated Secrets Manager entry
+ * (terraform/modules/secrets/main.tf's `external_services`) -- these don't
+ * individually warrant their own secret the way DB/JWT/Firebase/payment do,
+ * so they're grouped together. All are optional in the zod schema below, so
+ * a missing/placeholder value here just leaves the corresponding feature
+ * (rate limiting, email, geocoding) disabled rather than failing startup.
+ */
+async function resolveExternalServices(): Promise<void> {
+  if (!process.env.EXTERNAL_SERVICES_SECRET_ARN) return;
+
+  const secret = await loadJsonSecret(process.env.EXTERNAL_SERVICES_SECRET_ARN);
+  if (!process.env.UPSTASH_REDIS_URL && secret.upstash_redis_url) {
+    process.env.UPSTASH_REDIS_URL = secret.upstash_redis_url;
+  }
+  if (!process.env.UPSTASH_REDIS_TOKEN && secret.upstash_redis_token) {
+    process.env.UPSTASH_REDIS_TOKEN = secret.upstash_redis_token;
+  }
+  if (!process.env.RESEND_API_KEY && secret.resend_api_key) {
+    process.env.RESEND_API_KEY = secret.resend_api_key;
+  }
+  if (!process.env.GOOGLE_MAPS_API_KEY && secret.google_maps_api_key) {
+    process.env.GOOGLE_MAPS_API_KEY = secret.google_maps_api_key;
+  }
+}
+
 await Promise.all([
   resolveDatabaseUrl(),
   resolveJwtSecrets(),
   resolveFirebaseCredentials(),
   resolvePaymentGatewayKeys(),
+  resolveExternalServices(),
 ]);
 
 const envSchema = z.object({

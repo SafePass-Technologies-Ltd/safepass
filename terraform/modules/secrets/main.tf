@@ -43,6 +43,18 @@ locals {
       paystack_secret_key    = "REPLACE_ME"
       flutterwave_secret_key = "REPLACE_ME"
     })
+    # Consolidated container for the remaining third-party credentials --
+    # unlike jwt_secrets/firebase_admin/payment_gateways (each scoped to one
+    # integration), these are grouped into a single secret since none of
+    # them individually warrants its own Secrets Manager entry. Resolved
+    # in-app the same way as the others (see apps/api/src/env.ts's
+    # resolveExternalServices).
+    external_services = jsonencode({
+      upstash_redis_url   = "REPLACE_ME"
+      upstash_redis_token = "REPLACE_ME"
+      resend_api_key      = "REPLACE_ME"
+      google_maps_api_key = "REPLACE_ME"
+    })
   }
 }
 

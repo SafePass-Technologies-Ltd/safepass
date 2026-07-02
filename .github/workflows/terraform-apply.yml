@@ -76,4 +76,5 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
           TF_VAR_container_image: ${{ vars.ECR_IMAGE_URI || 'placeholder:latest' }}
+          TF_VAR_admin_dashboard_url: ${{ vars.ADMIN_DASHBOARD_URL }}
         run: terraform apply -auto-approve -input=false
