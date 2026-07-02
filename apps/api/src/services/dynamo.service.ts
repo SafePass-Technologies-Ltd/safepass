@@ -1,13 +1,19 @@
 /**
- * DynamoDB service — GPS location storage with 24-hour TTL.
+ * DynamoDB service — real-time state store (GPS positions today; the same
+ * table/schema is documented to also carry WebSocket connection mappings
+ * and trip status flags per architecture.md's Real-Time Data Flow).
  *
- * Uses DynamoDB Local in development (DYNAMODB_ENDPOINT env var), and
- * real AWS DynamoDB in production (no endpoint override needed).
+ * Backed by the single-table design Terraform provisions in
+ * terraform/modules/dynamodb/main.tf (`<project>-<environment>-realtime-state`):
+ *   PK (entity_id):   "trip:{tripId}" for GPS location records
+ *   SK (record_type): "location"
+ *   ttl:              Unix epoch seconds -- native DynamoDB TTL
  *
- * Table: trip_locations
- *   PK:    tripId   (String)
- *   Attrs: latitude, longitude, speed, heading, timestamp
- *          ttl (Number, Unix epoch seconds — DynamoDB auto-expires after 24h)
+ * Uses DynamoDB Local in development (DYNAMODB_ENDPOINT env var), and real
+ * AWS DynamoDB in production (no endpoint override needed) -- the table
+ * name itself comes from DYNAMODB_TABLE_NAME (see env.ts), set by Terraform
+ * in production so this service never hardcodes a table name that could
+ * drift from what's actually provisioned.
  */
 import {
   DynamoDBClient,
@@ -23,7 +29,16 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { env } from '../env';
 
-const TABLE_NAME = 'trip_locations';
+const TABLE_NAME = env.DYNAMODB_TABLE_NAME;
+
+// Sort key value namespacing GPS location records within the shared
+// entity_id/record_type table (see module-level doc comment above).
+const RECORD_TYPE_LOCATION = 'location';
+
+// GPS Data Privacy requirement (architecture.md Security Considerations):
+// "Active trip location stored in DynamoDB with 60-second TTL." Matches the
+// PutItem TTL called out in the Real-Time Data Flow sequence diagram.
+const LOCATION_TTL_SECONDS = 60;
 
 // Use dummy credentials for DynamoDB Local; real AWS credentials come from
 // the environment / IAM role in production.
@@ -45,6 +60,11 @@ const client = new DynamoDBClient({
 
 const docClient = DynamoDBDocumentClient.from(client);
 
+/** Builds the partition key value for a trip's GPS location record. */
+function entityIdForTrip(tripId: string): string {
+  return `trip:${tripId}`;
+}
+
 // ────────────────────────────────────────────────────────────
 // Types
 // ────────────────────────────────────────────────────────────
@@ -63,26 +83,45 @@ export interface TripLocationRecord {
 // ────────────────────────────────────────────────────────────
 
 /**
- * Ensure the trip_locations table exists.
+ * Ensure the realtime-state table exists -- but only in local development.
  *
- * Call once during server startup. Idempotent — ResourceInUseException means
- * the table already exists, which is fine. Any other error is re-thrown so
- * the caller can decide whether it's fatal.
+ * In production, this table is provisioned by Terraform
+ * (terraform/modules/dynamodb/main.tf) and the ECS task role is
+ * deliberately scoped to item-level actions only (GetItem/PutItem/
+ * UpdateItem/Query/DeleteItem) -- no CreateTable -- so table lifecycle
+ * stays under infra control rather than the app self-provisioning
+ * resources at boot. Attempting CreateTable there would just fail with an
+ * AccessDenied that's safe to no-op past (see the catch below).
+ *
+ * Locally (DYNAMODB_ENDPOINT set, i.e. DynamoDB Local via docker-compose),
+ * there's no Terraform run to provision the table, so this call creates it
+ * on first boot for developer convenience. Idempotent -- ResourceInUseException
+ * means the table already exists, which is fine.
  */
 export async function initDynamoTable(): Promise<void> {
+  if (!env.DYNAMODB_ENDPOINT) {
+    // Production / any real AWS DynamoDB target -- table is Terraform-owned.
+    console.log(`[DynamoDB] using Terraform-provisioned table "${TABLE_NAME}"`);
+    return;
+  }
+
   try {
     await client.send(
       new CreateTableCommand({
         TableName: TABLE_NAME,
-        KeySchema: [{ AttributeName: 'tripId', KeyType: 'HASH' }],
+        KeySchema: [
+          { AttributeName: 'entity_id', KeyType: 'HASH' },
+          { AttributeName: 'record_type', KeyType: 'RANGE' },
+        ],
         AttributeDefinitions: [
-          { AttributeName: 'tripId', AttributeType: 'S' },
+          { AttributeName: 'entity_id', AttributeType: 'S' },
+          { AttributeName: 'record_type', AttributeType: 'S' },
         ],
         BillingMode: 'PAY_PER_REQUEST',
       })
     );
 
-    // TTL cannot be set on CreateTableCommand — it's a separate control-plane
+    // TTL cannot be set on CreateTableCommand -- it's a separate control-plane
     // call. DynamoDB removes items automatically after 'ttl' (Unix epoch
     // seconds) elapses.
     await client.send(
@@ -92,7 +131,7 @@ export async function initDynamoTable(): Promise<void> {
       })
     );
 
-    console.log('[DynamoDB] trip_locations table created');
+    console.log(`[DynamoDB] "${TABLE_NAME}" table created (local dev)`);
   } catch (err) {
     if (err instanceof ResourceInUseException) {
       // Table already exists — nothing to do.
@@ -109,20 +148,27 @@ export async function initDynamoTable(): Promise<void> {
 /**
  * Persist a GPS reading for a trip.
  *
- * TTL is set to 24 hours from now so the last known position survives admin
- * dashboard refreshes and persists well beyond even the longest Nigerian
- * long-distance trips (typically 6–12 hours). The item is overwritten on
- * every call — only the latest fix per trip is stored.
+ * TTL is set to 60 seconds from now per architecture.md's GPS Data Privacy
+ * requirement -- active trip location is short-lived in DynamoDB, distinct
+ * from the durable, access-controlled history retained in PostgreSQL. The
+ * item is overwritten on every call — only the latest fix per trip is
+ * stored (record_type namespaces it from any other trip: state that may
+ * later share this table, e.g. WebSocket connection mappings).
  */
 export async function saveTripLocation(
   tripId: string,
   location: TripLocationRecord
 ): Promise<void> {
-  const ttl = Math.floor(Date.now() / 1000) + 86_400; // 24 hours
+  const ttl = Math.floor(Date.now() / 1000) + LOCATION_TTL_SECONDS;
   await docClient.send(
     new PutCommand({
       TableName: TABLE_NAME,
-      Item: { tripId, ...location, ttl },
+      Item: {
+        entity_id: entityIdForTrip(tripId),
+        record_type: RECORD_TYPE_LOCATION,
+        ...location,
+        ttl,
+      },
     })
   );
 }
@@ -139,7 +185,7 @@ export async function getTripLocation(
   const result = await docClient.send(
     new GetCommand({
       TableName: TABLE_NAME,
-      Key: { tripId },
+      Key: { entity_id: entityIdForTrip(tripId), record_type: RECORD_TYPE_LOCATION },
     })
   );
 
@@ -147,7 +193,7 @@ export async function getTripLocation(
 
   // Strip DynamoDB-internal keys before returning.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { tripId: _id, ttl: _ttl, ...location } = result.Item;
+  const { entity_id: _entityId, record_type: _recordType, ttl: _ttl, ...location } = result.Item;
   return location as TripLocationRecord;
 }
 
@@ -176,7 +222,10 @@ export async function getAllTripLocations(
       new BatchGetCommand({
         RequestItems: {
           [TABLE_NAME]: {
-            Keys: chunk.map((id) => ({ tripId: id })),
+            Keys: chunk.map((tripId) => ({
+              entity_id: entityIdForTrip(tripId),
+              record_type: RECORD_TYPE_LOCATION,
+            })),
           },
         },
       })
@@ -185,8 +234,9 @@ export async function getAllTripLocations(
     const items = response.Responses?.[TABLE_NAME] ?? [];
     for (const item of items) {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { tripId, ttl: _ttl, ...location } = item;
-      result.set(tripId as string, location as TripLocationRecord);
+      const { entity_id: entityId, record_type: _recordType, ttl: _ttl, ...location } = item;
+      const tripId = (entityId as string).slice('trip:'.length);
+      result.set(tripId, location as TripLocationRecord);
     }
   }
 

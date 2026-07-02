@@ -126,6 +126,13 @@ const envSchema = z.object({
   // Point to DynamoDB Local in development; omit in production to use real AWS DynamoDB.
   DYNAMODB_ENDPOINT: z.string().url().optional(),
   DYNAMODB_REGION: z.string().default('eu-west-2'),
+  // Name of the Terraform-provisioned single-table realtime-state store
+  // (see terraform/modules/dynamodb/main.tf) -- shared by GPS positions,
+  // WebSocket connection mappings, and trip status flags, keyed by
+  // entity_id/record_type. Terraform passes this in production
+  // (terraform/environments/production/main.tf); the default here matches
+  // docker-compose's DynamoDB Local setup for local development.
+  DYNAMODB_TABLE_NAME: z.string().default('safepass-development-realtime-state'),
 });
 
 const parsed = envSchema.safeParse(process.env);

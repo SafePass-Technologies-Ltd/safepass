@@ -168,6 +168,10 @@ module "ecs" {
     JWT_SECRET_ARN      = module.secrets.secret_arns["jwt_secrets"]
     FIREBASE_SECRET_ARN = module.secrets.secret_arns["firebase_admin"]
     PAYMENT_SECRET_ARN  = module.secrets.secret_arns["payment_gateways"]
+    # Real-time state table (GPS positions today) -- apps/api/src/services/
+    # dynamo.service.ts reads this instead of hardcoding a table name, so it
+    # always targets whatever this module actually provisions.
+    DYNAMODB_TABLE_NAME = module.dynamodb.table_name
   }
 }
 
