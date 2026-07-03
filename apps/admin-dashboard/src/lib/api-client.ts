@@ -20,13 +20,12 @@ export async function apiClient<T = unknown>(
   const token =
     typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
 
-  // Refuse to fire an unauthenticated request — throw immediately so the
-  // caller gets a clear 401 rather than the server returning one after
-  // receiving a request with no Authorization header.
-  if (!token) {
-    throw new ApiError(401, 'No access token found — please sign in again');
-  }
-
+  // NOTE: We intentionally do NOT throw here when `token` is missing.
+  // Some endpoints (e.g. /v1/auth/token-exchange, used right after Firebase
+  // sign-in to obtain the very first access token) are called with no token
+  // in localStorage yet — throwing unconditionally made first-time sign-in
+  // impossible. Omit the Authorization header instead and let the server
+  // return its own 401 for endpoints that actually require auth.
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     method,
     headers: {
