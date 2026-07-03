@@ -83,7 +83,7 @@ module "iam" {
   project     = var.project
   environment = var.environment
 
-  secret_arns         = values(module.secrets.secret_arns)
+  secret_arns         = [module.secrets.secret_arn]
   evidence_bucket_arn = module.s3_evidence.bucket_arn
   dynamodb_table_arn  = module.dynamodb.table_arn
 }
@@ -159,19 +159,18 @@ module "ecs" {
   # DATABASE_URL be assembled from multiple secret fields, which ECS's
   # injection can't do.
   environment_variables = {
-    NODE_ENV            = "production"
-    AWS_REGION          = var.aws_region
-    DB_HOST             = module.rds.address
-    DB_PORT             = tostring(module.rds.port)
-    DB_NAME             = module.rds.db_name
-    DB_SECRET_ARN       = module.rds.master_user_secret_arn
-    JWT_SECRET_ARN      = module.secrets.secret_arns["jwt_secrets"]
-    FIREBASE_SECRET_ARN = module.secrets.secret_arns["firebase_admin"]
-    PAYMENT_SECRET_ARN  = module.secrets.secret_arns["payment_gateways"]
-    # Consolidated Redis/Resend/Google Maps credentials -- see
-    # terraform/modules/secrets/main.tf's external_services entry and
-    # apps/api/src/env.ts's resolveExternalServices.
-    EXTERNAL_SERVICES_SECRET_ARN = module.secrets.secret_arns["external_services"]
+    NODE_ENV      = "production"
+    AWS_REGION    = var.aws_region
+    DB_HOST       = module.rds.address
+    DB_PORT       = tostring(module.rds.port)
+    DB_NAME       = module.rds.db_name
+    DB_SECRET_ARN = module.rds.master_user_secret_arn
+    # Single consolidated secret covering jwt_secrets/firebase_admin/
+    # payment_gateways/external_services (see terraform/modules/secrets/
+    # main.tf) -- one Secrets Manager secret instead of four to avoid
+    # paying the per-secret charge four times over. apps/api/src/env.ts
+    # fetches it once and destructures each group internally.
+    APP_SECRET_ARN = module.secrets.secret_arn
     # Real-time state table (GPS positions today) -- apps/api/src/services/
     # dynamo.service.ts reads this instead of hardcoding a table name, so it
     # always targets whatever this module actually provisions.
