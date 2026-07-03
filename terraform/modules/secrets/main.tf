@@ -81,5 +81,5 @@ resource "aws_secretsmanager_secret_version" "placeholder" {
 
 output "secret_arn" {
   description = "ARN of the single consolidated app secret, consumed by the ECS module's environment_variables input (as APP_SECRET_ARN) and by the task role's runtime-access IAM policy."
-  value       = aws_secretsmanager_secret.app.arn
+  value       = aws_secretsmanager_secret.app.arn 
 }
