@@ -11,3 +11,4 @@ terraform
 *.md
 .env
 .env.*
+.claude

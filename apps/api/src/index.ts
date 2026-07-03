@@ -141,7 +141,7 @@ v1.route('/documents', documentRoutes);
 v1.route('/emergency', emergencyTriggerRoutes);
 
 // ──────────────────────────────────────────────────────────
-// Admin Routes (v1/admin)
+// Admin Routes (v1/admin) 
 // ──────────────────────────────────────────────────────────
 
 const adminV1 = new Hono();
