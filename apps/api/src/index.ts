@@ -31,7 +31,14 @@ const app = new Hono();
 app.use(
   '*',
   cors({
-    origin: env.NODE_ENV === 'production' ? [env.ADMIN_DASHBOARD_URL] : '*',
+    // All three dashboard apps (admin/corporate/transport) are separate
+    // Next.js deployments with distinct origins -- previously only
+    // ADMIN_DASHBOARD_URL was allowed, which silently CORS-blocked the
+    // other two dashboards in production.
+    origin:
+      env.NODE_ENV === 'production'
+        ? [env.ADMIN_DASHBOARD_URL, env.CORPORATE_DASHBOARD_URL, env.TRANSPORT_DASHBOARD_URL]
+        : '*',
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
     exposeHeaders: ['Content-Length'],

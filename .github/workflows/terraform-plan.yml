@@ -78,6 +78,8 @@ jobs:
         env:
           TF_VAR_container_image: ${{ vars.ECR_IMAGE_URI || 'placeholder:latest' }}
           TF_VAR_admin_dashboard_url: ${{ vars.ADMIN_DASHBOARD_URL }}
+          TF_VAR_corporate_dashboard_url: ${{ vars.CORPORATE_DASHBOARD_URL }}
+          TF_VAR_transport_dashboard_url: ${{ vars.TRANSPORT_DASHBOARD_URL }}
         run: |
           terraform plan -no-color -input=false -out=tfplan | tee plan_output.txt
           echo "exitcode=$?" >> "$GITHUB_OUTPUT"

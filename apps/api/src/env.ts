@@ -167,6 +167,14 @@ const envSchema = z.object({
   UPSTASH_REDIS_TOKEN: z.string().optional(),
   TRIP_PRICE_NGN: z.coerce.number().int().positive().default(2000),
   ADMIN_DASHBOARD_URL: z.string().url().default('http://localhost:3001'),
+  // Corporate/transport dashboards are separate Next.js apps with their own
+  // origins -- all three need to be in the CORS allowlist below (see
+  // index.ts), not just the admin dashboard. Optional/defaulted (unlike
+  // ADMIN_DASHBOARD_URL) since a production deploy without one of these
+  // apps live yet should not fail startup; that dashboard's requests would
+  // just be CORS-rejected until its URL is configured.
+  CORPORATE_DASHBOARD_URL: z.string().url().default('http://localhost:3002'),
+  TRANSPORT_DASHBOARD_URL: z.string().url().default('http://localhost:3003'),
   ENABLE_PANIC_RECORDING: z.coerce.boolean().default(true),
   // Resend -- transactional email (role upgrade approval/rejection notices).
   RESEND_API_KEY: z.string().optional(),

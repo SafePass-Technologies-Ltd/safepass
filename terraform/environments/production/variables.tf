@@ -63,7 +63,17 @@ variable "container_image" {
 }
 
 variable "admin_dashboard_url" {
-  description = "Public URL of the admin dashboard (Next.js app, deployed separately from this Terraform stack) -- embedded in API-generated links/emails (e.g. role-upgrade approval notices). Required (no default) so it can't silently fall back to the app's localhost dev default in production; supplied via TF_VAR_admin_dashboard_url in CI (see .github/workflows/terraform-*.yml)."
+  description = "Public URL of the admin dashboard (Next.js app, deployed separately from this Terraform stack) -- embedded in API-generated links/emails (e.g. role-upgrade approval notices) and in the API's CORS allowlist. Required (no default) so it can't silently fall back to the app's localhost dev default in production; supplied via TF_VAR_admin_dashboard_url in CI (see .github/workflows/terraform-*.yml)."
+  type        = string
+}
+
+variable "corporate_dashboard_url" {
+  description = "Public URL of the corporate dashboard (separate Next.js app) -- added to the API's CORS allowlist alongside admin_dashboard_url so its requests aren't rejected in production. Required (no default), same rationale as admin_dashboard_url; supplied via TF_VAR_corporate_dashboard_url in CI."
+  type        = string
+}
+
+variable "transport_dashboard_url" {
+  description = "Public URL of the transport partner dashboard (separate Next.js app) -- added to the API's CORS allowlist alongside admin_dashboard_url so its requests aren't rejected in production. Required (no default), same rationale as admin_dashboard_url; supplied via TF_VAR_transport_dashboard_url in CI."
   type        = string
 }
 

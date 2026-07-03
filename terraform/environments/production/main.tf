@@ -181,6 +181,12 @@ module "ecs" {
     # schema default (http://localhost:3001) would silently leak into
     # production-built links/emails.
     ADMIN_DASHBOARD_URL = var.admin_dashboard_url
+    # Corporate/transport dashboards are separate Next.js deployments with
+    # their own origins -- both need to be in the API's CORS allowlist
+    # alongside the admin dashboard (see apps/api/src/index.ts), not just
+    # embedded in links/emails the way ADMIN_DASHBOARD_URL is.
+    CORPORATE_DASHBOARD_URL = var.corporate_dashboard_url
+    TRANSPORT_DASHBOARD_URL = var.transport_dashboard_url
   }
 }
 
