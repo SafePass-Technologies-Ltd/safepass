@@ -1,16 +1,17 @@
 // SafePass — Corporate Dashboard ESLint config
 //
-// Flat config (ESLint 9) using Next.js's recommended rule sets. Without this
-// file, `next lint` drops into an interactive first-run setup wizard, which
-// hangs/fails non-interactively in CI.
-import { FlatCompat } from '@eslint/eslintrc';
-
-const compat = new FlatCompat({
-  baseDirectory: import.meta.dirname,
-});
+// Flat config (ESLint 9), run directly via the ESLint CLI (`next lint` was
+// removed in Next.js 16). eslint-config-next now ships its rule sets as
+// native flat config arrays, so they're imported directly rather than routed
+// through `FlatCompat#extends`, which mis-handles their plugin objects
+// (causes a "Converting circular structure to JSON" crash during config
+// validation).
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
+import nextTypescript from 'eslint-config-next/typescript';
 
 const eslintConfig = [
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
+  ...nextCoreWebVitals,
+  ...nextTypescript,
   {
     ignores: ['.next/**', 'node_modules/**'],
   },
@@ -23,6 +24,12 @@ const eslintConfig = [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_', destructuredArrayIgnorePattern: '^_' },
       ],
+      // New in eslint-config-next's react-hooks v6 rule set. Flags the
+      // common "fetch in useEffect, then setState" data-loading pattern
+      // used throughout this app's dashboard pages. Downgraded to a
+      // warning (rather than fixed or disabled) so it stays visible
+      // without blocking CI; revisit as pages are refactored.
+      'react-hooks/set-state-in-effect': 'warn',
     },
   },
 ];

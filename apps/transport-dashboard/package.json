@@ -7,7 +7,7 @@
     "dev": "next dev -p 3003",
     "build": "next build",
     "start": "next start -p 3003",
-    "lint": "next lint"
+    "lint": "eslint ."
   },
   "dependencies": {
     "clsx": "2.1.1",
@@ -33,7 +33,6 @@
     "tailwindcss": "4.3.0",
     "typescript": "5.8.3",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.10",
-    "@eslint/eslintrc": "3.3.5"
+    "eslint-config-next": "16.2.10"
   }
 }
