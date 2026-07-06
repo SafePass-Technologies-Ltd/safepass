@@ -28,6 +28,16 @@ variable "alb_zone_id" {
 variable "dashboard_records" {
   description = "Map of dashboard subdomain (full FQDN, e.g. \"console.safepass-tech.com\") -> CNAME target (Vercel's DNS target for that custom domain)."
   type        = map(string)
+
+  # Route53 rejects a CNAME record whose record set has zero/empty values
+  # with an opaque "InvalidInput: ResourceRecords is not complete" XML error
+  # at apply time -- this validation catches an empty-string target (e.g. a
+  # GitHub Actions variable that resolved empty) at plan time instead, with
+  # a message that actually names the problem.
+  validation {
+    condition     = alltrue([for fqdn, target in var.dashboard_records : length(trimspace(target)) > 0])
+    error_message = "Every dashboard_records value must be a non-empty CNAME target -- check that VERCEL_CNAME_CONSOLE/CORPORATE/TRANSPORT (or equivalent TF_VARs) are actually set."
+  }
 }
 
 # API — ALIAS (Route53's zone-apex-capable CNAME equivalent) straight to the

@@ -221,8 +221,8 @@ module "dns" {
   alb_zone_id     = module.ecs.alb_zone_id
 
   dashboard_records = {
-    "console.${var.root_domain}"   = var.vercel_cname_targets.console
-    "corporate.${var.root_domain}" = var.vercel_cname_targets.corporate
-    "transport.${var.root_domain}" = var.vercel_cname_targets.transport
+    "console.${var.root_domain}"   = var.vercel_cname_target_console
+    "corporate.${var.root_domain}" = var.vercel_cname_target_corporate
+    "transport.${var.root_domain}" = var.vercel_cname_target_transport
   }
 }

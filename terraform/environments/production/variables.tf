@@ -89,11 +89,26 @@ variable "api_subdomain" {
   default     = "api"
 }
 
-variable "vercel_cname_targets" {
-  description = "Per-dashboard CNAME target Vercel issued when the domain was added under each project's Settings > Domains (console = admin dashboard project). Vercel now commonly issues a unique per-domain target (e.g. \"<hash>.vercel-dns-017.com\") rather than the generic \"cname.vercel-dns.com\" -- always copy the exact value shown on that project's Domains screen, not a shared default, since Terraform can't know it in advance."
-  type = object({
-    console   = string
-    corporate = string
-    transport = string
-  })
+# Per-dashboard CNAME target Vercel issued when the domain was added under
+# each project's Settings > Domains (console = admin dashboard project).
+# Vercel now commonly issues a unique per-domain target (e.g.
+# "<hash>.vercel-dns-017.com") rather than the generic "cname.vercel-dns.com"
+# -- always copy the exact value shown on that project's Domains screen.
+#
+# Kept as three separate plain string variables (rather than one
+# object-typed variable built from an inline JSON blob in the GitHub Actions
+# YAML) so a missing/empty value fails loudly at `terraform plan` with a
+# normal "no value for required variable" error, instead of surfacing as an
+# opaque Route53 "InvalidInput: ResourceRecords is not complete" XML error
+# at apply time once an empty string silently made it into the record set.
+variable "vercel_cname_target_console" {
+  type = string
+}
+
+variable "vercel_cname_target_corporate" {
+  type = string
+}
+
+variable "vercel_cname_target_transport" {
+  type = string
 }

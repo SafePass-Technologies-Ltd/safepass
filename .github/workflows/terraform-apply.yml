@@ -81,9 +81,12 @@ jobs:
           TF_VAR_transport_dashboard_url: ${{ vars.TRANSPORT_DASHBOARD_URL }}
           # Per-dashboard CNAME target Vercel issued under each project's
           # Settings > Domains when the console/corporate/transport
-          # subdomain was added there (see terraform/modules/dns) -- passed
-          # as a JSON object since vercel_cname_targets is an object-typed
-          # Terraform variable.
-          TF_VAR_vercel_cname_targets: >-
-            {"console":"${{ vars.VERCEL_CNAME_CONSOLE }}","corporate":"${{ vars.VERCEL_CNAME_CORPORATE }}","transport":"${{ vars.VERCEL_CNAME_TRANSPORT }}"}
+          # subdomain was added there (see terraform/modules/dns). Passed as
+          # three plain strings rather than one JSON-object TF_VAR -- avoids
+          # any YAML/JSON escaping risk, and a missing repo variable now
+          # fails at `terraform plan` with a normal "no value for required
+          # variable" error instead of an opaque Route53 XML error at apply.
+          TF_VAR_vercel_cname_target_console: ${{ vars.VERCEL_CNAME_CONSOLE }}
+          TF_VAR_vercel_cname_target_corporate: ${{ vars.VERCEL_CNAME_CORPORATE }}
+          TF_VAR_vercel_cname_target_transport: ${{ vars.VERCEL_CNAME_TRANSPORT }}
         run: terraform apply -auto-approve -input=false
