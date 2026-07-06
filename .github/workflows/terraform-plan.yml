@@ -80,6 +80,9 @@ jobs:
           TF_VAR_admin_dashboard_url: ${{ vars.ADMIN_DASHBOARD_URL }}
           TF_VAR_corporate_dashboard_url: ${{ vars.CORPORATE_DASHBOARD_URL }}
           TF_VAR_transport_dashboard_url: ${{ vars.TRANSPORT_DASHBOARD_URL }}
+          # See terraform-apply.yml's matching env var for why this is JSON.
+          TF_VAR_vercel_cname_targets: >-
+            {"console":"${{ vars.VERCEL_CNAME_CONSOLE }}","corporate":"${{ vars.VERCEL_CNAME_CORPORATE }}","transport":"${{ vars.VERCEL_CNAME_TRANSPORT }}"}
         run: |
           terraform plan -no-color -input=false -out=tfplan | tee plan_output.txt
           echo "exitcode=$?" >> "$GITHUB_OUTPUT"

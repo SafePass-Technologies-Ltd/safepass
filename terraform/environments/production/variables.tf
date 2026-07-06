@@ -89,8 +89,11 @@ variable "api_subdomain" {
   default     = "api"
 }
 
-variable "vercel_cname_target" {
-  description = "CNAME target Vercel issues for custom domains on this project (shown in each Vercel project's Domains settings when adding console./corporate./transport.safepass-tech.com). Defaults to Vercel's standard subdomain target; override if Vercel assigned a different value for this project."
-  type        = string
-  default     = "cname.vercel-dns.com"
+variable "vercel_cname_targets" {
+  description = "Per-dashboard CNAME target Vercel issued when the domain was added under each project's Settings > Domains (console = admin dashboard project). Vercel now commonly issues a unique per-domain target (e.g. \"<hash>.vercel-dns-017.com\") rather than the generic \"cname.vercel-dns.com\" -- always copy the exact value shown on that project's Domains screen, not a shared default, since Terraform can't know it in advance."
+  type = object({
+    console   = string
+    corporate = string
+    transport = string
+  })
 }
