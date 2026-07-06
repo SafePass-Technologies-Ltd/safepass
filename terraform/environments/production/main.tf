@@ -146,6 +146,10 @@ module "ecs" {
   task_role_arn           = module.iam.ecs_task_role_arn
   task_execution_role_arn = module.iam.ecs_task_execution_role_arn
 
+  # HTTPS listener cert -- see module "acm" below. Free ACM cert on the ALB
+  # directly, replacing the old CloudFront-in-front-of-the-ALB setup.
+  certificate_arn = module.acm.certificate_arn
+
   # Plain (non-secret) env vars -- every *_SECRET_ARN below is just an ARN,
   # not a credential. apps/api/src/env.ts fetches the actual secret material
   # itself at startup via the AWS SDK (using the task role's
@@ -190,17 +194,35 @@ module "ecs" {
   }
 }
 
-# --- CloudFront (in front of the ALB) ---
-# count-gated by enable_cloudfront: AWS blocks CloudFront creation on
-# unverified accounts (see AccessDenied error referenced in variables.tf's
-# enable_cloudfront description) -- set to false to apply everything else
-# in the meantime, then flip back to true once AWS Support verifies the
-# account and re-apply.
-module "cloudfront" {
-  count  = var.enable_cloudfront ? 1 : 0
-  source = "../../modules/cloudfront"
+# --- ACM (free cert for the API's custom domain) ---
+# Replaces the old CloudFront-in-front-of-the-ALB setup: the ALB terminates
+# TLS itself using this certificate (see module "ecs" above's
+# certificate_arn input), so CloudFront is no longer needed for the API.
+module "acm" {
+  source = "../../modules/acm"
 
-  project      = var.project
-  environment  = var.environment
-  alb_dns_name = module.ecs.alb_dns_name
+  project       = var.project
+  environment   = var.environment
+  root_domain   = var.root_domain
+  api_subdomain = var.api_subdomain
+}
+
+# --- DNS records (API alias + dashboard CNAMEs) ---
+# The safepass-tech.com hosted zone and its apex record (already serving a
+# separate website) already exist and are managed outside this Terraform
+# stack -- this module only adds the api/console/corporate/transport
+# subdomain records, looked up via module.acm's zone_id data source.
+module "dns" {
+  source = "../../modules/dns"
+
+  zone_id         = module.acm.zone_id
+  api_domain_name = module.acm.api_domain_name
+  alb_dns_name    = module.ecs.alb_dns_name
+  alb_zone_id     = module.ecs.alb_zone_id
+
+  dashboard_records = {
+    "console.${var.root_domain}"   = var.vercel_cname_target
+    "corporate.${var.root_domain}" = var.vercel_cname_target
+    "transport.${var.root_domain}" = var.vercel_cname_target
+  }
 }

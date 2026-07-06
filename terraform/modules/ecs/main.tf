@@ -82,6 +82,12 @@ variable "secrets" {
   default     = {}
 }
 
+variable "certificate_arn" {
+  description = "ACM certificate ARN (from modules/acm) for the ALB's HTTPS listener, e.g. covering api.safepass-tech.com. When null, the ALB only serves plain HTTP on :80 (e.g. before the cert/DNS is wired up) -- set once modules/acm has issued the certificate."
+  type        = string
+  default     = null
+}
+
 resource "aws_ecs_cluster" "main" {
   name = "${var.project}-${var.environment}-cluster"
 
@@ -91,12 +97,12 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
-# ALB security group — public HTTP/HTTPS ingress from the internet
-# (CloudFront sits in front, but the ALB itself must also accept traffic
-# directly for the health check path and as a defense-in-depth fallback).
+# ALB security group — public HTTP/HTTPS ingress from the internet. The ALB
+# terminates TLS itself (see the HTTPS listener + certificate_arn below) --
+# there is no CDN/CloudFront in front of the API.
 resource "aws_security_group" "alb" {
   name        = "${var.project}-${var.environment}-alb-sg"
-  description = "Allow inbound HTTP/HTTPS from CloudFront/internet to the ALB"
+  description = "Allow inbound HTTP/HTTPS from the internet directly to the ALB"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -195,6 +201,43 @@ resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
+
+  # Once a cert is available, HTTP just redirects to HTTPS (no CloudFront in
+  # front to do this for us anymore -- the ALB terminates TLS itself). Before
+  # the cert exists (certificate_arn = null, e.g. first apply before DNS/ACM
+  # is wired up), fall back to forwarding directly so the API stays reachable.
+  dynamic "default_action" {
+    for_each = var.certificate_arn != null ? [1] : []
+    content {
+      type = "redirect"
+      redirect {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+  }
+
+  dynamic "default_action" {
+    for_each = var.certificate_arn == null ? [1] : []
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.api.arn
+    }
+  }
+}
+
+# HTTPS listener -- only created once an ACM cert is supplied. Terminates
+# TLS at the ALB directly (per the user's decision to drop CloudFront for
+# the API and rely on a free ACM cert on the ALB instead).
+resource "aws_lb_listener" "https" {
+  count = var.certificate_arn != null ? 1 : 0
+
+  load_balancer_arn = aws_lb.main.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.certificate_arn
 
   default_action {
     type             = "forward"
@@ -300,6 +343,11 @@ output "service_name" {
 
 output "alb_dns_name" {
   value = aws_lb.main.dns_name
+}
+
+output "alb_zone_id" {
+  description = "ALB's own Route53 hosted zone ID -- required (alongside alb_dns_name) for an ALIAS record in modules/dns."
+  value       = aws_lb.main.zone_id
 }
 
 output "alb_arn" {

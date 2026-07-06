@@ -77,8 +77,20 @@ variable "transport_dashboard_url" {
   type        = string
 }
 
-variable "enable_cloudfront" {
-  description = "Whether to create the CloudFront distribution in front of the ALB. AWS blocks CloudFront creation on newly created / unverified accounts (\"AccessDenied: account must be verified\") until AWS Support clears the account -- set to false to apply the rest of the stack in the meantime, then flip back to true once verified."
-  type        = bool
-  default     = false
+variable "root_domain" {
+  description = "Root domain name, already registered and hosted in Route53 with an existing apex record serving a separate website (not managed by this Terraform stack). Used to derive the API and dashboard subdomains."
+  type        = string
+  default     = "safepass-tech.com"
+}
+
+variable "api_subdomain" {
+  description = "Subdomain label for the backend API -- combined with root_domain to form api_subdomain.root_domain, e.g. \"api.safepass-tech.com\". The ALB gets a free ACM cert for this domain (module.acm) instead of relying on CloudFront."
+  type        = string
+  default     = "api"
+}
+
+variable "vercel_cname_target" {
+  description = "CNAME target Vercel issues for custom domains on this project (shown in each Vercel project's Domains settings when adding console./corporate./transport.safepass-tech.com). Defaults to Vercel's standard subdomain target; override if Vercel assigned a different value for this project."
+  type        = string
+  default     = "cname.vercel-dns.com"
 }

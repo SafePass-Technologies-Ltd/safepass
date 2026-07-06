@@ -28,9 +28,18 @@ output "alb_dns_name" {
   value = module.ecs.alb_dns_name
 }
 
-output "cloudfront_domain_name" {
-  description = "CloudFront distribution domain, or null while enable_cloudfront = false."
-  value       = var.enable_cloudfront ? module.cloudfront[0].distribution_domain_name : null
+output "api_url" {
+  description = "Public HTTPS URL of the backend API -- served directly off the ALB with an ACM cert (no CloudFront in front)."
+  value       = "https://${module.acm.api_domain_name}"
+}
+
+output "api_certificate_arn" {
+  value = module.acm.certificate_arn
+}
+
+output "dashboard_dns_records" {
+  description = "Dashboard subdomains pointed at Vercel via CNAME -- confirm each is also added as a custom domain in the corresponding Vercel project."
+  value       = module.dns.dashboard_fqdns
 }
 
 output "rds_endpoint" {
