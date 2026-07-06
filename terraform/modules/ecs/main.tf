@@ -101,7 +101,7 @@ resource "aws_ecs_cluster" "main" {
 # there is no CDN/CloudFront in front of the API.
 resource "aws_security_group" "alb" {
   name        = "${var.project}-${var.environment}-alb-sg"
-  description = "Allow inbound HTTP/HTTPS from the internet directly to the ALB"
+  description = "Allow inbound HTTP/HTTPS from CloudFront/internet to the ALB"
   vpc_id      = var.vpc_id
 
   ingress {
