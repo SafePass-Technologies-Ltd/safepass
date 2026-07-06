@@ -83,9 +83,8 @@ variable "secrets" {
 }
 
 variable "certificate_arn" {
-  description = "ACM certificate ARN (from modules/acm) for the ALB's HTTPS listener, e.g. covering api.safepass-tech.com. When null, the ALB only serves plain HTTP on :80 (e.g. before the cert/DNS is wired up) -- set once modules/acm has issued the certificate."
+  description = "ACM certificate ARN (from modules/acm) for the ALB's HTTPS listener, e.g. covering api.safepass-tech.com. Required -- module.acm must be applied first so this is always a real cert ARN; see the note on aws_lb_listener.http for why this can't be made optional/conditional."
   type        = string
-  default     = null
 }
 
 resource "aws_ecs_cluster" "main" {
@@ -202,37 +201,30 @@ resource "aws_lb_listener" "http" {
   port              = 80
   protocol          = "HTTP"
 
-  # Once a cert is available, HTTP just redirects to HTTPS (no CloudFront in
-  # front to do this for us anymore -- the ALB terminates TLS itself). Before
-  # the cert exists (certificate_arn = null, e.g. first apply before DNS/ACM
-  # is wired up), fall back to forwarding directly so the API stays reachable.
-  dynamic "default_action" {
-    for_each = var.certificate_arn != null ? [1] : []
-    content {
-      type = "redirect"
-      redirect {
-        port        = "443"
-        protocol    = "HTTPS"
-        status_code = "HTTP_301"
-      }
-    }
-  }
-
-  dynamic "default_action" {
-    for_each = var.certificate_arn == null ? [1] : []
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.api.arn
+  # HTTP always redirects to HTTPS -- no CloudFront in front to do this for
+  # us anymore, the ALB terminates TLS itself (see the https listener
+  # below). NOTE: this (and the https listener's count) must NOT be gated on
+  # `var.certificate_arn != null` -- that value comes from
+  # module.acm.certificate_arn, which is an aws_acm_certificate_validation
+  # output unknown until apply time on a fresh stack, and Terraform cannot
+  # evaluate a `count`/`for_each` condition against an apply-time-only value
+  # ("Invalid count argument"). certificate_arn is therefore a required
+  # (non-null) input -- module.acm must exist and be applied first.
+  default_action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
     }
   }
 }
 
-# HTTPS listener -- only created once an ACM cert is supplied. Terminates
-# TLS at the ALB directly (per the user's decision to drop CloudFront for
-# the API and rely on a free ACM cert on the ALB instead).
+# HTTPS listener. Terminates TLS at the ALB directly (per the user's
+# decision to drop CloudFront for the API and rely on a free ACM cert on
+# the ALB instead). Always created -- see the note on aws_lb_listener.http
+# above for why this can't be conditionally counted on certificate_arn.
 resource "aws_lb_listener" "https" {
-  count = var.certificate_arn != null ? 1 : 0
-
   load_balancer_arn = aws_lb.main.arn
   port              = 443
   protocol          = "HTTPS"
@@ -323,7 +315,7 @@ resource "aws_ecs_service" "api" {
   # architecture.md's Multi-AZ reliability requirement is satisfied without
   # an explicit placement strategy.
 
-  depends_on = [aws_lb_listener.http]
+  depends_on = [aws_lb_listener.http, aws_lb_listener.https]
 
   lifecycle {
     # The task definition's container image tag changes on every deploy via
