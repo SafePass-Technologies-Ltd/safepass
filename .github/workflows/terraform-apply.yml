@@ -93,26 +93,55 @@ jobs:
       # onto the family's latest revision (so env-var-only changes like
       # ADMIN_DASHBOARD_URL take effect without a code deploy), a stale
       # placeholder image here would push a task definition ECS can never
-      # actually pull -- exactly what caused "Waiter ServicesStable failed:
-      # Max attempts exceeded" (new tasks stuck in CannotPullContainerError)
-      # last run. Resolving the real currently-running image first keeps
-      # this apply from silently regressing the deployed image.
+      # actually pull.
+      #
+      # IMPORTANT: this deliberately reads the image off an actually
+      # RUNNING task, NOT `aws ecs describe-task-definition --task-definition
+      # <family>` (no revision). That family-only form always resolves to
+      # the *latest registered* revision -- which, the first time this
+      # step's logic was wrong, was itself a bad placeholder:latest
+      # revision. Every subsequent run then kept re-reading that same
+      # poisoned "latest" revision forever, even though the OLD healthy
+      # tasks were still running fine underneath (ECS never kills working
+      # tasks just because new ones fail to start) -- a self-perpetuating
+      # CannotPullContainerError loop. Reading from a live RUNNING task
+      # instead is immune to a bad revision sitting at the top of the
+      # family's history.
       - name: Resolve currently-deployed image
         id: current-image
         env:
-          # Matches modules/ecs's `family = "${project}-${environment}-api"`
-          # naming convention and deploy-api.yml's hardcoded ECS_SERVICE --
-          # both currently fixed to "safepass"/"production" (see
-          # environments/production/variables.tf's defaults).
-          FAMILY: safepass-production-api
+          # Matches modules/ecs's naming convention and deploy-api.yml's
+          # hardcoded env block -- both currently fixed to
+          # "safepass"/"production" (see production/variables.tf's defaults).
+          CLUSTER: safepass-production-cluster
+          SERVICE: safepass-production-api
         run: |
-          IMAGE=$(aws ecs describe-task-definition \
-            --task-definition "$FAMILY" \
-            --query 'taskDefinition.containerDefinitions[0].image' \
+          IMAGE=""
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster "$CLUSTER" \
+            --service-name "$SERVICE" \
+            --desired-status RUNNING \
+            --query 'taskArns[0]' \
             --output text 2>/dev/null || true)
+
+          if [ -n "$TASK_ARN" ] && [ "$TASK_ARN" != "None" ]; then
+            TD_ARN=$(aws ecs describe-tasks \
+              --cluster "$CLUSTER" \
+              --tasks "$TASK_ARN" \
+              --query 'tasks[0].taskDefinitionArn' \
+              --output text 2>/dev/null || true)
+            if [ -n "$TD_ARN" ] && [ "$TD_ARN" != "None" ]; then
+              IMAGE=$(aws ecs describe-task-definition \
+                --task-definition "$TD_ARN" \
+                --query 'taskDefinition.containerDefinitions[0].image' \
+                --output text 2>/dev/null || true)
+            fi
+          fi
+
           if [ -z "$IMAGE" ] || [ "$IMAGE" = "None" ]; then
-            # No task definition exists yet (very first apply ever) --
-            # fall back to the repo variable / placeholder as before.
+            # No running task found (very first apply ever, or the service
+            # is currently fully down) -- fall back to the repo variable /
+            # placeholder as before.
             IMAGE="${{ vars.ECR_IMAGE_URI || 'placeholder:latest' }}"
           fi
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
