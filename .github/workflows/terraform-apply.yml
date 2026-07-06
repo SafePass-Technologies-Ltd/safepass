@@ -83,10 +83,44 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform init -input=false
 
+      # Terraform's container_image var previously fell back to
+      # vars.ECR_IMAGE_URI (or the placeholder:latest string if that repo
+      # variable was ever unset/stale) -- decoupled from whatever image
+      # deploy-api.yml actually has running right now. That was harmless
+      # while aws_ecs_service.api's `ignore_changes = [task_definition]`
+      # meant the running service never adopted Terraform's own task def
+      # revisions. Now that the step below deliberately forces the service
+      # onto the family's latest revision (so env-var-only changes like
+      # ADMIN_DASHBOARD_URL take effect without a code deploy), a stale
+      # placeholder image here would push a task definition ECS can never
+      # actually pull -- exactly what caused "Waiter ServicesStable failed:
+      # Max attempts exceeded" (new tasks stuck in CannotPullContainerError)
+      # last run. Resolving the real currently-running image first keeps
+      # this apply from silently regressing the deployed image.
+      - name: Resolve currently-deployed image
+        id: current-image
+        env:
+          # Matches modules/ecs's `family = "${project}-${environment}-api"`
+          # naming convention and deploy-api.yml's hardcoded ECS_SERVICE --
+          # both currently fixed to "safepass"/"production" (see
+          # environments/production/variables.tf's defaults).
+          FAMILY: safepass-production-api
+        run: |
+          IMAGE=$(aws ecs describe-task-definition \
+            --task-definition "$FAMILY" \
+            --query 'taskDefinition.containerDefinitions[0].image' \
+            --output text 2>/dev/null || true)
+          if [ -z "$IMAGE" ] || [ "$IMAGE" = "None" ]; then
+            # No task definition exists yet (very first apply ever) --
+            # fall back to the repo variable / placeholder as before.
+            IMAGE="${{ vars.ECR_IMAGE_URI || 'placeholder:latest' }}"
+          fi
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
       - name: Terraform apply
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
-          TF_VAR_container_image: ${{ vars.ECR_IMAGE_URI || 'placeholder:latest' }}
+          TF_VAR_container_image: ${{ steps.current-image.outputs.image }}
           TF_VAR_admin_dashboard_url: ${{ vars.ADMIN_DASHBOARD_URL }}
           TF_VAR_corporate_dashboard_url: ${{ vars.CORPORATE_DASHBOARD_URL }}
           TF_VAR_transport_dashboard_url: ${{ vars.TRANSPORT_DASHBOARD_URL }}
