@@ -49,6 +49,16 @@
 #       to read the running service's networkConfiguration so the one-off
 #       migration task launches in the same private subnets/security group
 #       -- required for it to reach RDS at all).
+#   - Interactive ECS Exec (for an operator running `aws ecs
+#     execute-command` by hand, e.g. to run apps/api/src/db/promote-admin.ts
+#     or bootstrap-super-admin.ts inside a live container -- see
+#     modules/ecs's enable_execute_command): the PERSON running that CLI
+#     command needs `ecs:ExecuteCommand` on their own IAM identity (not this
+#     deploy role, and not the two roles this module creates) scoped to the
+#     cluster/service/task ARNs. The two ssmmessages:* channel permissions
+#     the SSM agent itself needs are already granted directly to the task
+#     role below (aws_iam_role_policy.ecs_task_runtime) -- nothing extra
+#     needed there.
 
 variable "project" {
   type = string
@@ -139,10 +149,33 @@ data "aws_iam_policy_document" "ecs_task_runtime" {
       resources = [var.dynamodb_table_arn]
     }
   }
+
+  # ECS Exec (modules/ecs's aws_ecs_service.enable_execute_command): the
+  # SSM-managed side-channel agent that runs inside the container needs
+  # these on the TASK role specifically (not the execution role) to open
+  # its session -- these are what actually let `aws ecs execute-command`
+  # attach a shell, on top of the caller's own ecs:ExecuteCommand IAM
+  # permission and the cluster-level execute_command_configuration.
+  # Resource-level scoping isn't supported for these actions (AWS requires
+  # "*"); the trade-off is acceptable since this role is already scoped to
+  # this one ECS task's identity.
+  statement {
+    sid = "ECSExecSessionChannel"
+    actions = [
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "ecs_task_runtime" {
-  count  = length(var.secret_arns) > 0 || var.evidence_bucket_arn != "" || var.dynamodb_table_arn != "" ? 1 : 0
+  # Unconditional (previously gated on secret_arns/evidence_bucket_arn/
+  # dynamodb_table_arn being non-empty): the ssmmessages:* ECS Exec
+  # statement above is needed regardless of whether any of those
+  # resource-specific statements end up present in the document.
   name   = "runtime-access"
   role   = aws_iam_role.ecs_task.id
   policy = data.aws_iam_policy_document.ecs_task_runtime.json

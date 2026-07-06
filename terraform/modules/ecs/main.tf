@@ -94,6 +94,24 @@ resource "aws_ecs_cluster" "main" {
     name  = "containerInsights"
     value = "enabled"
   }
+
+  # ECS Exec (aws ecs execute-command) needs this cluster-level config to
+  # actually stream a shell session -- without it, `execute-command` fails
+  # with "The execute command failed ... execute command logging
+  # configuration". Routes exec session I/O to the same CloudWatch log
+  # group the app itself logs to, so admin actions run this way (e.g.
+  # db/promote-admin.ts, db/bootstrap-super-admin.ts -- there is no
+  # self-service path to admin/super_admin, per architecture.md's Role
+  # Upgrade Service) leave an audit trail rather than vanishing once the
+  # session ends.
+  configuration {
+    execute_command_configuration {
+      logging = "OVERRIDE"
+      log_configuration {
+        cloud_watch_log_group_name = aws_cloudwatch_log_group.api.name
+      }
+    }
+  }
 }
 
 # ALB security group — public HTTP/HTTPS ingress from the internet. The ALB
@@ -288,6 +306,18 @@ resource "aws_ecs_service" "api" {
   task_definition = aws_ecs_task_definition.api.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
+
+  # Lets an operator with `ecs:ExecuteCommand` on their own IAM identity
+  # (that permission lives on whoever's running the CLI, not on this task's
+  # roles) run `aws ecs execute-command ... --interactive --command "sh"`
+  # to get a shell in a running container -- needed for one-off admin
+  # scripts like apps/api/src/db/promote-admin.ts and
+  # bootstrap-super-admin.ts (there is no self-service path to admin/
+  # super_admin, per architecture.md's Role Upgrade Service, so someone has
+  # to run these from inside the container against the real DATABASE_URL).
+  # Requires the task role to have the ssmmessages:* permissions granted in
+  # modules/iam-ecs, and the cluster's execute_command_configuration above.
+  enable_execute_command = true
 
   # Rolling deployment tuned for zero-downtime on the safety-critical
   # WebSocket path (risk_log.md R-001) — see module header comment.
