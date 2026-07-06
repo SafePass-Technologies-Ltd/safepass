@@ -84,7 +84,17 @@ async function resolveDatabaseUrl(): Promise<void> {
 
   // encodeURIComponent guards against special characters in the
   // AWS-generated password breaking the connection string's URL syntax.
-  process.env.DATABASE_URL = `postgresql://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${dbName}`;
+  //
+  // sslmode=require: AWS RDS's default PostgreSQL parameter group enforces
+  // rds.force_ssl=1, which rejects any plaintext connection outright at the
+  // pg_hba.conf level ("no pg_hba.conf entry for host ..., no encryption")
+  // before authentication is even attempted. The `postgres` package (see
+  // apps/api/src/db/index.ts) parses `sslmode` out of the connection string
+  // itself and maps it to its own `ssl` option -- `require` enables TLS on
+  // the wire without verifying RDS's certificate chain (no CA bundle needs
+  // to be shipped in the container image), matching libpq's sslmode=require
+  // semantics: encrypted, but not certificate-validated.
+  process.env.DATABASE_URL = `postgresql://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${dbName}?sslmode=require`;
 }
 
 async function resolveJwtSecrets(): Promise<void> {
