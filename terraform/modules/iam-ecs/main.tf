@@ -44,6 +44,11 @@
 #       already-deployed commit must skip the push rather than fail) plus
 #       ecs:RegisterTaskDefinition and ecs:UpdateService (with
 #       iam:PassRole scoped to iam:PassedToService = ecs-tasks.amazonaws.com).
+#       Also (added for deploy-api.yml's pre-deploy migration task):
+#       ecs:RunTask, ecs:DescribeTasks, and ecs:DescribeServices (the latter
+#       to read the running service's networkConfiguration so the one-off
+#       migration task launches in the same private subnets/security group
+#       -- required for it to reach RDS at all).
 
 variable "project" {
   type = string

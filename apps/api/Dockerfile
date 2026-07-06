@@ -53,6 +53,12 @@ RUN pnpm install --frozen-lockfile --prod
 
 COPY --from=build /repo/apps/api/dist ./apps/api/dist
 COPY --from=build /repo/packages/shared ./packages/shared
+# db/migrate.ts (compiled to dist/db/migrate.js) reads SQL migration files
+# from './drizzle' at runtime (relative to WORKDIR /repo/apps/api below) --
+# that folder is source, not compiled output, so tsc never puts it in
+# dist/. Without this, `node dist/db/migrate.js` fails inside the deployed
+# container with "ENOENT: no such file or directory, scandir './drizzle'".
+COPY --from=build /repo/apps/api/drizzle ./apps/api/drizzle
 
 WORKDIR /repo/apps/api
 

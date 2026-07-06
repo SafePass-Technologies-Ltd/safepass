@@ -4,7 +4,9 @@
 # dependency), or the Dockerfile change. Waits for the CI workflow to pass
 # on the same commit before deploying (via workflow_run), builds the Docker
 # image, pushes it to ECR, registers a new ECS task definition revision with
-# the new image, and forces a new rolling deployment.
+# the new image, runs pending drizzle-orm migrations as a one-off ECS task
+# on that same revision (aborting the deploy if they fail), and only then
+# forces a new rolling deployment of the actual service.
 #
 # CHANGE DETECTION: workflow_run doesn't support path filters directly, so
 # relevance is checked explicitly against a moving "deployed-api" git tag
@@ -154,6 +156,66 @@ jobs:
           task-definition: task-def.json
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ steps.build-output.outputs.image }}
+
+      - name: Register rendered task definition
+        # amazon-ecs-deploy-task-definition@v2 (used below) registers the
+        # task definition itself as part of deploying the service, but the
+        # migration task needs a real registered task-definition ARN to run
+        # *before* that service deploy happens (so we never roll out API
+        # code against a schema it doesn't expect yet). Registering it once
+        # here, up front, means both this migration step and the deploy
+        # step below reference the exact same revision.
+        if: steps.changes.outputs.relevant == 'true'
+        id: register
+        run: |
+          TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://${{ steps.render.outputs.task-definition }} \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+          echo "task-def-arn=$TASK_DEF_ARN" >> "$GITHUB_OUTPUT"
+
+      # Runs `db:migrate` (drizzle-orm's migrator, applying anything under
+      # apps/api/drizzle/ not yet in the DB's migrations table) as a one-off
+      # Fargate task on the new image, in the same private subnets/security
+      # group as the real service (read from the running service's own
+      # networkConfiguration, since that's the only network path with a
+      # security-group rule allowing RDS access at all -- see
+      # terraform/modules/rds's app_security_group_id). Fails the whole
+      # workflow if the migration container exits non-zero, so a broken
+      # migration blocks the service deploy below rather than rolling out
+      # API code against a schema it doesn't expect.
+      - name: Run database migrations
+        if: steps.changes.outputs.relevant == 'true'
+        run: |
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration' \
+            --output json)
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "${{ steps.register.outputs.task-def-arn }}" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides "{\"containerOverrides\":[{\"name\":\"$CONTAINER_NAME\",\"command\":[\"node\",\"dist/db/migrate.js\"]}]}" \
+            --query 'tasks[0].taskArn' \
+            --output text)
+
+          echo "Migration task: $TASK_ARN -- waiting for it to stop..."
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" \
+            --tasks "$TASK_ARN" \
+            --query "tasks[0].containers[?name=='$CONTAINER_NAME'].exitCode | [0]" \
+            --output text)
+
+          echo "Migration container exit code: $EXIT_CODE"
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Database migration failed (exit code $EXIT_CODE) -- aborting deploy. Check the migration task's CloudWatch logs (/ecs/safepass-production-api)."
+            exit 1
+          fi
 
       - name: Deploy to ECS (rolling update)
         if: steps.changes.outputs.relevant == 'true'
