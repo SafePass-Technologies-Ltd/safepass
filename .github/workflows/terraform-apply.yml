@@ -1,9 +1,15 @@
 # SafePass — Terraform Apply (main only, manual approval gated)
 #
 # Runs `terraform apply` against terraform/environments/production on push
-# to main when terraform paths changed. Targets the GitHub Environment named
-# "production" — GitHub blocks this job until a required reviewer approves
-# it in the Environment's deployment queue.
+# to main when terraform paths changed, or on-demand via the "Run workflow"
+# button (workflow_dispatch). The manual trigger matters even when no .tf
+# file changed: TF_VAR_* values below are sourced from repo/environment
+# variables (e.g. ADMIN_DASHBOARD_URL, VERCEL_CNAME_*) that Terraform only
+# ever re-reads on an actual apply -- editing them in GitHub's UI alone
+# does not touch the running ECS task until this workflow runs again.
+# Targets the GitHub Environment named "production" — GitHub blocks this
+# job until a required reviewer approves it in the Environment's
+# deployment queue.
 #
 # IMPORTANT (cannot be expressed in YAML): the "production" Environment's
 # required-reviewers list is NOT configured here. A repo admin must create
@@ -27,6 +33,11 @@ on:
     paths:
       - "terraform/environments/production/**"
       - "terraform/modules/**"
+  # Lets a maintainer re-run this from the Actions tab (Run workflow) after
+  # changing a repo/environment variable that feeds a TF_VAR_* below (e.g.
+  # ADMIN_DASHBOARD_URL, VERCEL_CNAME_CONSOLE) -- no .tf edit needed to pick
+  # those up, just a fresh apply.
+  workflow_dispatch: {}
 
 permissions:
   id-token: write
