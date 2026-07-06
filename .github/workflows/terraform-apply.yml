@@ -101,3 +101,33 @@ jobs:
           TF_VAR_vercel_cname_target_corporate: ${{ vars.VERCEL_CNAME_CORPORATE }}
           TF_VAR_vercel_cname_target_transport: ${{ vars.VERCEL_CNAME_TRANSPORT }}
         run: terraform apply -auto-approve -input=false
+
+      # modules/ecs's aws_ecs_service has `ignore_changes = [task_definition]`
+      # (deliberately -- so deploy-api.yml's own deploys don't get reverted
+      # by the next `terraform apply`). That means the plain `apply` above
+      # can register a brand new task definition revision (e.g. env vars
+      # like ADMIN_DASHBOARD_URL/CORPORATE_DASHBOARD_URL/TRANSPORT_DASHBOARD_URL
+      # changed) without the *running* service ever rolling onto it -- the
+      # service keeps serving whatever revision it was already on
+      # indefinitely. `--force-new-deployment` alone is NOT enough here: it
+      # only restarts tasks using the service's *current* task definition
+      # pointer, it does not advance to a newer revision. Passing
+      # `--task-definition <family>` (no ":revision" suffix) makes ECS
+      # resolve and deploy the family's latest ACTIVE revision -- exactly
+      # the one `terraform apply` just registered.
+      - name: Force ECS deployment onto the latest task definition revision
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          CLUSTER=$(terraform output -raw ecs_cluster_name)
+          SERVICE=$(terraform output -raw ecs_service_name)
+          FAMILY=$(terraform output -raw ecs_task_definition_family)
+          aws ecs update-service \
+            --cluster "$CLUSTER" \
+            --service "$SERVICE" \
+            --task-definition "$FAMILY" \
+            --force-new-deployment \
+            --region "${{ env.AWS_REGION }}" >/dev/null
+          aws ecs wait services-stable \
+            --cluster "$CLUSTER" \
+            --services "$SERVICE" \
+            --region "${{ env.AWS_REGION }}"
