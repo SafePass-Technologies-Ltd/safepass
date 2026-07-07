@@ -5,16 +5,24 @@ import '../../../core/api/api_client.dart';
 
 enum IncidentStatus { initial, submitting, submitted, error }
 
+// Wire values must match the backend's IncidentTypeEnum exactly
+// (packages/shared/src/schemas/incident.schema.ts) -- `.name` is sent
+// as-is in submit() below, so these identifiers (deliberately snake_case,
+// matching this codebase's existing convention for enum-as-wire-value) ARE
+// the literal strings the API validates against. The previous enum here
+// (robbery/harassment/road_block/flood/fire/medical/other) didn't match
+// the backend's 9 incident types at all -- every submission failed
+// validation with "incidentType: Required".
 enum IncidentType {
-  robbery,
+  kidnapping,
+  armed_robbery,
   accident,
-  harassment,
-  road_block,
-  flood,
-  fire,
-  medical,
+  roadblock,
+  police_checkpoint,
+  fake_checkpoint,
+  bad_road,
+  vehicle_breakdown,
   suspicious_activity,
-  other,
 }
 
 class IncidentState extends Equatable {
@@ -99,11 +107,19 @@ class IncidentCubit extends Cubit<IncidentState> {
     emit(state.copyWith(status: IncidentStatus.submitting));
 
     try {
+      // Field names/shape must match IncidentCreateSchema (packages/shared/
+      // src/schemas/incident.schema.ts): `incidentType` (not `type`), and
+      // GPS coordinates nested under `location` (not flat top-level
+      // latitude/longitude) -- both were wrong before, causing every
+      // submission to fail zod validation with "incidentType: Required"
+      // and "location: Required".
       await _dio.post('/v1/incidents', data: {
-        'type': state.selectedType!.name,
+        'incidentType': state.selectedType!.name,
         'description': state.description,
-        'latitude': state.latitude,
-        'longitude': state.longitude,
+        'location': {
+          'latitude': state.latitude,
+          'longitude': state.longitude,
+        },
         // Only included when the report originates from an active trip.
         if (state.tripId != null) 'tripId': state.tripId,
       });

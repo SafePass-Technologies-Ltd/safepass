@@ -97,28 +97,31 @@ class _IncidentReportViewState extends State<_IncidentReportView> {
     super.dispose();
   }
 
+  // Matches the 9 incident types in features.md's M-13 (Incident Reporting)
+  // and the backend's IncidentTypeEnum -- see the enum's own doc comment in
+  // incident_cubit.dart for why these specific values.
   static const _typeIcons = <IncidentType, IconData>{
-    IncidentType.robbery: Icons.security_outlined,
+    IncidentType.kidnapping: Icons.person_search_outlined,
+    IncidentType.armed_robbery: Icons.security_outlined,
     IncidentType.accident: Icons.car_crash_outlined,
-    IncidentType.harassment: Icons.person_off_outlined,
-    IncidentType.road_block: Icons.block,
-    IncidentType.flood: Icons.water_outlined,
-    IncidentType.fire: Icons.local_fire_department_outlined,
-    IncidentType.medical: Icons.medical_services_outlined,
+    IncidentType.roadblock: Icons.block,
+    IncidentType.police_checkpoint: Icons.local_police_outlined,
+    IncidentType.fake_checkpoint: Icons.report_problem_outlined,
+    IncidentType.bad_road: Icons.warning_amber_outlined,
+    IncidentType.vehicle_breakdown: Icons.car_repair_outlined,
     IncidentType.suspicious_activity: Icons.visibility_outlined,
-    IncidentType.other: Icons.more_horiz,
   };
 
   static const _typeLabels = <IncidentType, String>{
-    IncidentType.robbery: 'Robbery',
+    IncidentType.kidnapping: 'Kidnapping',
+    IncidentType.armed_robbery: 'Armed Robbery',
     IncidentType.accident: 'Accident',
-    IncidentType.harassment: 'Harassment',
-    IncidentType.road_block: 'Road Block',
-    IncidentType.flood: 'Flood',
-    IncidentType.fire: 'Fire',
-    IncidentType.medical: 'Medical',
+    IncidentType.roadblock: 'Roadblock',
+    IncidentType.police_checkpoint: 'Police Checkpoint',
+    IncidentType.fake_checkpoint: 'Fake Checkpoint',
+    IncidentType.bad_road: 'Bad Road',
+    IncidentType.vehicle_breakdown: 'Vehicle Breakdown',
     IncidentType.suspicious_activity: 'Suspicious',
-    IncidentType.other: 'Other',
   };
 
   @override
