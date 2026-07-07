@@ -26,16 +26,19 @@ variable "environment" {
   type = string
 }
 
-# Single-region (not Upstash's multi-region "Global" database type -- this
-# app has one AWS region today per environments/production/variables.tf,
-# so global read replicas would just add cost with no latency benefit).
-# Matches the API's own AWS region (eu-west-2) to minimize the extra
-# network hop on every WebSocket broadcast.
+# Single-region (region set directly, NOT region = "global" + a separate
+# primary_region/read_regions -- that combination is only for Upstash's
+# multi-region "Global" database type, which this app has no use for: it
+# runs in exactly one AWS region today per environments/production/
+# variables.tf, so global read replicas would just add cost with no
+# latency benefit). "eu-west-2" (the API's own AWS region) is NOT one of
+# Upstash's supported region codes -- "eu-west-1" (Ireland) is the closest
+# available, an acceptable few-ms trade-off versus provisioning a region
+# Upstash doesn't offer.
 resource "upstash_redis_database" "app" {
-  database_name  = "${var.project}-${var.environment}-realtime"
-  platform       = "aws"
-  primary_region = "eu-west-2"
-  tls            = true
+  database_name = "${var.project}-${var.environment}-realtime"
+  region        = "eu-west-1"
+  tls           = true
 }
 
 output "database_id" {
