@@ -42,9 +42,21 @@ export default function MarkersPage() {
   async function handleAction(id: string, action: 'verify' | 'reject') {
     setActionId(`${id}-${action}`);
     try {
+      // The backend's PATCH /v1/admin/markers/:id (see
+      // apps/api/src/routes/map-marker.routes.ts's MarkerUpdateSchema)
+      // takes a `verificationStatus` enum value, not an `action` verb --
+      // sending { action } was silently ignored (zod isn't .strict()) and
+      // never actually changed anything.
       await apiClient(`/v1/admin/markers/${id}`, {
         method: 'PATCH',
-        body: { action },
+        body:
+          action === 'verify'
+            ? { verificationStatus: 'verified' }
+            // Per README's cold-start strategy: "Rejected -- admin
+            // explicitly rejects as false/malicious -- hidden from map."
+            // isActive: false is what actually hides it (verification
+            // status alone doesn't affect map/nearby-query visibility).
+            : { verificationStatus: 'rejected', isActive: false },
       });
       await fetchMarkers();
     } catch (err) {

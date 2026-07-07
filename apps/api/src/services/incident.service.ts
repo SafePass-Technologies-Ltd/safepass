@@ -10,8 +10,9 @@
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { incidents } from '../db/schema';
+import { incidents, mapMarkers } from '../db/schema';
 import type { Location } from '../db/schema/types';
+import { createMarker } from './map-marker.service';
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -34,6 +35,41 @@ const VALID_VERIFICATION_STATUSES: readonly string[] = [
 const VALID_SEVERITIES: readonly string[] = [
   'low', 'medium', 'high', 'critical',
 ];
+
+// Per schema.md's MapMarker description: "Incident-to-marker type mapping:
+// kidnapping → kidnapping_hotspot, armed_robbery → recent_attack, accident
+// → high_risk_zone, roadblock → admin_marker, police_checkpoint →
+// checkpoint, fake_checkpoint → checkpoint, bad_road → admin_marker,
+// vehicle_breakdown → admin_marker, suspicious_activity → admin_marker."
+const INCIDENT_TO_MARKER_TYPE: Record<string, string> = {
+  kidnapping: 'kidnapping_hotspot',
+  armed_robbery: 'recent_attack',
+  accident: 'high_risk_zone',
+  roadblock: 'admin_marker',
+  police_checkpoint: 'checkpoint',
+  fake_checkpoint: 'checkpoint',
+  bad_road: 'admin_marker',
+  vehicle_breakdown: 'admin_marker',
+  suspicious_activity: 'admin_marker',
+};
+
+const INCIDENT_TYPE_LABELS: Record<string, string> = {
+  kidnapping: 'Kidnapping',
+  armed_robbery: 'Armed Robbery',
+  accident: 'Accident',
+  roadblock: 'Roadblock',
+  police_checkpoint: 'Police Checkpoint',
+  fake_checkpoint: 'Fake Checkpoint',
+  bad_road: 'Bad Road',
+  vehicle_breakdown: 'Vehicle Breakdown',
+  suspicious_activity: 'Suspicious Activity',
+};
+
+function incidentMarkerTitle(incidentType: string, location: Location): string {
+  const label = INCIDENT_TYPE_LABELS[incidentType] ?? incidentType;
+  const place = location.name ?? `${location.latitude.toFixed(3)}, ${location.longitude.toFixed(3)}`;
+  return `${label} — ${place}`;
+}
 
 export interface IncidentCreateInput {
   reporterId: string;
@@ -100,6 +136,29 @@ export async function createIncident(
       isActive: true,
     })
     .returning();
+
+  // Per schema.md ("Incident ||--o{ MapMarker : generates") and README's
+  // cold-start Layer 2, every user-reported incident is supposed to
+  // surface on the safety map as a marker -- not just live in the
+  // incidents table. Mapped via INCIDENT_TO_MARKER_TYPE above. Deliberately
+  // non-fatal: incident reporting is safety-critical (M-13) and must never
+  // fail just because the marker side-effect did -- same resilience
+  // pattern this codebase already uses for DynamoDB/email/etc.
+  try {
+    await createMarker({
+      incidentId: incident.id,
+      markerType: INCIDENT_TO_MARKER_TYPE[incidentType] ?? 'admin_marker',
+      latitude: input.location.latitude,
+      longitude: input.location.longitude,
+      title: incidentMarkerTitle(incidentType, input.location),
+      description: input.description,
+      severity: incident.severity,
+      source: 'user_report',
+      createdBy: input.reporterId,
+    });
+  } catch (err) {
+    console.error('[Incident] Failed to create linked map marker:', (err as Error).message);
+  }
 
   return incident;
 }
@@ -257,6 +316,24 @@ export async function updateVerificationStatus(
     })
     .where(eq(incidents.id, incidentId))
     .returning();
+
+  // Mirror onto whatever marker(s) createIncident() generated for this
+  // incident (see there) -- per user_flow.md's Incident Management flow:
+  // "Verified. Marker now shows as 'Verified' on map." Best-effort/non-fatal
+  // for the same reason as the marker creation above: an admin verifying an
+  // incident must never fail because of the marker side-effect.
+  try {
+    await db
+      .update(mapMarkers)
+      .set({
+        verificationStatus: status,
+        updatedAt: new Date(),
+        ...(status === 'rejected' ? { isActive: false } : {}),
+      })
+      .where(eq(mapMarkers.incidentId, incidentId));
+  } catch (err) {
+    console.error('[Incident] Failed to sync linked map marker status:', (err as Error).message);
+  }
 
   return updated;
 }
