@@ -13,11 +13,23 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.52"
     }
+    upstash = {
+      source  = "upstash/upstash"
+      version = "~> 2.1"
+    }
   }
 }
 
 provider "aws" {
   region = var.aws_region
+}
+
+# Authenticates with an Upstash account email + API key (Upstash console >
+# Account > API Keys) -- a separate managed service, not an AWS credential.
+# See module "upstash" below.
+provider "upstash" {
+  email   = var.upstash_email
+  api_key = var.upstash_api_key
 }
 
 # --- Networking ---
@@ -53,12 +65,36 @@ module "s3_evidence" {
   environment = var.environment
 }
 
-# --- Secrets Manager (structure only — real values set out-of-band) ---
+# --- Upstash Redis (cross-task WebSocket broadcast relay) ---
+# See terraform/modules/upstash's header comment and apps/api/src/services/
+# redis.service.ts. Declared before module.secrets below so its
+# connection_url output can be folded straight into that module's
+# placeholder secret blob at first creation.
+module "upstash" {
+  source = "../../modules/upstash"
+
+  project     = var.project
+  environment = var.environment
+}
+
+# --- Secrets Manager (structure only — most fields set out-of-band) ---
+# upstash_connection_url is the one field Terraform actually knows a real
+# value for up front (everything else in the blob -- jwt_secrets/
+# firebase_admin/payment_gateways/resend/google_maps -- stays manually
+# populated after creation, per this module's own header comment).
+# `lifecycle.ignore_changes = [secret_string]` on the secret version means
+# this only ever takes effect on the very first apply that creates the
+# secret -- it will NOT track a later Upstash password rotation. Acceptable
+# here: Upstash doesn't rotate this automatically, and re-running
+# `terraform taint` on the secret version (or recreating the stack) is the
+# escape hatch if it ever needs to be forced back in sync.
 module "secrets" {
   source = "../../modules/secrets"
 
   project     = var.project
   environment = var.environment
+
+  upstash_connection_url = module.upstash.connection_url
 }
 
 # --- IAM: ECS task roles only ---

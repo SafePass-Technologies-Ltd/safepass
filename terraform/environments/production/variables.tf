@@ -77,6 +77,17 @@ variable "transport_dashboard_url" {
   type        = string
 }
 
+variable "upstash_email" {
+  description = "Email address of the Upstash account provisioning module.upstash's Redis database -- NOT a secret itself, but grouped with upstash_api_key below since both configure the same provider block. Supplied via TF_VAR_upstash_email in CI."
+  type        = string
+}
+
+variable "upstash_api_key" {
+  description = "Upstash account API key (generate one at console.upstash.com > Account > API Keys). A real credential -- supply via a GitHub Actions *secret* (TF_VAR_upstash_api_key), never a plain repo variable."
+  type        = string
+  sensitive   = true
+}
+
 variable "root_domain" {
   description = "Root domain name, already registered and hosted in Route53 with an existing apex record serving a separate website (not managed by this Terraform stack). Used to derive the API and dashboard subdomains."
   type        = string

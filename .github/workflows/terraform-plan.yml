@@ -81,6 +81,9 @@ jobs:
           TF_VAR_corporate_dashboard_url: ${{ vars.CORPORATE_DASHBOARD_URL }}
           TF_VAR_transport_dashboard_url: ${{ vars.TRANSPORT_DASHBOARD_URL }}
           # See terraform-apply.yml's matching env vars for rationale.
+          TF_VAR_upstash_email: ${{ vars.UPSTASH_EMAIL }}
+          TF_VAR_upstash_api_key: ${{ secrets.UPSTASH_API_KEY }}
+          # See terraform-apply.yml's matching env vars for rationale.
           TF_VAR_vercel_cname_target_console: ${{ vars.VERCEL_CNAME_CONSOLE }}
           TF_VAR_vercel_cname_target_corporate: ${{ vars.VERCEL_CNAME_CORPORATE }}
           TF_VAR_vercel_cname_target_transport: ${{ vars.VERCEL_CNAME_TRANSPORT }}

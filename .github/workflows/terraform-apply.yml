@@ -153,6 +153,13 @@ jobs:
           TF_VAR_admin_dashboard_url: ${{ vars.ADMIN_DASHBOARD_URL }}
           TF_VAR_corporate_dashboard_url: ${{ vars.CORPORATE_DASHBOARD_URL }}
           TF_VAR_transport_dashboard_url: ${{ vars.TRANSPORT_DASHBOARD_URL }}
+          # module.upstash's provider block (terraform/environments/
+          # production/main.tf) -- email isn't sensitive, but the API key
+          # IS a real credential, so it comes from a GitHub *secret*
+          # (Settings > Secrets and variables > Actions > Secrets), not a
+          # plain repo variable like everything else above.
+          TF_VAR_upstash_email: ${{ vars.UPSTASH_EMAIL }}
+          TF_VAR_upstash_api_key: ${{ secrets.UPSTASH_API_KEY }}
           # Per-dashboard CNAME target Vercel issued under each project's
           # Settings > Domains when the console/corporate/transport
           # subdomain was added there (see terraform/modules/dns). Passed as

@@ -6,10 +6,12 @@
 #
 # This module only provisions the Secrets Manager SECRET CONTAINER
 # (structure) — it does NOT hardcode real secret values. The secret's
-# initial value is a placeholder JSON blob; the real values are populated
+# initial value is a placeholder JSON blob; most real values are populated
 # out-of-band (manually via AWS Console/CLI, or via a separate secure
 # process) after apply, and are never committed to source control or passed
-# as Terraform variables in plaintext beyond the placeholder.
+# as Terraform variables in plaintext beyond the placeholder. The one
+# exception is external_services.upstash_redis_url, which IS a real value
+# from the moment of first creation -- see upstash_connection_url below.
 #
 # SINGLE SECRET, NOT ONE PER INTEGRATION: Secrets Manager bills per secret
 # (~$0.40/month each) regardless of how small its contents are, so instead
@@ -27,6 +29,13 @@ variable "project" {
 
 variable "environment" {
   type = string
+}
+
+variable "upstash_connection_url" {
+  description = "Upstash Redis rediss:// connection string (from module.upstash's provider-created database) to seed into this secret's external_services.upstash_redis_url field. Unlike every other field in the placeholder below, Terraform DOES know a real value for this one up front -- optional/empty so this module doesn't hard-depend on module.upstash existing."
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 locals {
@@ -50,7 +59,10 @@ locals {
       flutterwave_secret_key = "REPLACE_ME"
     }
     external_services = {
-      upstash_redis_url   = "REPLACE_ME"
+      # Real value (not a placeholder) when module.upstash is wired in --
+      # see upstash_connection_url above. Falls back to REPLACE_ME only if
+      # this module is ever used without it.
+      upstash_redis_url   = var.upstash_connection_url != "" ? var.upstash_connection_url : "REPLACE_ME"
       upstash_redis_token = "REPLACE_ME"
       resend_api_key      = "REPLACE_ME"
       google_maps_api_key = "REPLACE_ME"
