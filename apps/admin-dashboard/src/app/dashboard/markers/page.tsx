@@ -25,7 +25,7 @@ export default function MarkersPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await apiClient<{ markers: MapMarker[] }>('/v1/map-markers');
+      const data = await apiClient<{ markers: MapMarker[] }>('/v1/admin/markers');
       setMarkers(data.markers ?? []);
     } catch (err) {
       setError('Failed to load map markers.');
@@ -42,7 +42,7 @@ export default function MarkersPage() {
   async function handleAction(id: string, action: 'verify' | 'reject') {
     setActionId(`${id}-${action}`);
     try {
-      await apiClient(`/v1/map-markers/${id}`, {
+      await apiClient(`/v1/admin/markers/${id}`, {
         method: 'PATCH',
         body: { action },
       });
