@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RotateCcw, MapPin, Plus, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import MarkerLocationPicker from '@/components/map/marker-location-picker';
 
 // Matches the ACTUAL shape returned by GET /v1/admin/markers (raw Drizzle
 // rows off the map_markers table -- see apps/api/src/services/
@@ -44,8 +45,8 @@ const SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
 interface NewMarkerForm {
   markerType: (typeof MARKER_TYPES)[number];
   category: string;
-  latitude: string;
-  longitude: string;
+  latitude: number | null;
+  longitude: number | null;
   title: string;
   description: string;
   severity: (typeof SEVERITIES)[number];
@@ -54,8 +55,8 @@ interface NewMarkerForm {
 const EMPTY_FORM: NewMarkerForm = {
   markerType: 'admin_marker',
   category: '',
-  latitude: '',
-  longitude: '',
+  latitude: null,
+  longitude: null,
   title: '',
   description: '',
   severity: 'medium',
@@ -126,10 +127,8 @@ export default function MarkersPage() {
     e.preventDefault();
     setFormError(null);
 
-    const latitude = parseFloat(form.latitude);
-    const longitude = parseFloat(form.longitude);
-    if (isNaN(latitude) || isNaN(longitude)) {
-      setFormError('Latitude and longitude must be valid numbers.');
+    if (form.latitude == null || form.longitude == null) {
+      setFormError('Place the marker on the map (click, search, or drag) before submitting.');
       return;
     }
     if (!form.title.trim()) {
@@ -150,7 +149,7 @@ export default function MarkersPage() {
         body: {
           markerType: form.markerType,
           category: form.category.trim() || undefined,
-          location: { latitude, longitude },
+          location: { latitude: form.latitude, longitude: form.longitude },
           title: form.title.trim(),
           description: form.description.trim() || undefined,
           severity: form.severity,
@@ -240,31 +239,16 @@ export default function MarkersPage() {
               </select>
             </label>
 
-            <label className="block">
-              <span className="text-xs font-medium text-slate-500">Latitude</span>
-              <input
-                type="number"
-                step="any"
-                required
-                value={form.latitude}
-                onChange={(e) => setForm({ ...form, latitude: e.target.value })}
-                placeholder="6.5244"
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-xs font-medium text-slate-500">Longitude</span>
-              <input
-                type="number"
-                step="any"
-                required
-                value={form.longitude}
-                onChange={(e) => setForm({ ...form, longitude: e.target.value })}
-                placeholder="3.3792"
-                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              />
-            </label>
+            <div className="sm:col-span-2">
+              <span className="text-xs font-medium text-slate-500">Location</span>
+              <div className="mt-1">
+                <MarkerLocationPicker
+                  latitude={form.latitude}
+                  longitude={form.longitude}
+                  onChange={(latitude, longitude) => setForm((f) => ({ ...f, latitude, longitude }))}
+                />
+              </div>
+            </div>
 
             <label className="block sm:col-span-2">
               <span className="text-xs font-medium text-slate-500">Title</span>
