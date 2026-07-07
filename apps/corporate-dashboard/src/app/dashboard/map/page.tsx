@@ -5,7 +5,11 @@ import dynamic from 'next/dynamic';
 import { Users, Loader2, Map as MapIcon } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3000';
+// NOTE: used as-is below (no path appended) -- NEXT_PUBLIC_WS_URL must
+// include the full /v1/ws path (see apps/api/src/services/
+// websocket.service.ts's `path: '/v1/ws'`), same as the admin dashboard's
+// equivalent hooks. Production: wss://api.safepass-tech.com/v1/ws.
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3000/v1/ws';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
