@@ -201,6 +201,26 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       );
     }
 
+    // Safety markers (M-07: "active incidents, checkpoints, hotspots along
+    // route. Colour-coded markers by verification level") -- the same set
+    // driving the M-08 proximity alert banner (state.newHazardAlert), just
+    // also drawn on the map itself instead of only interrupting via
+    // snackbar. Prefixed MarkerId to avoid colliding with the fixed
+    // origin/destination/current_position ids above.
+    for (final hazard in state.nearbyMarkers) {
+      markers.add(
+        Marker(
+          markerId: MarkerId('hazard_${hazard.id}'),
+          position: LatLng(hazard.latitude, hazard.longitude),
+          icon: BitmapDescriptor.defaultMarkerWithHue(_hazardMarkerHue(hazard.severity)),
+          infoWindow: InfoWindow(
+            title: _hazardLabel(hazard.markerType),
+            snippet: hazard.description ?? hazard.title,
+          ),
+        ),
+      );
+    }
+
     setState(() {
       _markers
         ..clear()
@@ -714,6 +734,16 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         'high' => const Color(0xFFEA580C),
         'medium' => const Color(0xFFEAB308),
         _ => AppColors.darkSlate,
+      };
+
+  /// Map marker hue by severity for the M-07 safety-marker layer -- mirrors
+  /// _hazardColor's escalation but constrained to BitmapDescriptor's fixed
+  /// hue palette (Google Maps' default marker pins only support these
+  /// preset colors, not arbitrary Color values).
+  double _hazardMarkerHue(String severity) => switch (severity) {
+        'critical' => BitmapDescriptor.hueRed,
+        'high' => BitmapDescriptor.hueOrange,
+        _ => BitmapDescriptor.hueYellow,
       };
 
   String _statusLabel(String status) => switch (status) {

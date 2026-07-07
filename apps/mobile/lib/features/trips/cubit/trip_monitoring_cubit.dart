@@ -132,6 +132,7 @@ class RouteHazard extends Equatable {
   final String title;
   final String? description;
   final String severity;
+  final String verificationStatus;
   final double latitude;
   final double longitude;
   final double distanceMeters;
@@ -142,6 +143,7 @@ class RouteHazard extends Equatable {
     required this.title,
     this.description,
     required this.severity,
+    required this.verificationStatus,
     required this.latitude,
     required this.longitude,
     required this.distanceMeters,
@@ -154,6 +156,7 @@ class RouteHazard extends Equatable {
       title: json['title'] as String? ?? 'Safety hazard',
       description: json['description'] as String?,
       severity: json['severity'] as String? ?? 'medium',
+      verificationStatus: json['verificationStatus'] as String? ?? 'unverified',
       latitude: (json['latitude'] as num).toDouble(),
       longitude: (json['longitude'] as num).toDouble(),
       distanceMeters: distanceMeters,
@@ -192,6 +195,16 @@ class TripMonitoringState extends Equatable {
   /// this and clears it after displaying the banner.
   final RouteHazard? newHazardAlert;
 
+  /// Every verified/partially-confirmed marker within the last hazard
+  /// check's query radius (see _checkRouteHazards) -- unlike
+  /// [newHazardAlert] (a one-shot "just entered range" alert, cleared after
+  /// the banner is shown), this is the full current set, redrawn on the map
+  /// every poll cycle. Per features.md's M-07 (Safety Map View): "Map
+  /// showing ... active incidents, checkpoints, hotspots along route.
+  /// Colour-coded markers by verification level" -- the banner alone
+  /// (M-08) doesn't satisfy that; the map needs the actual marker icons.
+  final List<RouteHazard> nearbyMarkers;
+
   const TripMonitoringState({
     this.status = TripMonitorStatus.initial,
     this.trip,
@@ -199,6 +212,7 @@ class TripMonitoringState extends Equatable {
     this.errorMessage,
     this.gpsUpdateCount = 0,
     this.newHazardAlert,
+    this.nearbyMarkers = const [],
   });
 
   TripMonitoringState copyWith({
@@ -209,6 +223,7 @@ class TripMonitoringState extends Equatable {
     int? gpsUpdateCount,
     RouteHazard? newHazardAlert,
     bool clearHazardAlert = false,
+    List<RouteHazard>? nearbyMarkers,
   }) {
     return TripMonitoringState(
       status: status ?? this.status,
@@ -217,6 +232,7 @@ class TripMonitoringState extends Equatable {
       errorMessage: errorMessage,
       gpsUpdateCount: gpsUpdateCount ?? this.gpsUpdateCount,
       newHazardAlert: clearHazardAlert ? null : (newHazardAlert ?? this.newHazardAlert),
+      nearbyMarkers: nearbyMarkers ?? this.nearbyMarkers,
     );
   }
 
@@ -228,6 +244,7 @@ class TripMonitoringState extends Equatable {
         errorMessage,
         gpsUpdateCount,
         newHazardAlert,
+        nearbyMarkers,
       ];
 }
 
@@ -529,34 +546,37 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
     });
   }
 
-  /// Query nearby markers and emit an alert for the closest hazard the
-  /// user hasn't already been shown this trip.
+  /// Query nearby markers, update the full visible set for the map (M-07),
+  /// and emit an alert for the closest hazard the user hasn't already been
+  /// shown this trip (M-08).
   Future<void> _checkRouteHazards(Position position) async {
     try {
       final response = await _dio.get('/v1/markers/nearby', queryParameters: {
         'latitude': position.latitude,
         'longitude': position.longitude,
         // Query a wider radius than the alert threshold so distance can be
-        // computed precisely client-side; server uses a bounding box.
+        // computed precisely client-side; server uses a bounding box. Also
+        // the radius the map's marker layer displays at, not just the
+        // tighter 500m alert-interrupt threshold below.
         'radius': 5,
       });
 
       final markers = (response.data['markers'] as List<dynamic>?) ?? [];
 
       RouteHazard? closestNewHazard;
+      final visibleMarkers = <RouteHazard>[];
+
       for (final raw in markers) {
         final json = raw as Map<String, dynamic>;
 
-        // Only verified or partially-confirmed hazards are worth interrupting
-        // the user for — unverified reports are too noisy.
+        // Only verified or partially-confirmed hazards are worth showing —
+        // unverified reports are too noisy for both the alert banner and
+        // the map layer.
         final verificationStatus = json['verificationStatus'] as String?;
         if (verificationStatus != 'verified' &&
             verificationStatus != 'partially_confirmed') {
           continue;
         }
-
-        final id = json['id'] as String;
-        if (_shownHazardIds.contains(id)) continue;
 
         final lat = (json['latitude'] as num).toDouble();
         final lng = (json['longitude'] as num).toDouble();
@@ -567,16 +587,23 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
           lng,
         );
 
-        if (distance > _hazardAlertRadiusMeters) continue;
+        final hazard = RouteHazard.fromJson(json, distance);
+        visibleMarkers.add(hazard);
 
+        // Alert-banner path (M-08) — separate, tighter radius + "already
+        // shown this trip" de-dupe on top of the map layer above.
+        if (_shownHazardIds.contains(hazard.id)) continue;
+        if (distance > _hazardAlertRadiusMeters) continue;
         if (closestNewHazard == null || distance < closestNewHazard.distanceMeters) {
-          closestNewHazard = RouteHazard.fromJson(json, distance);
+          closestNewHazard = hazard;
         }
       }
 
       if (closestNewHazard != null) {
         _shownHazardIds.add(closestNewHazard.id);
-        emit(state.copyWith(newHazardAlert: closestNewHazard));
+        emit(state.copyWith(newHazardAlert: closestNewHazard, nearbyMarkers: visibleMarkers));
+      } else {
+        emit(state.copyWith(nearbyMarkers: visibleMarkers));
       }
     } on DioException {
       // Hazard checks are best-effort — failures should not interrupt the
