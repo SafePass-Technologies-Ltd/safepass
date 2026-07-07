@@ -8,6 +8,11 @@ build/
 .env
 .env.local
 .env.*.local
+# apps/mobile: real values for `flutter run/build
+# --dart-define-from-file=apps/mobile/.env.json` (see apps/mobile/lib/core/
+# constants.dart). .env.example.json is the committed template -- only the
+# real .env.json is ignored.
+apps/mobile/.env.json
 *.tsbuildinfo
 coverage/
 

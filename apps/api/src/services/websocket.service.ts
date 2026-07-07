@@ -6,19 +6,48 @@
  * The HTTP server upgrades WebSocket connections to the WS server.
  *
  * Architecture:
- *   - Connection state stored in-memory (Map) for MVP.
+ *   - Connection registry (who's connected, to what) is in-memory, LOCAL TO
+ *     THIS TASK ONLY — ECS runs multiple tasks behind one ALB, and a given
+ *     process only ever knows about its own directly-connected clients.
  *   - Every connection is authenticated via JWT on upgrade.
  *   - Clients subscribe to trip channels to receive GPS/message/status events.
+ *   - Cross-task delivery: every broadcast* export below both (a) delivers
+ *     to this task's own local connections, AND (b) publishes to a shared
+ *     Redis channel (see redis.service.ts) that every task subscribes to,
+ *     so a client connected to ANY task receives events regardless of
+ *     which task originated them. Falls back to local-only delivery if
+ *     Redis isn't configured (single-task-equivalent behavior).
  */
 
+import { randomUUID } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Server } from 'node:http';
 import { verifyAccessToken } from '../middleware/auth';
 import type { JwtPayload } from '../middleware/auth';
 import { getAllTripLocations } from './dynamo.service';
+import { publish, subscribe } from './redis.service';
 // trip.service is imported lazily inside the subscribe_all_trips handler to
 // avoid a circular dependency (trip.service → websocket.service → trip.service).
+
+/** Unique per-process ID, tagged on every published cross-instance message so
+ * a task can recognize (and skip) its own publishes when they echo back via
+ * the Redis subscription — every task subscribes to the same channel,
+ * including the one that published, since there's no per-publisher opt-out
+ * in Redis pub/sub itself. */
+const INSTANCE_ID = randomUUID();
+
+/** Shared channel every API task publishes to and subscribes on. */
+const BROADCAST_CHANNEL = 'safepass:ws:broadcast';
+
+/** Envelope carried over the Redis relay — `kind` maps to which *Local
+ * delivery function should run on the receiving task, `args` are that
+ * function's parameters (positional, JSON-serializable only). */
+interface CrossInstanceMessage {
+  originInstanceId: string;
+  kind: 'gpsUpdate' | 'tripStatus' | 'newMessage' | 'emergencyAlert' | 'toUser';
+  args: unknown[];
+}
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -81,6 +110,52 @@ let wss: WebSocketServer | null = null;
  */
 export function attachWebSocketServer(server: Server): WebSocketServer {
   wss = new WebSocketServer({ server, path: '/v1/ws' });
+
+  // Cross-task relay: deliver every OTHER task's broadcast to this task's
+  // own local connections. Skips messages this same process published
+  // (INSTANCE_ID match) — those were already delivered locally by the
+  // broadcast* export itself, before publishing. No-op (logged once) if
+  // Redis isn't configured, in which case each task simply only ever
+  // delivers to its own locally-connected clients, as before.
+  const subscribed = subscribe(BROADCAST_CHANNEL, (raw: string) => {
+    let msg: CrossInstanceMessage;
+    try {
+      msg = JSON.parse(raw) as CrossInstanceMessage;
+    } catch {
+      return;
+    }
+    if (msg.originInstanceId === INSTANCE_ID) return;
+
+    switch (msg.kind) {
+      case 'gpsUpdate':
+        broadcastGpsUpdateLocal(
+          msg.args[0] as string,
+          msg.args[1] as Parameters<typeof broadcastGpsUpdateLocal>[1]
+        );
+        break;
+      case 'tripStatus':
+        broadcastTripStatusLocal(msg.args[0] as string, msg.args[1] as string);
+        break;
+      case 'newMessage':
+        broadcastNewMessageLocal(
+          msg.args[0] as string,
+          msg.args[1] as Parameters<typeof broadcastNewMessageLocal>[1]
+        );
+        break;
+      case 'emergencyAlert':
+        broadcastEmergencyAlertLocal(msg.args[0] as string);
+        break;
+      case 'toUser':
+        sendToUserLocal(msg.args[0] as string, msg.args[1] as WsServerMessage);
+        break;
+    }
+  });
+  console.log(
+    subscribed
+      ? '[WS] Cross-task broadcast relay enabled (Redis)'
+      : '[WS] Cross-task broadcast relay DISABLED (UPSTASH_REDIS_URL not set) — ' +
+        'clients on other ECS tasks will not receive this task\'s broadcasts'
+  );
 
   wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
     // Extract JWT from query string.
@@ -269,7 +344,17 @@ function handleClientMessage(client: ConnectedClient, msg: WsClientMessage): voi
 // Outbound Broadcasting (called by other services)
 // ────────────────────────────────────────────────────────────
 
-export function broadcastGpsUpdate(
+// Each pair below follows the same shape: `*Local` delivers ONLY to this
+// task's own in-memory connections (the entire pre-Redis implementation,
+// unchanged); the exported (non-Local) function is the one every other
+// service in this codebase actually calls — it delivers locally exactly as
+// before, AND publishes a CrossInstanceMessage so every other task's
+// subscription (see attachWebSocketServer above) runs the same *Local
+// delivery against ITS OWN local connections. Net effect: callers keep
+// calling the same functions they always did, but delivery now reaches
+// clients regardless of which ECS task they're connected to.
+
+function broadcastGpsUpdateLocal(
   tripId: string,
   location: { latitude: number; longitude: number; speed?: number; heading?: number }
 ): void {
@@ -304,7 +389,19 @@ export function broadcastGpsUpdate(
   }
 }
 
-export function broadcastTripStatus(tripId: string, status: string): void {
+export function broadcastGpsUpdate(
+  tripId: string,
+  location: { latitude: number; longitude: number; speed?: number; heading?: number }
+): void {
+  broadcastGpsUpdateLocal(tripId, location);
+  void publish(BROADCAST_CHANNEL, {
+    originInstanceId: INSTANCE_ID,
+    kind: 'gpsUpdate',
+    args: [tripId, location],
+  } satisfies CrossInstanceMessage);
+}
+
+function broadcastTripStatusLocal(tripId: string, status: string): void {
   broadcastToTrip(tripId, {
     type: 'trip_status',
     tripId,
@@ -313,7 +410,16 @@ export function broadcastTripStatus(tripId: string, status: string): void {
   });
 }
 
-export function broadcastNewMessage(
+export function broadcastTripStatus(tripId: string, status: string): void {
+  broadcastTripStatusLocal(tripId, status);
+  void publish(BROADCAST_CHANNEL, {
+    originInstanceId: INSTANCE_ID,
+    kind: 'tripStatus',
+    args: [tripId, status],
+  } satisfies CrossInstanceMessage);
+}
+
+function broadcastNewMessageLocal(
   tripId: string,
   message: { id: string; senderId: string; senderRole: string; content: string; messageType?: string; createdAt: string }
 ): void {
@@ -349,7 +455,19 @@ export function broadcastNewMessage(
   }
 }
 
-export function broadcastEmergencyAlert(tripId: string): void {
+export function broadcastNewMessage(
+  tripId: string,
+  message: { id: string; senderId: string; senderRole: string; content: string; messageType?: string; createdAt: string }
+): void {
+  broadcastNewMessageLocal(tripId, message);
+  void publish(BROADCAST_CHANNEL, {
+    originInstanceId: INSTANCE_ID,
+    kind: 'newMessage',
+    args: [tripId, message],
+  } satisfies CrossInstanceMessage);
+}
+
+function broadcastEmergencyAlertLocal(tripId: string): void {
   broadcastToTrip(tripId, {
     type: 'emergency_alert',
     tripId,
@@ -378,7 +496,16 @@ export function broadcastEmergencyAlert(tripId: string): void {
   }
 }
 
-export function sendToUser(userId: string, message: WsServerMessage): void {
+export function broadcastEmergencyAlert(tripId: string): void {
+  broadcastEmergencyAlertLocal(tripId);
+  void publish(BROADCAST_CHANNEL, {
+    originInstanceId: INSTANCE_ID,
+    kind: 'emergencyAlert',
+    args: [tripId],
+  } satisfies CrossInstanceMessage);
+}
+
+function sendToUserLocal(userId: string, message: WsServerMessage): void {
   const clients = connections.get(userId);
   if (!clients) return;
 
@@ -389,6 +516,15 @@ export function sendToUser(userId: string, message: WsServerMessage): void {
       // Client may have disconnected.
     }
   }
+}
+
+export function sendToUser(userId: string, message: WsServerMessage): void {
+  sendToUserLocal(userId, message);
+  void publish(BROADCAST_CHANNEL, {
+    originInstanceId: INSTANCE_ID,
+    kind: 'toUser',
+    args: [userId, message],
+  } satisfies CrossInstanceMessage);
 }
 
 // ────────────────────────────────────────────────────────────

@@ -1,4 +1,11 @@
 /// SafePass — Application Constants
+///
+/// Every value below is read via `*.fromEnvironment`, populated at build/run
+/// time via `--dart-define-from-file`. Copy `.env.example.json` to
+/// `.env.json` (gitignored -- real values only ever live there, never
+/// committed) in this app's root and run/build with:
+///   flutter run --dart-define-from-file=.env.json
+///   flutter build apk --dart-define-from-file=.env.json
 library safepass_constants;
 
 /// API base URL — override with environment-specific config.

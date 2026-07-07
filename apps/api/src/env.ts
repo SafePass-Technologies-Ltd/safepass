@@ -173,7 +173,14 @@ const envSchema = z.object({
   FIREBASE_PROJECT_ID: z.string().min(1),
   FIREBASE_CLIENT_EMAIL: z.string().email(),
   FIREBASE_PRIVATE_KEY: z.string().min(1),
+  // Must be Upstash's TCP "Redis Connect" connection string
+  // (rediss://default:<password>@<host>:<port>) -- consumed by ioredis in
+  // redis.service.ts for cross-task WebSocket broadcast relay. NOT the
+  // REST API URL (https://<host>) shown alongside it in the Upstash
+  // console -- ioredis speaks the native protocol, not REST.
   UPSTASH_REDIS_URL: z.string().url().optional(),
+  // Unused by redis.service.ts (the rediss:// URL above already embeds the
+  // password) -- kept only in case a REST-based integration is added later.
   UPSTASH_REDIS_TOKEN: z.string().optional(),
   TRIP_PRICE_NGN: z.coerce.number().int().positive().default(2000),
   ADMIN_DASHBOARD_URL: z.string().url().default('http://localhost:3001'),
