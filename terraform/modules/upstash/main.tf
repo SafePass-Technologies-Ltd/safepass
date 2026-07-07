@@ -26,19 +26,22 @@ variable "environment" {
   type = string
 }
 
-# Single-region (region set directly, NOT region = "global" + a separate
-# primary_region/read_regions -- that combination is only for Upstash's
-# multi-region "Global" database type, which this app has no use for: it
-# runs in exactly one AWS region today per environments/production/
-# variables.tf, so global read replicas would just add cost with no
-# latency benefit). "eu-west-2" (the API's own AWS region) is NOT one of
-# Upstash's supported region codes -- "eu-west-1" (Ireland) is the closest
-# available, an acceptable few-ms trade-off versus provisioning a region
-# Upstash doesn't offer.
+# NOTE: plain single-region creation (region = "<code>" directly) is
+# deprecated on Upstash's own API as of this writing -- confirmed via the
+# live "Create Redis Database failed ... regional db creation is
+# deprecated" error creating this resource with that form. Every new
+# database must now go through the region = "global" + primary_region path
+# below, even when (as here) only one region is actually wanted --
+# omitting read_regions entirely keeps this functionally single-region (no
+# extra read replicas, no extra cost) while still satisfying the API's
+# current requirements. "eu-west-2" (the API's own AWS region) is NOT one
+# of Upstash's supported primary_region codes -- "eu-west-1" (Ireland) is
+# the closest available, an acceptable few-ms trade-off.
 resource "upstash_redis_database" "app" {
-  database_name = "${var.project}-${var.environment}-realtime"
-  region        = "eu-west-1"
-  tls           = true
+  database_name  = "${var.project}-${var.environment}-realtime"
+  region         = "global"
+  primary_region = "eu-west-1"
+  tls            = true
 }
 
 output "database_id" {
