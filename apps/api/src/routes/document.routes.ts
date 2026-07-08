@@ -49,14 +49,19 @@ const documentRoutes = new Hono();
 documentRoutes.use('*', authMiddleware);
 
 /**
- * GET /v1/documents?organizationId=<uuid>
+ * GET /v1/documents?organizationId=<uuid>&entityType=<vehicle|driver|organization>&entityId=<uuid>
  *
- * Returns all documents for the specified organization. The caller must
+ * Returns all documents for the specified organization, optionally scoped
+ * to one entity -- Screen 37: "Document List | Grouped by entity (vehicle,
+ * driver, organization)", and used by the Vehicle Detail view's documents
+ * section (entityType=vehicle&entityId=<vehicleId>). The caller must
  * belong to that organization or be an admin.
  */
 documentRoutes.get('/', async (c) => {
   const user = c.get('user');
   const organizationId = c.req.query('organizationId');
+  const entityType = c.req.query('entityType');
+  const entityId = c.req.query('entityId');
 
   if (!organizationId) {
     return c.json(
@@ -69,9 +74,11 @@ documentRoutes.get('/', async (c) => {
     return c.json({ error: { code: 403, message: 'Access denied' } }, 403);
   }
 
-  const documents = await listDocuments(organizationId);
+  const documents = await listDocuments(organizationId, { entityType, entityId });
   return c.json({ documents });
 });
+
+const VALID_ENTITY_TYPES = ['vehicle', 'driver', 'organization'] as const;
 
 /**
  * POST /v1/documents  (multipart/form-data)
@@ -80,6 +87,8 @@ documentRoutes.get('/', async (c) => {
  *   documentName   string  required
  *   documentType   enum    required  (vehicle_insurance | drivers_license | road_worthiness | hack_permit | other)
  *   organizationId string  required
+ *   entityType     enum    optional  (vehicle | driver | organization) -- Screen 37's entity selector
+ *   entityId       string  optional  (required if entityType is 'vehicle' or 'driver')
  *   expiryDate     string  optional  (ISO date YYYY-MM-DD)
  *   file           File    required  (PDF or image)
  */
@@ -96,6 +105,8 @@ documentRoutes.post('/', async (c) => {
   const documentName = (formData.get('documentName') as string | null)?.trim();
   const documentType = formData.get('documentType') as string | null;
   const organizationId = (formData.get('organizationId') as string | null)?.trim();
+  const entityType = (formData.get('entityType') as string | null)?.trim() || null;
+  const entityId = (formData.get('entityId') as string | null)?.trim() || null;
   const expiryDate = (formData.get('expiryDate') as string | null)?.trim() || null;
   const file = formData.get('file') as File | null;
 
@@ -119,6 +130,20 @@ documentRoutes.post('/', async (c) => {
 
   if (!organizationId) {
     return c.json({ error: { code: 400, message: 'organizationId is required' } }, 400);
+  }
+
+  if (entityType && !(VALID_ENTITY_TYPES as readonly string[]).includes(entityType)) {
+    return c.json(
+      { error: { code: 400, message: `entityType must be one of: ${VALID_ENTITY_TYPES.join(', ')}` } },
+      400
+    );
+  }
+
+  if ((entityType === 'vehicle' || entityType === 'driver') && !entityId) {
+    return c.json(
+      { error: { code: 400, message: 'entityId is required when entityType is vehicle or driver' } },
+      400
+    );
   }
 
   if (!file || !(file instanceof File)) {
@@ -150,6 +175,8 @@ documentRoutes.post('/', async (c) => {
     organizationId,
     documentName,
     documentType,
+    entityType,
+    entityId,
     expiryDate,
     fileName: file.name,
   });

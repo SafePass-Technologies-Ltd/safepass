@@ -25,6 +25,12 @@ export interface Document {
   organizationId: string;
   documentName: string;
   documentType: string | null;
+  /** vehicle | driver | organization | null (uploads before entity
+   * association existed have no entity, hence nullable). */
+  entityType: string | null;
+  /** The vehicle/driver ID this document belongs to -- null for
+   * entityType 'organization' (or legacy org-only uploads). */
+  entityId: string | null;
   /** pending | valid | expired */
   status: string;
   /** ISO date string or null */
@@ -39,8 +45,15 @@ export interface CreateDocumentInput {
   organizationId: string;
   documentName: string;
   documentType?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
   expiryDate?: string | null;
   fileName?: string | null;
+}
+
+export interface DocumentFilter {
+  entityType?: string;
+  entityId?: string;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -68,6 +81,8 @@ function toDocumentResponse(row: typeof documents.$inferSelect): Document {
     organizationId: row.organizationId,
     documentName: row.documentName ?? '',
     documentType: row.documentType ?? null,
+    entityType: row.entityType ?? null,
+    entityId: row.entityId ?? null,
     status: row.complianceStatus,
     expiryDate: row.expiryDate ? row.expiryDate.toISOString() : null,
     fileName: row.fileName ?? null,
@@ -82,10 +97,25 @@ function toDocumentResponse(row: typeof documents.$inferSelect): Document {
 
 /**
  * List all documents belonging to the given organization, newest first.
+ * Optionally scoped to a specific entity (Screen 37: "Document List --
+ * Grouped by entity (vehicle, driver, organization)"; also used by the
+ * Vehicle Detail view's documents section).
  */
-export async function listDocuments(organizationId: string): Promise<Document[]> {
+export async function listDocuments(
+  organizationId: string,
+  filter: DocumentFilter = {}
+): Promise<Document[]> {
+  const conditions = [eq(documents.organizationId, organizationId)];
+
+  if (filter.entityType) {
+    conditions.push(eq(documents.entityType, filter.entityType as NonNullable<typeof documents.$inferSelect['entityType']>));
+  }
+  if (filter.entityId) {
+    conditions.push(eq(documents.entityId, filter.entityId));
+  }
+
   const rows = await db.query.documents.findMany({
-    where: eq(documents.organizationId, organizationId),
+    where: and(...conditions),
     orderBy: desc(documents.createdAt),
   });
   return rows.map(toDocumentResponse);
@@ -104,6 +134,8 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
     .insert(documents)
     .values({
       organizationId: input.organizationId,
+      entityType: (input.entityType ?? null) as typeof documents.$inferSelect['entityType'],
+      entityId: input.entityId ?? null,
       documentName: input.documentName,
       fileName: input.fileName ?? null,
       expiryDate: input.expiryDate ? new Date(input.expiryDate) : null,

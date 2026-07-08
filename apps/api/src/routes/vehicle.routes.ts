@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { authMiddleware, requireRole } from '../middleware/auth';
 import {
   getVehiclesByOrg,
+  getVehicleById,
   createVehicle,
   updateVehicle,
   deleteVehicle,
@@ -104,6 +105,23 @@ vehicleRoutes.patch('/:id', zValidator('json', VehicleUpdateSchema), async (c) =
   const vehicleId = c.req.param('id');
   const data = c.req.valid('json');
   const vehicle = await updateVehicle(vehicleId, orgId, data);
+  return c.json(vehicle);
+});
+
+/**
+ * GET /v1/vehicles/:id
+ * Fetch a single vehicle (Screen 35's Vehicle Detail view).
+ */
+vehicleRoutes.get('/:id', async (c) => {
+  const orgId = requireOrgId(c);
+  if (!orgId) {
+    return c.json({ error: { code: 403, message: 'No organization associated with this account' } }, 403);
+  }
+
+  const vehicle = await getVehicleById(c.req.param('id'), orgId);
+  if (!vehicle) {
+    return c.json({ error: { code: 404, message: 'Vehicle not found' } }, 404);
+  }
   return c.json(vehicle);
 });
 

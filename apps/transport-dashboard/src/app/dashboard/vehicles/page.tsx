@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Car, Plus, Loader2, X, Pencil } from 'lucide-react';
+import Link from 'next/link';
 import { apiClient } from '@/lib/api-client';
 
 interface Vehicle {
@@ -157,7 +158,11 @@ export default function VehiclesPage() {
               ) : (
                 vehicles.map((v) => (
                   <tr key={v.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 text-sm font-semibold text-slate-dark">{v.plateNumber}</td>
+                    <td className="px-4 py-3 text-sm font-semibold">
+                      <Link href={`/dashboard/vehicles/${v.id}`} className="text-primary hover:underline">
+                        {v.plateNumber}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 text-sm text-slate-500">{v.make ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-slate-500">{v.model ?? '—'}</td>
                     <td className="px-4 py-3 text-sm capitalize text-slate-500">{v.vehicleType ?? '—'}</td>

@@ -63,6 +63,17 @@ function toVehicleResponse(row: typeof transportVehicles.$inferSelect) {
 // ────────────────────────────────────────────────────────────
 
 /**
+ * Get a single vehicle by ID, scoped to the requesting org (Screen 35's
+ * Vehicle Detail view).
+ */
+export async function getVehicleById(vehicleId: string, organizationId: string) {
+  const row = await db.query.transportVehicles.findFirst({
+    where: and(eq(transportVehicles.id, vehicleId), eq(transportVehicles.organizationId, organizationId)),
+  });
+  return row ? toVehicleResponse(row) : null;
+}
+
+/**
  * List all vehicles belonging to an organization.
  */
 export async function getVehiclesByOrg(organizationId: string) {
