@@ -26,6 +26,7 @@ import {
   updateTripVehicleFields,
   type ActiveTripRow,
 } from '../services/trip.service';
+import { getUserById } from '../services/user.service';
 
 // ────────────────────────────────────────────────────────────
 // User-facing trip routes
@@ -43,9 +44,41 @@ tripRoutes.post('/', zValidator('json', TripCreateSchema), async (c) => {
   const user = c.get('user') as { sub: string; role: string; orgId?: string };
   const data = c.req.valid('json');
 
+  // Corporate/transport-partner admins (and platform admins) can register a
+  // trip ON BEHALF OF another user -- see docs/SafePass/screens.md Screen 31
+  // "Trip Registration (Corporate)": "Register a trip on behalf of a staff
+  // member" via a Staff Selector. Everyone else always registers for
+  // themselves regardless of what `userId` the body contains, so a client
+  // can never spoof another user's trip. This used to unconditionally force
+  // userId = the caller, which silently broke corporate trip registration
+  // entirely (the trip was always attributed to the admin, never the
+  // selected staff member).
+  const canRegisterForOthers = ['admin', 'super_admin', 'corporate_admin', 'transport_partner'].includes(
+    user.role
+  );
+  let targetUserId = user.sub;
+
+  if (canRegisterForOthers && data.userId && data.userId !== user.sub) {
+    const targetUser = await getUserById(data.userId);
+    if (!targetUser) {
+      return c.json({ error: { code: 404, message: 'Staff member not found' } }, 404);
+    }
+
+    const isPlatformAdmin = ['admin', 'super_admin'].includes(user.role);
+    if (!isPlatformAdmin && targetUser.organizationId !== user.orgId) {
+      return c.json(
+        { error: { code: 403, message: 'Cannot register a trip for a user outside your organization' } },
+        403
+      );
+    }
+
+    targetUserId = data.userId;
+  }
+
   const trip = await createTrip({
     ...data,
-    userId: user.sub,
+    userId: targetUserId,
+    registeredBy: user.sub,
     callerRole: user.role,
     // Prefer the orgId from the JWT (set by auth service at login) so
     // transport_partner auto-population can resolve the org name.

@@ -10,21 +10,27 @@ interface Trip {
   userId: string;
   origin: { name: string };
   destination: { name: string };
-  vehiclePlateNumber: string | null;
-  driverName: string | null;
-  tripMode: string;
+  transportCompany: string | null;
   status: string;
   createdAt: string;
 }
 
+/** Enrolled org staff member, from GET /v1/organizations/:id/staff -- only
+ * these are eligible to appear in the Staff Selector (docs/SafePass/
+ * screens.md Screen 31: "Dropdown/search to select staff member (only
+ * enrolled org members shown)"). */
+interface StaffMember {
+  id: string;
+  fullName: string;
+  email: string | null;
+}
+
 const defaultForm = {
-  userId: '',
+  staffUserId: '',
   originName: '',
   destinationName: '',
-  vehiclePlateNumber: '',
-  driverName: '',
-  driverPhone: '',
-  tripMode: 'passenger' as 'driver' | 'passenger',
+  transportCompany: '',
+  skipTransportCompany: false,
 };
 
 export default function TripsPage() {
@@ -36,9 +42,25 @@ export default function TripsPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [staffLoading, setStaffLoading] = useState(true);
+
   const [trips, setTrips] = useState<Trip[]>([]);
   const [tripsLoading, setTripsLoading] = useState(true);
   const [tripsError, setTripsError] = useState<string | null>(null);
+
+  const fetchStaff = useCallback(async () => {
+    if (!orgId) return;
+    setStaffLoading(true);
+    try {
+      const data = await apiClient<{ staff: StaffMember[] }>(`/v1/organizations/${orgId}/staff`);
+      setStaff(data.staff ?? []);
+    } catch {
+      setStaff([]);
+    } finally {
+      setStaffLoading(false);
+    }
+  }, [orgId]);
 
   const fetchTrips = useCallback(async () => {
     if (!orgId) return;
@@ -55,8 +77,9 @@ export default function TripsPage() {
   }, [orgId]);
 
   useEffect(() => {
+    fetchStaff();
     fetchTrips();
-  }, [fetchTrips]);
+  }, [fetchStaff, fetchTrips]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -64,16 +87,22 @@ export default function TripsPage() {
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // userId here is the STAFF MEMBER being registered for, not the
+      // caller -- POST /v1/trips now honors a different userId than the
+      // caller's own when the caller is a corporate_admin (or
+      // transport_partner/platform admin) registering on behalf of someone
+      // in their org (see apps/api/src/routes/trip.routes.ts). It records
+      // `registeredBy` as this corporate_admin automatically server-side.
       await apiClient('/v1/trips', {
         method: 'POST',
         body: JSON.stringify({
-          userId: form.userId.trim(),
+          userId: form.staffUserId,
           origin: { name: form.originName.trim(), latitude: 0, longitude: 0 },
           destination: { name: form.destinationName.trim(), latitude: 0, longitude: 0 },
-          vehiclePlateNumber: form.vehiclePlateNumber.trim() || undefined,
-          driverName: form.driverName.trim() || undefined,
-          driverPhone: form.driverPhone.trim() || undefined,
-          tripMode: form.tripMode,
+          // Matches the mobile form's single "Transport company" field
+          // (docs/SafePass/screens.md Screen 31) -- skip toggle omits it
+          // entirely rather than sending an empty string.
+          transportCompany: form.skipTransportCompany ? undefined : form.transportCompany.trim() || undefined,
           organizationId: orgId,
         }),
       });
@@ -140,15 +169,28 @@ export default function TripsPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             {field(
-              'Staff Member (User ID / Email) *',
-              <input
-                type="text"
+              'Staff Member *',
+              <select
                 required
-                value={form.userId}
-                onChange={(e) => setForm((f) => ({ ...f, userId: e.target.value }))}
-                placeholder="User ID or email"
+                value={form.staffUserId}
+                onChange={(e) => setForm((f) => ({ ...f, staffUserId: e.target.value }))}
+                disabled={staffLoading}
                 className={inputCls}
-              />,
+              >
+                <option value="" disabled>
+                  {staffLoading
+                    ? 'Loading staff…'
+                    : staff.length === 0
+                      ? 'No enrolled staff members'
+                      : 'Select a staff member'}
+                </option>
+                {staff.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.fullName}
+                    {s.email ? ` (${s.email})` : ''}
+                  </option>
+                ))}
+              </select>,
             )}
             {field(
               'Origin *',
@@ -173,60 +215,38 @@ export default function TripsPage() {
               />,
             )}
             {field(
-              'Vehicle Plate Number',
-              <input
-                type="text"
-                value={form.vehiclePlateNumber}
-                onChange={(e) => setForm((f) => ({ ...f, vehiclePlateNumber: e.target.value }))}
-                placeholder="e.g. ABC-123-XY"
-                className={inputCls}
-              />,
-            )}
-            {field(
-              'Driver Name',
-              <input
-                type="text"
-                value={form.driverName}
-                onChange={(e) => setForm((f) => ({ ...f, driverName: e.target.value }))}
-                placeholder="Driver full name"
-                className={inputCls}
-              />,
-            )}
-            {field(
-              'Driver Phone',
-              <input
-                type="tel"
-                value={form.driverPhone}
-                onChange={(e) => setForm((f) => ({ ...f, driverPhone: e.target.value }))}
-                placeholder="+234..."
-                className={inputCls}
-              />,
-            )}
-            {field(
-              'Trip Mode *',
-              <div className="flex gap-2">
-                {(['driver', 'passenger'] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, tripMode: mode }))}
-                    className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium capitalize transition-colors ${
-                      form.tripMode === mode
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                    }`}
-                  >
-                    {mode}
-                  </button>
-                ))}
+              'Transport Company',
+              <div className="space-y-1.5">
+                <input
+                  type="text"
+                  value={form.transportCompany}
+                  onChange={(e) => setForm((f) => ({ ...f, transportCompany: e.target.value }))}
+                  disabled={form.skipTransportCompany}
+                  placeholder="e.g. ABC Logistics"
+                  className={`${inputCls} disabled:bg-slate-50 disabled:text-slate-400`}
+                />
+                <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <input
+                    type="checkbox"
+                    checked={form.skipTransportCompany}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, skipTransportCompany: e.target.checked, transportCompany: '' }))
+                    }
+                  />
+                  Skip / Not applicable
+                </label>
               </div>,
             )}
+          </div>
+
+          <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+            Covered by your organization&apos;s subscription — no per-trip charge.
           </div>
 
           <div className="pt-2">
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || staffLoading || staff.length === 0}
               className="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
             >
               {submitting ? (
@@ -253,7 +273,7 @@ export default function TripsPage() {
             <table className="w-full">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
-                  {['Staff ID', 'Origin', 'Destination', 'Mode', 'Status', 'Date'].map((h) => (
+                  {['Staff ID', 'Origin', 'Destination', 'Status', 'Date'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">
                       {h}
                     </th>
@@ -263,7 +283,7 @@ export default function TripsPage() {
               <tbody className="divide-y divide-slate-100">
                 {trips.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-400">
+                    <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">
                       No trips registered yet.
                     </td>
                   </tr>
@@ -275,11 +295,6 @@ export default function TripsPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-dark">{t.origin.name}</td>
                       <td className="px-4 py-3 text-sm text-slate-dark">{t.destination.name}</td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium capitalize text-primary">
-                          {t.tripMode}
-                        </span>
-                      </td>
                       <td className="px-4 py-3">
                         <StatusBadge status={t.status} />
                       </td>
@@ -299,13 +314,12 @@ export default function TripsPage() {
 }
 
 function exportCsv(trips: Trip[]) {
-  const headers = ['ID', 'Staff ID', 'Origin', 'Destination', 'Mode', 'Status', 'Date'];
+  const headers = ['ID', 'Staff ID', 'Origin', 'Destination', 'Status', 'Date'];
   const rows = trips.map((t) => [
     t.id,
     t.userId,
     t.origin.name,
     t.destination.name,
-    t.tripMode,
     t.status,
     new Date(t.createdAt).toISOString(),
   ]);

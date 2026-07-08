@@ -31,6 +31,13 @@ type VehicleType = typeof trips.$inferSelect['vehicleType'];
 
 export interface TripCreateInput {
   userId: string;
+  /** Who actually initiated this trip -- defaults to `userId` (self-registered,
+   * the normal mobile-app case). Distinct from `userId` when a corporate_admin/
+   * transport_partner/platform admin registers a trip on behalf of a staff
+   * member (docs/SafePass/screens.md Screen 31 "Trip Registration
+   * (Corporate)") -- `userId` is the staff member being monitored, this is
+   * the admin who registered it. */
+  registeredBy?: string;
   /** The caller's role from the JWT — used to auto-populate transport_company. */
   callerRole?: string;
   organizationId?: string;
@@ -150,7 +157,7 @@ export async function createTrip(
       id: uuidv4(),
       userId: input.userId,
       organizationId: input.organizationId ?? null,
-      registeredBy: input.userId,
+      registeredBy: input.registeredBy ?? input.userId,
       userVehicleId: input.userVehicleId ?? null,
       origin: input.origin,
       destination: input.destination,
