@@ -197,7 +197,7 @@ const envSchema = z.object({
   // "safepass.ng" domain in both this API (bulk CSV export) and the
   // corporate dashboard (single-token display + its own CSV export).
   // Token is appended as `${APP_DEEP_LINK_BASE_URL}/${token}`.
-  APP_DEEP_LINK_BASE_URL: z.string().url().default('https://safepass-tech.com/join'),
+  APP_DEEP_LINK_BASE_URL: z.string().url().default('https://api.safepass-tech.com/join'),
   ENABLE_PANIC_RECORDING: z.coerce.boolean().default(true),
   // Resend -- transactional email (role upgrade approval/rejection notices).
   RESEND_API_KEY: z.string().optional(),
