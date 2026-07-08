@@ -3,6 +3,6 @@
 -- vehicle_source_initiator_name columns to the trips table.
 
 ALTER TABLE "trips"
-  ADD COLUMN "vehicle_description" text,
-  ADD COLUMN "vehicle_copied_from_initiator" boolean NOT NULL DEFAULT false,
-  ADD COLUMN "vehicle_source_initiator_name" text;
+  ADD COLUMN IF NOT EXISTS "vehicle_description" text,
+  ADD COLUMN IF NOT EXISTS "vehicle_copied_from_initiator" boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "vehicle_source_initiator_name" text;
