@@ -192,6 +192,12 @@ const envSchema = z.object({
   // just be CORS-rejected until its URL is configured.
   CORPORATE_DASHBOARD_URL: z.string().url().default('http://localhost:3002'),
   TRANSPORT_DASHBOARD_URL: z.string().url().default('http://localhost:3003'),
+  // Base URL for org invite deep links (C-02: "invite link, deep link
+  // (safepass.ng/join/TOKEN)") -- was hardcoded to the wrong/unowned
+  // "safepass.ng" domain in both this API (bulk CSV export) and the
+  // corporate dashboard (single-token display + its own CSV export).
+  // Token is appended as `${APP_DEEP_LINK_BASE_URL}/${token}`.
+  APP_DEEP_LINK_BASE_URL: z.string().url().default('https://safepass-tech.com/join'),
   ENABLE_PANIC_RECORDING: z.coerce.boolean().default(true),
   // Resend -- transactional email (role upgrade approval/rejection notices).
   RESEND_API_KEY: z.string().optional(),

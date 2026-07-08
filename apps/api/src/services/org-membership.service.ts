@@ -5,10 +5,22 @@ import crypto from 'crypto';
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db';
 import { orgSlots, inviteTokens, users, organizations } from '../db/schema';
+import { env } from '../env';
 
 // ─────────────────────────────────────────────
 // List all slots for an org (admin view)
 // ─────────────────────────────────────────────
+
+/** Builds the mobile-app invite deep link for a token. Single source of
+ * truth (env.APP_DEEP_LINK_BASE_URL) -- was previously hardcoded to the
+ * wrong/unowned "safepass.ng" domain independently in three different
+ * places (here, the bulk CSV export route, and the corporate dashboard's
+ * own token-display + CSV code), guaranteed to drift out of sync. Every
+ * caller (listSlots/generateToken/bulkGenerateTokens/the CSV route) now
+ * gets this from the API instead of reconstructing it themselves. */
+export function buildInviteLink(token: string): string {
+  return `${env.APP_DEEP_LINK_BASE_URL}/${token}`;
+}
 
 export interface SlotView {
   slotId: string;
@@ -16,7 +28,7 @@ export interface SlotView {
   memberName: string | null;
   memberEmail: string | null;
   /** The slot's latest active invite token, if any. */
-  latestToken: { token: string; expiresAt: string } | null;
+  latestToken: { token: string; expiresAt: string; inviteLink: string } | null;
 }
 
 export async function listSlots(orgId: string): Promise<SlotView[]> {
@@ -53,7 +65,11 @@ export async function listSlots(orgId: string): Promise<SlotView[]> {
         memberName,
         memberEmail,
         latestToken: latestInvite
-          ? { token: latestInvite.token, expiresAt: latestInvite.expiresAt.toISOString() }
+          ? {
+              token: latestInvite.token,
+              expiresAt: latestInvite.expiresAt.toISOString(),
+              inviteLink: buildInviteLink(latestInvite.token),
+            }
           : null,
       };
     })
@@ -137,6 +153,7 @@ export async function generateToken(slotId: string, orgId: string) {
       latestToken: {
         token: invite.token,
         expiresAt: invite.expiresAt.toISOString(),
+        inviteLink: buildInviteLink(invite.token),
       },
     } satisfies SlotView,
   };
@@ -155,10 +172,10 @@ export async function bulkGenerateTokens(
   slotIds: string[],
   orgId: string
 ): Promise<{
-  results: Array<{ slotId: string; token: string; expiresAt: string }>;
+  results: Array<{ slotId: string; token: string; expiresAt: string; inviteLink: string }>;
   skippedCount: number;
 }> {
-  const results: Array<{ slotId: string; token: string; expiresAt: string }> = [];
+  const results: Array<{ slotId: string; token: string; expiresAt: string; inviteLink: string }> = [];
   let skippedCount = 0;
 
   for (const slotId of slotIds) {
@@ -178,6 +195,7 @@ export async function bulkGenerateTokens(
         slotId,
         token: slotView.latestToken!.token,
         expiresAt: slotView.latestToken!.expiresAt,
+        inviteLink: slotView.latestToken!.inviteLink,
       });
     } catch {
       // Individual slot failures don't abort the bulk job.

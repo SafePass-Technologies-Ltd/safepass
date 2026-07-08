@@ -161,8 +161,7 @@ orgMembershipRoutes.post(
     const csv = [
       'slot_id,token,invite_link,expires_at',
       ...results.map(
-        (r) =>
-          `${r.slotId},${r.token},https://safepass.ng/join/${r.token},${r.expiresAt}`
+        (r) => `${r.slotId},${r.token},${r.inviteLink},${r.expiresAt}`
       ),
     ].join('\n');
 

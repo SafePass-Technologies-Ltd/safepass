@@ -19,6 +19,11 @@ type SlotStatus = 'empty' | 'token_pending' | 'active';
 interface SlotToken {
   token: string;
   expiresAt: string;
+  /** Full mobile-app invite deep link, built server-side (env.APP_DEEP_LINK_BASE_URL
+   * -- see apps/api/src/services/org-membership.service.ts's buildInviteLink)
+   * so the domain lives in exactly one place instead of being reconstructed
+   * (and duplicated/drifted) here. */
+  inviteLink: string;
 }
 
 interface Slot {
@@ -30,7 +35,7 @@ interface Slot {
 }
 
 interface BulkGenerateResult {
-  results: Array<{ slotId: string; token: string; expiresAt: string }>;
+  results: Array<{ slotId: string; token: string; expiresAt: string; inviteLink: string }>;
   skippedCount: number;
 }
 
@@ -56,11 +61,9 @@ function csvFilename(): string {
   return `safepass-invite-tokens-${y}-${m}-${day}.csv`;
 }
 
-function buildCsv(rows: Array<{ slotId: string; token: string; expiresAt: string }>): string {
+function buildCsv(rows: Array<{ slotId: string; token: string; expiresAt: string; inviteLink: string }>): string {
   const header = 'slot_id,token,invite_link,expires_at';
-  const lines = rows.map((r) =>
-    `${r.slotId},${r.token},https://safepass.ng/join/${r.token},${r.expiresAt}`
-  );
+  const lines = rows.map((r) => `${r.slotId},${r.token},${r.inviteLink},${r.expiresAt}`);
   return [header, ...lines].join('\n');
 }
 
@@ -104,10 +107,17 @@ function SlotStatusBadge({ status, expiresAt }: { status: SlotStatus; expiresAt?
   );
 }
 
-function TokenRevealRow({ token, expiresAt }: { token: string; expiresAt: string }) {
+function TokenRevealRow({
+  token,
+  expiresAt,
+  inviteLink,
+}: {
+  token: string;
+  expiresAt: string;
+  inviteLink: string;
+}) {
   const [copiedToken, setCopiedToken] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
-  const inviteLink = `https://safepass.ng/join/${token}`;
 
   async function handleCopyToken() {
     await navigator.clipboard.writeText(token);
@@ -867,6 +877,7 @@ export default function SlotManagementPage() {
                         <TokenRevealRow
                           token={revealed.token}
                           expiresAt={revealed.expiresAt}
+                          inviteLink={revealed.inviteLink}
                         />
                       )}
                     </td>
