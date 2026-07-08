@@ -15,8 +15,11 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Siren,
+  Play,
+  Loader2,
 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, API_BASE_URL } from '@/lib/api-client';
 
 // =============================================================================
 // Types
@@ -29,6 +32,7 @@ type MessageType = 'text' | 'check_in' | 'alert' | 'system';
 type CheckInMethod = 'message' | 'call' | 'sms';
 type CheckInResponse = 'pending' | 'confirmed_safe' | 'no_response' | 'concern_raised';
 type EscalationStatus = 'pending' | 'acknowledged' | 'in_progress' | 'resolved' | 'closed';
+type EmergencyEventStatus = 'active' | 'acknowledged' | 'escalated' | 'resolved_false_alarm' | 'resolved_incident';
 
 interface StatusHistoryEntry {
   status: TripStatus;
@@ -90,6 +94,25 @@ interface Escalation {
   resolvedAt: string | null;
 }
 
+interface EmergencyEvent {
+  id: string;
+  tripId: string;
+  triggerType: string;
+  status: EmergencyEventStatus;
+  latitude: number;
+  longitude: number;
+  speed: number | null;
+  locationTimestamp: string;
+  /** Local-disk relative URLs (e.g. "/uploads/emergency-audio/...") in dev,
+   * or opaque S3 object keys in production -- see emergency.routes.ts's
+   * upload endpoint. Distinguished at render time by the leading "/". */
+  audioRecordingUrls: string[];
+  emergencyContactNotified: boolean;
+  resolutionNotes: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+}
+
 // =============================================================================
 // Style constants
 // =============================================================================
@@ -115,6 +138,14 @@ const CHECKIN_RESPONSE_STYLE: Record<CheckInResponse, { bg: string; text: string
   confirmed_safe: { bg: 'bg-green-100', text: 'text-green-700', label: 'Confirmed Safe' },
   no_response: { bg: 'bg-red-100', text: 'text-red-700', label: 'No Response' },
   concern_raised: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Concern Raised' },
+};
+
+const EMERGENCY_STATUS_STYLE: Record<EmergencyEventStatus, { bg: string; text: string; label: string }> = {
+  active: { bg: 'bg-red-100', text: 'text-red-700', label: 'Active' },
+  acknowledged: { bg: 'bg-amber-100', text: 'text-amber-700', label: 'Acknowledged' },
+  escalated: { bg: 'bg-purple-100', text: 'text-purple-700', label: 'Escalated' },
+  resolved_false_alarm: { bg: 'bg-slate-100', text: 'text-slate-600', label: 'False Alarm' },
+  resolved_incident: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Resolved — Incident' },
 };
 
 const ESCALATION_STATUS_STYLE: Record<EscalationStatus, { bg: string; text: string; label: string }> = {
@@ -523,6 +554,163 @@ function CheckInsSection({ tripId }: { tripId: string }) {
 }
 
 // =============================================================================
+// Emergency Events section (panic-button audio evidence playback)
+// =============================================================================
+
+/**
+ * A single audio recording row. Local-disk keys (dev fallback, always
+ * start with "/") are served directly as static file URLs off the API's
+ * own origin. Production S3 object keys are opaque (no leading "/") and
+ * require exchanging them for a short-lived presigned GET URL first — the
+ * bucket blocks all public access, so a raw key is never directly playable
+ * (see s3.service.ts's getEvidencePlaybackUrl and the admin-only
+ * GET /v1/admin/emergencies/:id/audio/url endpoint).
+ */
+function AudioRecordingRow({ eventId, recordingKey, index }: { eventId: string; recordingKey: string; index: number }) {
+  const isLocalDisk = recordingKey.startsWith('/');
+  const [signedUrl, setSignedUrl] = useState<string | null>(isLocalDisk ? `${API_BASE_URL}${recordingKey}` : null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(isLocalDisk);
+
+  const handlePlay = async () => {
+    if (signedUrl) { setRevealed(true); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiClient<{ url: string }>(
+        `/v1/admin/emergencies/${eventId}/audio/url?key=${encodeURIComponent(recordingKey)}`
+      );
+      setSignedUrl(data.url);
+      setRevealed(true);
+    } catch {
+      // Presigned URLs expire after 10 minutes -- a stale/reused link is the
+      // most likely cause if this ever fires after a long-open tab.
+      setError('Failed to load recording. It may have expired — try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium text-slate-500">Recording {index + 1}</span>
+        {!revealed && (
+          <button
+            onClick={handlePlay}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            {loading ? 'Loading…' : 'Play'}
+          </button>
+        )}
+      </div>
+      {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+      {revealed && signedUrl && (
+        <audio controls preload="none" className="mt-2 h-9 w-full">
+          <source src={signedUrl} />
+          Your browser does not support audio playback.
+        </audio>
+      )}
+    </div>
+  );
+}
+
+function EmergencyEventsSection({ tripId }: { tripId: string }) {
+  const [events, setEvents] = useState<EmergencyEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchEvents = useCallback(async () => {
+    try {
+      const data = await apiClient<{ emergencies: EmergencyEvent[] }>(
+        `/v1/admin/emergencies?tripId=${tripId}`
+      );
+      setEvents(data.emergencies ?? []);
+      setError(null);
+    } catch {
+      setError('Failed to load emergency events.');
+    } finally {
+      setLoading(false);
+    }
+  }, [tripId]);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  // Nothing to show for trips that never had a panic-button trigger --
+  // avoid an empty card cluttering the (common) non-emergency trip detail
+  // view. Escalations/check-ins sections above always render since officers
+  // may want to log one even without a prior emergency event.
+  if (!loading && !error && events.length === 0) return null;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-6 py-4">
+        <Siren className="h-4 w-4 text-red-500" />
+        <h2 className="text-sm font-semibold text-slate-700">Emergency Events</h2>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-8">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        </div>
+      ) : error ? (
+        <p className="px-6 py-4 text-sm text-red-500">{error}</p>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {events.map((event) => {
+            const statusStyle = EMERGENCY_STATUS_STYLE[event.status];
+            return (
+              <li key={event.id} className="space-y-3 px-6 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge {...statusStyle} />
+                    <span className="text-xs capitalize text-slate-500">
+                      {event.triggerType.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <span className="text-xs text-slate-400 shrink-0">
+                    {new Date(event.createdAt).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  {event.latitude.toFixed(5)}, {event.longitude.toFixed(5)}
+                  {event.speed != null && <span> · {event.speed.toFixed(0)} km/h</span>}
+                </div>
+
+                {event.resolutionNotes && (
+                  <p className="text-xs text-slate-500">Resolution: {event.resolutionNotes}</p>
+                )}
+
+                {/* Audio evidence -- the whole point of this section. Every
+                    recording uploaded during this emergency session (panic
+                    press to check-in) shows up here for playback. */}
+                {event.audioRecordingUrls.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+                      Audio Evidence ({event.audioRecordingUrls.length})
+                    </p>
+                    {event.audioRecordingUrls.map((key, i) => (
+                      <AudioRecordingRow key={key} eventId={event.id} recordingKey={key} index={i} />
+                    ))}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
 // Escalations section
 // =============================================================================
 
@@ -877,6 +1065,8 @@ export default function TripDetailPage() {
       )}
 
       {/* ── New sections ─────────────────────────────────────── */}
+
+      <EmergencyEventsSection tripId={trip.id} />
 
       <MessagesSection tripId={trip.id} />
 

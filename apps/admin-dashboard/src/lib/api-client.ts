@@ -2,7 +2,12 @@
 ///
 /// Attaches the JWT access token automatically and handles 401 refresh.
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
+// Exported so callers that need a raw (non-apiClient) URL against the API's
+// own origin can build one -- e.g. local-disk-served static file URLs like
+// /uploads/emergency-audio/... (see trips/[id]/page.tsx's
+// EmergencyEventsSection), which aren't JSON endpoints and shouldn't go
+// through apiClient's fetch+auth-refresh wrapper.
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:3000';
 
 interface ApiClientOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
