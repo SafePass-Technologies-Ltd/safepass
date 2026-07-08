@@ -18,6 +18,7 @@ import {
   createVehicle,
   updateVehicle,
   deleteVehicle,
+  generateVehicleQr,
 } from '../services/vehicle.service';
 
 // ────────────────────────────────────────────────────────────
@@ -104,6 +105,21 @@ vehicleRoutes.patch('/:id', zValidator('json', VehicleUpdateSchema), async (c) =
   const data = c.req.valid('json');
   const vehicle = await updateVehicle(vehicleId, orgId, data);
   return c.json(vehicle);
+});
+
+/**
+ * POST /v1/vehicles/:id/qr
+ * Generate (or regenerate) this vehicle's SafePass QR code (T-05).
+ */
+vehicleRoutes.post('/:id/qr', async (c) => {
+  const orgId = requireOrgId(c);
+  if (!orgId) {
+    return c.json({ error: { code: 403, message: 'No organization associated with this account' } }, 403);
+  }
+
+  const vehicleId = c.req.param('id');
+  const vehicle = await generateVehicleQr(vehicleId, orgId);
+  return c.json(vehicle, 201);
 });
 
 /**

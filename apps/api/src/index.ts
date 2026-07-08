@@ -24,6 +24,7 @@ import { documentRoutes } from './routes/document.routes';
 import { scheduledTripRoutes } from './routes/scheduled-trip.routes';
 import { orgSubscriptionRoutes, adminSubscriptionRoutes } from './routes/subscription.routes';
 import { joinRoutes } from './routes/join.routes';
+import { verifyRoutes } from './routes/verify.routes';
 import { wellKnownRoutes } from './routes/well-known.routes';
 import { env } from './env';
 
@@ -98,6 +99,11 @@ app.get('/health', (c) => {
 // https://api.safepass-tech.com/join/<token>. Public, unauthenticated --
 // see join.routes.ts's header comment.
 app.route('/join', joinRoutes);
+
+// Public vehicle QR verification page (T-05 / architecture.md's Vehicle
+// Verification Service) -- mounted at the site root to match
+// VEHICLE_VERIFY_BASE_URL exactly: https://api.safepass-tech.com/verify/v/<token>.
+app.route('/verify/v', verifyRoutes);
 
 // Universal Links (iOS) / App Links (Android) verification files for the
 // deep link above -- see well-known.routes.ts.

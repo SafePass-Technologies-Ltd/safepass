@@ -6,22 +6,31 @@
  * The API returns org-scoped results when the caller's JWT contains an orgId
  * (transport/corporate dashboard users), so every trip registered under this
  * organisation is visible here.
+ *
+ * Field names below match the real `trips` table (apps/api/src/db/schema/
+ * trips.ts) as returned raw by getOrgTrips -- there is no response-shaping
+ * layer for this endpoint (unlike vehicle/driver/document.service.ts, which
+ * do reshape their rows). Earlier versions of this page used
+ * passengerName/vehiclePlate/departureTime, none of which exist on the real
+ * response (origin/destination are {name, latitude, longitude} objects, not
+ * flat strings; there is no passenger-name field at all -- only userId).
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Map, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 interface Trip {
   id: string;
   userId: string;
-  passengerName?: string | null;
   driverName?: string | null;
-  vehiclePlate?: string | null;
+  vehiclePlateNumber?: string | null;
+  transportCompany?: string | null;
   status: string;
-  departureTime?: string | null;
-  origin?: string | null;
-  destination?: string | null;
+  scheduledDeparture?: string | null;
+  startedAt?: string | null;
+  origin?: { name?: string | null; latitude: number; longitude: number } | null;
+  destination?: { name?: string | null; latitude: number; longitude: number } | null;
   createdAt?: string | null;
 }
 
@@ -44,6 +53,14 @@ export default function TripsPage() {
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
 
+  // Screen 38 (Linked Trip Monitoring): "Trip List | Filterable by vehicle,
+  // driver, date." GET /v1/trips only supports a `status` filter
+  // server-side, so vehicle/driver/date are applied client-side over the
+  // status-filtered result set below.
+  const [vehicleFilter, setVehicleFilter] = useState('');
+  const [driverFilter, setDriverFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+
   const fetchTrips = useCallback(async (status: string) => {
     setLoading(true);
     setError(null);
@@ -62,6 +79,22 @@ export default function TripsPage() {
     fetchTrips(statusFilter);
   }, [fetchTrips, statusFilter]);
 
+  const filteredTrips = useMemo(() => {
+    return trips.filter((t) => {
+      if (vehicleFilter && !t.vehiclePlateNumber?.toLowerCase().includes(vehicleFilter.toLowerCase())) {
+        return false;
+      }
+      if (driverFilter && !t.driverName?.toLowerCase().includes(driverFilter.toLowerCase())) {
+        return false;
+      }
+      if (dateFilter) {
+        const tripDate = (t.scheduledDeparture ?? t.startedAt ?? t.createdAt)?.slice(0, 10);
+        if (tripDate !== dateFilter) return false;
+      }
+      return true;
+    });
+  }, [trips, vehicleFilter, driverFilter, dateFilter]);
+
   function formatDateTime(value?: string | null) {
     if (!value) return '—';
     return new Date(value).toLocaleString(undefined, {
@@ -70,6 +103,14 @@ export default function TripsPage() {
     });
   }
 
+  function formatLocation(loc?: Trip['origin']) {
+    if (!loc) return '?';
+    return loc.name || `${loc.latitude.toFixed(3)}, ${loc.longitude.toFixed(3)}`;
+  }
+
+  const inputCls =
+    'rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-primary focus:ring-2 focus:ring-primary/20';
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -77,7 +118,7 @@ export default function TripsPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-dark">Trips</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {trips.length} trip{trips.length !== 1 ? 's' : ''} across your organisation
+            {filteredTrips.length} of {trips.length} trip{trips.length !== 1 ? 's' : ''} across your organisation
           </p>
         </div>
 
@@ -99,6 +140,38 @@ export default function TripsPage() {
         </div>
       </div>
 
+      {/* Vehicle / driver / date filters */}
+      <div className="flex flex-wrap gap-3">
+        <input
+          type="text"
+          value={vehicleFilter}
+          onChange={(e) => setVehicleFilter(e.target.value)}
+          placeholder="Filter by vehicle plate..."
+          className={inputCls}
+        />
+        <input
+          type="text"
+          value={driverFilter}
+          onChange={(e) => setDriverFilter(e.target.value)}
+          placeholder="Filter by driver name..."
+          className={inputCls}
+        />
+        <input
+          type="date"
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value)}
+          className={inputCls}
+        />
+        {(vehicleFilter || driverFilter || dateFilter) && (
+          <button
+            onClick={() => { setVehicleFilter(''); setDriverFilter(''); setDateFilter(''); }}
+            className="text-xs font-medium text-slate-500 hover:text-slate-700"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {error && (
         <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
       )}
@@ -113,7 +186,7 @@ export default function TripsPage() {
             <table className="w-full">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
-                  {['Trip ID', 'Passenger', 'Driver', 'Vehicle', 'Origin → Destination', 'Departure', 'Status'].map(
+                  {['Trip ID', 'Driver', 'Vehicle', 'Origin → Destination', 'Departure', 'Status'].map(
                     (h) => (
                       <th
                         key={h}
@@ -126,19 +199,19 @@ export default function TripsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {trips.length === 0 ? (
+                {filteredTrips.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center">
+                    <td colSpan={6} className="px-4 py-12 text-center">
                       <Map className="mx-auto mb-3 h-10 w-10 text-slate-300" />
                       <p className="text-sm text-slate-400">
-                        {statusFilter === 'all'
+                        {trips.length === 0
                           ? 'No trips found for this account.'
-                          : `No ${statusFilter} trips.`}
+                          : 'No trips match the current filters.'}
                       </p>
                     </td>
                   </tr>
                 ) : (
-                  trips.map((trip) => (
+                  filteredTrips.map((trip) => (
                     <tr key={trip.id} className="hover:bg-slate-50">
                       {/* Truncated trip ID — full value in title for copy-on-hover */}
                       <td
@@ -147,22 +220,17 @@ export default function TripsPage() {
                       >
                         {trip.id.slice(0, 8)}…
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-700">
-                        {trip.passengerName ?? <span className="text-slate-400">—</span>}
-                      </td>
                       <td className="px-4 py-3 text-sm text-slate-500">
                         {trip.driverName ?? <span className="text-slate-400">—</span>}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-500">
-                        {trip.vehiclePlate ?? <span className="text-slate-400">—</span>}
+                        {trip.vehiclePlateNumber ?? <span className="text-slate-400">—</span>}
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-500">
-                        {trip.origin || trip.destination
-                          ? `${trip.origin ?? '?'} → ${trip.destination ?? '?'}`
-                          : <span className="text-slate-400">—</span>}
+                        {formatLocation(trip.origin)} → {formatLocation(trip.destination)}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-500">
-                        {formatDateTime(trip.departureTime ?? trip.createdAt)}
+                        {formatDateTime(trip.scheduledDeparture ?? trip.startedAt ?? trip.createdAt)}
                       </td>
                       <td className="px-4 py-3">
                         <TripStatusBadge status={trip.status} />

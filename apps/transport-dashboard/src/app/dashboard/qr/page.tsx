@@ -2,26 +2,26 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { QrCode, Loader2, Download } from 'lucide-react';
+import QRCode from 'qrcode';
 import { apiClient } from '@/lib/api-client';
-import { getUserSession } from '@/lib/auth-utils';
 
 interface Vehicle {
   id: string;
   plateNumber: string;
   make: string | null;
   model: string | null;
+  qrCodeUrl: string | null;
+  qrGeneratedAt: string | null;
 }
 
 interface QrState {
   loading: boolean;
-  url: string | null;
+  /** Client-rendered data: URI (PNG) encoding the vehicle's verification URL. */
+  imageDataUrl: string | null;
   error: string | null;
 }
 
 export default function QrPage() {
-  const session = getUserSession();
-  const orgId = session?.orgId;
-
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,51 +30,69 @@ export default function QrPage() {
   const fetchVehicles = useCallback(async () => {
     setLoading(true);
     try {
-      const query = orgId ? `?organizationId=${orgId}` : '';
-      const data = await apiClient<{ vehicles: Vehicle[] }>(`/v1/vehicles${query}`);
+      const data = await apiClient<{ vehicles: Vehicle[] }>('/v1/vehicles');
       setVehicles(data.vehicles ?? []);
       setError(null);
+
+      // Vehicles that already have a QR code (generated on a previous
+      // visit) render it immediately from the stored verification URL --
+      // no need to hit "Generate" again just to see it.
+      for (const v of data.vehicles ?? []) {
+        if (v.qrCodeUrl) void renderQr(v.id, v.qrCodeUrl);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load vehicles');
     } finally {
       setLoading(false);
     }
-  }, [orgId]);
+  }, []);
 
   useEffect(() => {
     fetchVehicles();
-  }, [fetchVehicles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
-  async function generateQr(vehicleId: string) {
-    setQrStates((prev) => ({
-      ...prev,
-      [vehicleId]: { loading: true, url: null, error: null },
-    }));
+  /**
+   * Renders `verificationUrl` into an actual scannable QR code image,
+   * entirely client-side (no image storage/rendering pipeline exists on
+   * the backend -- see apps/api/src/services/vehicle.service.ts's
+   * generateVehicleQr(), which only mints the token/URL a QR code encodes).
+   */
+  async function renderQr(vehicleId: string, verificationUrl: string) {
+    setQrStates((prev) => ({ ...prev, [vehicleId]: { loading: true, imageDataUrl: null, error: null } }));
     try {
-      const data = await apiClient<{ qrCode?: string; dataUrl?: string; url?: string }>(
-        `/v1/vehicles/${vehicleId}/qr`,
-        { method: 'POST' },
-      );
-      const url = data.dataUrl ?? data.qrCode ?? data.url ?? null;
-      setQrStates((prev) => ({
-        ...prev,
-        [vehicleId]: { loading: false, url, error: url ? null : 'No QR data in response' },
-      }));
+      const imageDataUrl = await QRCode.toDataURL(verificationUrl, { width: 320, margin: 2 });
+      setQrStates((prev) => ({ ...prev, [vehicleId]: { loading: false, imageDataUrl, error: null } }));
     } catch (err) {
       setQrStates((prev) => ({
         ...prev,
-        [vehicleId]: {
-          loading: false,
-          url: null,
-          error: err instanceof Error ? err.message : 'Failed to generate QR',
-        },
+        [vehicleId]: { loading: false, imageDataUrl: null, error: err instanceof Error ? err.message : 'Failed to render QR' },
       }));
     }
   }
 
-  function downloadQr(url: string, plateNumber: string) {
+  async function generateQr(vehicleId: string) {
+    setQrStates((prev) => ({ ...prev, [vehicleId]: { loading: true, imageDataUrl: null, error: null } }));
+    try {
+      // POST /v1/vehicles/:id/qr mints a fresh token + verification URL
+      // (apps/api/src/routes/vehicle.routes.ts) -- invalidates any
+      // previous token for this vehicle immediately, per Screen 35's
+      // "Regenerate if compromised."
+      const vehicle = await apiClient<Vehicle>(`/v1/vehicles/${vehicleId}/qr`, { method: 'POST' });
+      if (!vehicle.qrCodeUrl) throw new Error('No verification URL in response');
+      await renderQr(vehicleId, vehicle.qrCodeUrl);
+      setVehicles((prev) => prev.map((v) => (v.id === vehicleId ? vehicle : v)));
+    } catch (err) {
+      setQrStates((prev) => ({
+        ...prev,
+        [vehicleId]: { loading: false, imageDataUrl: null, error: err instanceof Error ? err.message : 'Failed to generate QR' },
+      }));
+    }
+  }
+
+  function downloadQr(dataUrl: string, plateNumber: string) {
     const a = document.createElement('a');
-    a.href = url;
+    a.href = dataUrl;
     a.download = `qr-${plateNumber}.png`;
     a.click();
   }
@@ -83,7 +101,9 @@ export default function QrPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-dark">QR Codes</h1>
-        <p className="mt-1 text-sm text-slate-500">Generate and download QR codes for your vehicles</p>
+        <p className="mt-1 text-sm text-slate-500">
+          Generate and download QR codes for your vehicles — each links to a public verification page.
+        </p>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
@@ -115,20 +135,33 @@ export default function QrPage() {
                   )}
                 </div>
 
-                {qr?.url ? (
+                {qr?.loading ? (
+                  <div className="flex h-40 items-center justify-center">
+                    <Loader2 className="h-6 w-6 animate-spin text-slate-300" />
+                  </div>
+                ) : qr?.imageDataUrl ? (
                   <div className="flex flex-col items-center gap-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- qr.url is a locally generated data: URI (base64 PNG), not a remote asset next/image can optimize */}
+                    {/* eslint-disable-next-line @next/next/no-img-element -- qr.imageDataUrl is a locally rendered data: URI (base64 PNG), not a remote asset next/image can optimize */}
                     <img
-                      src={qr.url}
+                      src={qr.imageDataUrl}
                       alt={`QR code for ${v.plateNumber}`}
                       className="h-40 w-40 rounded-lg border border-slate-200 object-contain"
                     />
-                    <button
-                      onClick={() => downloadQr(qr.url!, v.plateNumber)}
-                      className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
-                    >
-                      <Download className="h-4 w-4" /> Download PNG
-                    </button>
+                    <div className="flex w-full gap-2">
+                      <button
+                        onClick={() => downloadQr(qr.imageDataUrl!, v.plateNumber)}
+                        className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                      >
+                        <Download className="h-4 w-4" /> Download PNG
+                      </button>
+                      <button
+                        onClick={() => generateQr(v.id)}
+                        title="Regenerate (invalidates the previous code if it's been compromised)"
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-50"
+                      >
+                        Regenerate
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <>
@@ -140,12 +173,8 @@ export default function QrPage() {
                       disabled={qr?.loading}
                       className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50"
                     >
-                      {qr?.loading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <QrCode className="h-4 w-4" />
-                      )}
-                      {qr?.loading ? 'Generating...' : 'Generate QR'}
+                      <QrCode className="h-4 w-4" />
+                      Generate QR
                     </button>
                   </>
                 )}

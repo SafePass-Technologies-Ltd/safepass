@@ -4,9 +4,11 @@
  * Uses the `transport_vehicles` Drizzle table. Scopes all queries to the
  * requesting user's organizationId so partners only see their own fleet.
  */
+import crypto from 'crypto';
 import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { transportVehicles } from '../db/schema';
+import { env } from '../env';
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -48,6 +50,11 @@ function toVehicleResponse(row: typeof transportVehicles.$inferSelect) {
     // The status column has a NOT NULL default of 'active', so it is always
     // present for new rows. For any legacy rows the column default covers it.
     status: row.status,
+    // Screen 35's Vehicle Table needs both of these ("verification status,
+    // QR status") -- previously omitted here even though the columns exist.
+    isVerified: row.isVerified,
+    qrCodeUrl: row.qrCodeUrl ?? null,
+    qrGeneratedAt: row.qrGeneratedAt ? row.qrGeneratedAt.toISOString() : null,
   };
 }
 
@@ -115,6 +122,53 @@ export async function updateVehicle(
       ...(input.vehicleType !== undefined ? { vehicleType: input.vehicleType } : {}),
       ...(input.capacity !== undefined ? { capacity: input.capacity } : {}),
       ...(input.year !== undefined ? { year: input.year } : {}),
+    })
+    .where(
+      and(
+        eq(transportVehicles.id, vehicleId),
+        eq(transportVehicles.organizationId, organizationId)
+      )
+    )
+    .returning();
+
+  return toVehicleResponse(row);
+}
+
+/**
+ * Generate (or regenerate) a vehicle's SafePass QR code (T-05).
+ *
+ * No image is rendered/stored here -- the token + verification URL are all
+ * a QR code encodes anyway, so the dashboard renders the actual QR image
+ * client-side (see apps/transport-dashboard's qr page) from
+ * `qrCodeUrl` below. Regenerating invalidates the previous token
+ * immediately (a fresh random token overwrites it in the same row), per
+ * Screen 35: "Regenerate if compromised (invalidates previous token)".
+ */
+export async function generateVehicleQr(vehicleId: string, organizationId: string) {
+  const existing = await db.query.transportVehicles.findFirst({
+    where: and(
+      eq(transportVehicles.id, vehicleId),
+      eq(transportVehicles.organizationId, organizationId)
+    ),
+  });
+
+  if (!existing) {
+    throw Object.assign(new Error('Vehicle not found'), { statusCode: 404 });
+  }
+
+  // Short, URL-safe token -- collision odds are negligible at fleet scale,
+  // and the qr_verification_token column has a unique index that would
+  // surface a collision as a constraint violation rather than silently
+  // colliding anyway.
+  const token = crypto.randomBytes(6).toString('hex');
+  const qrCodeUrl = `${env.VEHICLE_VERIFY_BASE_URL}/${token}`;
+
+  const [row] = await db
+    .update(transportVehicles)
+    .set({
+      qrVerificationToken: token,
+      qrCodeUrl,
+      qrGeneratedAt: new Date(),
     })
     .where(
       and(

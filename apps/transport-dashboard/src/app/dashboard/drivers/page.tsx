@@ -3,23 +3,26 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Users, UserPlus, Loader2, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { getUserSession } from '@/lib/auth-utils';
 
 interface Driver {
   id: string;
   fullName: string | null;
   phone: string | null;
   licenseNumber: string | null;
+  assignedVehicleId: string | null;
   status: string;
+}
+
+interface Vehicle {
+  id: string;
+  plateNumber: string;
 }
 
 const emptyForm = { fullName: '', phone: '', licenseNumber: '' };
 
 export default function DriversPage() {
-  const session = getUserSession();
-  const orgId = session?.orgId;
-
   const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,35 +31,32 @@ export default function DriversPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const fetchDrivers = useCallback(async () => {
+  // Per-driver "assign vehicle" dropdown save state.
+  const [assigningDriverId, setAssigningDriverId] = useState<string | null>(null);
+
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      let data: { drivers?: Driver[]; staff?: Driver[] };
-      try {
-        data = await apiClient<{ drivers: Driver[] }>('/v1/drivers');
-        setDrivers(data.drivers ?? []);
-      } catch {
-        if (!orgId) throw new Error('Organization not configured');
-        data = await apiClient<{ staff: Driver[] }>(
-          `/v1/organizations/${orgId}/staff?role=driver`,
-        );
-        setDrivers(data.staff ?? []);
-      }
+      const [driversData, vehiclesData] = await Promise.all([
+        apiClient<{ drivers: Driver[] }>('/v1/drivers'),
+        apiClient<{ vehicles: Vehicle[] }>('/v1/vehicles'),
+      ]);
+      setDrivers(driversData.drivers ?? []);
+      setVehicles(vehiclesData.vehicles ?? []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load drivers');
     } finally {
       setLoading(false);
     }
-  }, [orgId]);
+  }, []);
 
   useEffect(() => {
-    fetchDrivers();
-  }, [fetchDrivers]);
+    fetchAll();
+  }, [fetchAll]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    if (!orgId) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -66,16 +66,31 @@ export default function DriversPage() {
           fullName: form.fullName.trim(),
           phone: form.phone.trim(),
           licenseNumber: form.licenseNumber.trim(),
-          organizationId: orgId,
         }),
       });
       setForm(emptyForm);
       setShowModal(false);
-      await fetchDrivers();
+      await fetchAll();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to add driver');
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Screen 36: "Link to Vehicle -- Assign driver to a vehicle from dropdown." */
+  async function handleAssignVehicle(driverId: string, vehicleId: string) {
+    setAssigningDriverId(driverId);
+    try {
+      const updated = await apiClient<Driver>(`/v1/drivers/${driverId}/vehicle`, {
+        method: 'PATCH',
+        body: JSON.stringify({ vehicleId: vehicleId || null }),
+      });
+      setDrivers((prev) => prev.map((d) => (d.id === driverId ? updated : d)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to assign vehicle');
+    } finally {
+      setAssigningDriverId(null);
     }
   }
 
@@ -110,7 +125,7 @@ export default function DriversPage() {
           <table className="w-full">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
-                {['Name', 'Phone', 'License Number', 'Status'].map((h) => (
+                {['Name', 'Phone', 'License Number', 'Assigned Vehicle', 'Status'].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">
                     {h}
                   </th>
@@ -120,7 +135,7 @@ export default function DriversPage() {
             <tbody className="divide-y divide-slate-100">
               {drivers.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-12 text-center">
+                  <td colSpan={5} className="px-4 py-12 text-center">
                     <Users className="mx-auto mb-3 h-10 w-10 text-slate-300" />
                     <p className="text-sm text-slate-400">No drivers yet. Add your first driver above.</p>
                   </td>
@@ -132,6 +147,21 @@ export default function DriversPage() {
                     <td className="px-4 py-3 text-sm text-slate-500">{d.phone ?? '—'}</td>
                     <td className="px-4 py-3 text-sm font-mono text-slate-500">
                       {d.licenseNumber ?? '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <select
+                        value={d.assignedVehicleId ?? ''}
+                        onChange={(e) => handleAssignVehicle(d.id, e.target.value)}
+                        disabled={assigningDriverId === d.id}
+                        className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm text-slate-600 disabled:opacity-50"
+                      >
+                        <option value="">— Unassigned —</option>
+                        {vehicles.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.plateNumber}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className="px-4 py-3">
                       <DriverStatusBadge status={d.status} />

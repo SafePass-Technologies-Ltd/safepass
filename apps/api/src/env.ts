@@ -198,6 +198,13 @@ const envSchema = z.object({
   // corporate dashboard (single-token display + its own CSV export).
   // Token is appended as `${APP_DEEP_LINK_BASE_URL}/${token}`.
   APP_DEEP_LINK_BASE_URL: z.string().url().default('https://api.safepass-tech.com/join'),
+  // T-05 (Vehicle QR Generation) + architecture.md's Vehicle Verification
+  // Service: base URL embedded in each vehicle's QR code, per schema.md's
+  // Vehicle.qr_verification_token doc comment ("e.g., /verify/v/abc123xy").
+  // Token appended as `${VEHICLE_VERIFY_BASE_URL}/${token}` -- see
+  // vehicle.routes.ts's QR generation endpoint and verify.routes.ts's
+  // public lookup page.
+  VEHICLE_VERIFY_BASE_URL: z.string().url().default('https://api.safepass-tech.com/verify/v'),
   // Real Universal Links (iOS) / App Links (Android) verification for the
   // deep link above -- served at /.well-known/apple-app-site-association
   // and /.well-known/assetlinks.json (see well-known.routes.ts). Both

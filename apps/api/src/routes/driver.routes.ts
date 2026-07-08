@@ -10,7 +10,7 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware, requireRole } from '../middleware/auth';
-import { getDriversByOrg, createDriver } from '../services/driver.service';
+import { getDriversByOrg, createDriver, assignDriverVehicle } from '../services/driver.service';
 
 // ────────────────────────────────────────────────────────────
 // Validation schemas
@@ -70,5 +70,31 @@ driverRoutes.post('/', zValidator('json', DriverCreateSchema), async (c) => {
 
   return c.json(driver, 201);
 });
+
+const DriverAssignVehicleSchema = z.object({
+  vehicleId: z.string().uuid().nullable(),
+});
+
+/**
+ * PATCH /v1/drivers/:id/vehicle
+ * Assign or unassign (vehicleId: null) this driver's vehicle (Screen 36:
+ * "Link to Vehicle").
+ */
+driverRoutes.patch(
+  '/:id/vehicle',
+  zValidator('json', DriverAssignVehicleSchema),
+  async (c) => {
+    const user = c.get('user');
+    const orgId = user.orgId as string | undefined;
+    if (!orgId) {
+      return c.json({ error: { code: 403, message: 'No organization associated with this account' } }, 403);
+    }
+
+    const driverId = c.req.param('id');
+    const { vehicleId } = c.req.valid('json');
+    const driver = await assignDriverVehicle(driverId, orgId, vehicleId);
+    return c.json(driver);
+  }
+);
 
 export { driverRoutes };

@@ -6,7 +6,7 @@
  */
 import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../db';
-import { drivers } from '../db/schema';
+import { drivers, transportVehicles } from '../db/schema';
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -64,5 +64,41 @@ export async function createDriver(input: DriverCreateInput) {
       isVerified: false,
     })
     .returning();
+  return toDriverResponse(row);
+}
+
+/**
+ * Assign (or unassign, with vehicleId: null) a driver to a vehicle --
+ * Screen 36's "Link to Vehicle: Assign driver to a vehicle from dropdown."
+ * Both the driver and the vehicle (if provided) must belong to the same
+ * organization as the caller, preventing cross-tenant assignment.
+ */
+export async function assignDriverVehicle(
+  driverId: string,
+  organizationId: string,
+  vehicleId: string | null
+) {
+  const driver = await db.query.drivers.findFirst({
+    where: and(eq(drivers.id, driverId), eq(drivers.organizationId, organizationId)),
+  });
+  if (!driver) {
+    throw Object.assign(new Error('Driver not found'), { statusCode: 404 });
+  }
+
+  if (vehicleId) {
+    const vehicle = await db.query.transportVehicles.findFirst({
+      where: and(eq(transportVehicles.id, vehicleId), eq(transportVehicles.organizationId, organizationId)),
+    });
+    if (!vehicle) {
+      throw Object.assign(new Error('Vehicle not found'), { statusCode: 404 });
+    }
+  }
+
+  const [row] = await db
+    .update(drivers)
+    .set({ assignedVehicleId: vehicleId })
+    .where(and(eq(drivers.id, driverId), eq(drivers.organizationId, organizationId)))
+    .returning();
+
   return toDriverResponse(row);
 }

@@ -13,6 +13,8 @@ interface Vehicle {
   capacity: number | null;
   year: number | null;
   status: string;
+  isVerified: boolean;
+  qrCodeUrl: string | null;
 }
 
 const emptyForm = {
@@ -137,7 +139,7 @@ export default function VehiclesPage() {
           <table className="w-full">
             <thead className="border-b border-slate-200 bg-slate-50">
               <tr>
-                {['Plate Number', 'Make', 'Model', 'Type', 'Status', 'Capacity', ''].map((h) => (
+                {['Plate Number', 'Make', 'Model', 'Type', 'Status', 'Capacity', 'Verification', 'QR', ''].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">
                     {h}
                   </th>
@@ -147,7 +149,7 @@ export default function VehiclesPage() {
             <tbody className="divide-y divide-slate-100">
               {vehicles.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center">
+                  <td colSpan={9} className="px-4 py-12 text-center">
                     <Car className="mx-auto mb-3 h-10 w-10 text-slate-300" />
                     <p className="text-sm text-slate-400">No vehicles yet. Add your first vehicle above.</p>
                   </td>
@@ -163,6 +165,24 @@ export default function VehiclesPage() {
                       <VehicleStatusBadge status={v.status} />
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-500">{v.capacity ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          v.isVerified ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {v.isVerified ? 'Verified' : 'Unverified'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          v.qrCodeUrl ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {v.qrCodeUrl ? 'Generated' : 'Not generated'}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => openEdit(v)}
