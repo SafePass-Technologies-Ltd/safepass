@@ -23,6 +23,7 @@ import { driverRoutes } from './routes/driver.routes';
 import { documentRoutes } from './routes/document.routes';
 import { scheduledTripRoutes } from './routes/scheduled-trip.routes';
 import { orgSubscriptionRoutes, adminSubscriptionRoutes } from './routes/subscription.routes';
+import { joinRoutes } from './routes/join.routes';
 import { env } from './env';
 
 const app = new Hono();
@@ -90,6 +91,12 @@ app.get('/health', (c) => {
     environment: env.NODE_ENV,
   });
 });
+
+// Org invite deep-link landing page (C-02) -- mounted at the site root
+// (not under /v1) so it matches APP_DEEP_LINK_BASE_URL exactly:
+// https://api.safepass-tech.com/join/<token>. Public, unauthenticated --
+// see join.routes.ts's header comment.
+app.route('/join', joinRoutes);
 
 // ──────────────────────────────────────────────────────────
 // API Routes (v1)
