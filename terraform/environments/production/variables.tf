@@ -77,6 +77,12 @@ variable "transport_dashboard_url" {
   type        = string
 }
 
+variable "app_deep_link_base_url" {
+  description = "Base URL for org invite deep links (C-02) -- apps/api appends /<token>. Defaulted here (unlike the *_dashboard_url vars) since apps/api/src/env.ts's own default already matches this stack's real domain; override only if it ever needs to differ from the deployed root domain."
+  type        = string
+  default     = "https://safepass-tech.com/join"
+}
+
 variable "upstash_email" {
   description = "Email address of the Upstash account provisioning module.upstash's Redis database -- NOT a secret itself, but grouped with upstash_api_key below since both configure the same provider block. Supplied via TF_VAR_upstash_email in CI."
   type        = string

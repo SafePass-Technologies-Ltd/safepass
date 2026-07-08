@@ -227,6 +227,11 @@ module "ecs" {
     # embedded in links/emails the way ADMIN_DASHBOARD_URL is.
     CORPORATE_DASHBOARD_URL = var.corporate_dashboard_url
     TRANSPORT_DASHBOARD_URL = var.transport_dashboard_url
+    # Base URL for org invite deep links (C-02) -- apps/api/src/env.ts
+    # already defaults to the correct production value
+    # (https://safepass-tech.com/join), so this is just made explicit/
+    # overridable in infra rather than left implicit.
+    APP_DEEP_LINK_BASE_URL = var.app_deep_link_base_url
   }
 }
 
