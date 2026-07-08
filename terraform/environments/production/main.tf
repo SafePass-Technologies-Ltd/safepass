@@ -215,6 +215,12 @@ module "ecs" {
     # dynamo.service.ts reads this instead of hardcoding a table name, so it
     # always targets whatever this module actually provisions.
     DYNAMODB_TABLE_NAME = module.dynamodb.table_name
+    # Object-Lock (WORM) evidence bucket for emergency audio/video
+    # recordings -- apps/api/src/services/s3.service.ts reads this instead
+    # of hardcoding a bucket name. Without it, emergency.routes.ts falls
+    # back to ephemeral container-local disk storage, which is why this is
+    # wired through rather than left unset in production.
+    EVIDENCE_BUCKET_NAME = module.s3_evidence.bucket_name
     # Plain (non-secret) URL -- unlike the above, this isn't a credential,
     # so it's just a Terraform var rather than a Secrets Manager entry (see
     # variables.tf's admin_dashboard_url). Without this, the app's zod

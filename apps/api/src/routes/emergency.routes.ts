@@ -16,11 +16,15 @@ import { authMiddleware } from '../middleware/auth';
 import { db } from '../db';
 import { emergencyEvents, trips } from '../db/schema';
 import { broadcastEmergencyAlert, broadcastTripStatus } from '../services/websocket.service';
+import { isS3EvidenceConfigured, uploadEvidenceFile } from '../services/s3.service';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// Local disk storage for emergency audio recordings. Matches the same
-// placeholder pattern used by document uploads (see document.routes.ts) —
-// a TODO marks where an S3/GCS backend should replace this once available.
+// Local disk fallback for emergency audio recordings, used only when the
+// Object-Lock evidence bucket isn't configured (i.e. local development
+// without AWS credentials -- see EVIDENCE_BUCKET_NAME in env.ts). In
+// production this is never used: uploads go straight to S3 via
+// s3.service.ts's uploadEvidenceFile, matching architecture.md's "Evidence
+// Chain of Custody" (hashed on-device, Object Lock WORM, SSE-KMS at rest).
 const AUDIO_UPLOAD_DIR = resolve(__dirname, '../../uploads/emergency-audio');
 
 const EmergencyTriggerSchema = z.object({
@@ -118,9 +122,14 @@ emergencyTriggerRoutes.post(
  * POST /v1/emergency/:id/audio  (multipart/form-data)
  *
  * Uploads a silent background audio recording captured during an active
- * emergency session (panic button press to check-in). The file is stored
- * on local disk and its URL is appended to the emergency event's
- * `audioRecordingUrls` array.
+ * emergency session (panic button press to check-in). In production the
+ * file goes straight to the Object-Lock (WORM) evidence bucket via
+ * s3.service.ts, and the S3 object KEY (not a public URL — the bucket
+ * blocks public access) is appended to the emergency event's
+ * `audioRecordingUrls` array; monitoring officers retrieve a short-lived
+ * signed playback URL via GET /v1/admin/emergencies/:id/audio/url. In local
+ * development (no EVIDENCE_BUCKET_NAME configured), this falls back to
+ * local disk storage so `pnpm dev` works without any AWS setup.
  *
  * Expected fields:
  *   file  File  required  (m4a/aac audio)
@@ -154,19 +163,28 @@ emergencyTriggerRoutes.post('/:id/audio', async (c) => {
     return c.json({ error: { code: 400, message: 'file is required' } }, 400);
   }
 
-  // TODO: pipe `file` to a storage backend (S3/GCS) instead of local disk
-  // once available, matching the same deferred approach as document uploads.
-  await mkdir(AUDIO_UPLOAD_DIR, { recursive: true });
-  const safeFileName = `${id}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-  const filePath = resolve(AUDIO_UPLOAD_DIR, safeFileName);
-  await writeFile(filePath, Buffer.from(await file.arrayBuffer()));
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-  const fileUrl = `/uploads/emergency-audio/${safeFileName}`;
+  let storedRef: string;
+  if (isS3EvidenceConfigured()) {
+    storedRef = await uploadEvidenceFile(
+      id,
+      file.name,
+      fileBuffer,
+      file.type || 'audio/m4a'
+    );
+  } else {
+    await mkdir(AUDIO_UPLOAD_DIR, { recursive: true });
+    const safeFileName = `${id}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const filePath = resolve(AUDIO_UPLOAD_DIR, safeFileName);
+    await writeFile(filePath, fileBuffer);
+    storedRef = `/uploads/emergency-audio/${safeFileName}`;
+  }
 
   const [updated] = await db
     .update(emergencyEvents)
     .set({
-      audioRecordingUrls: sql`${emergencyEvents.audioRecordingUrls} || ${JSON.stringify([fileUrl])}::jsonb`,
+      audioRecordingUrls: sql`${emergencyEvents.audioRecordingUrls} || ${JSON.stringify([storedRef])}::jsonb`,
     })
     .where(eq(emergencyEvents.id, id))
     .returning();

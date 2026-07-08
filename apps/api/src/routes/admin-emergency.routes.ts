@@ -22,6 +22,7 @@ import {
 import { sendMessage } from '../services/message.service';
 import { sendPushToUser } from '../services/push.service';
 import { broadcastTripStatus } from '../services/websocket.service';
+import { isS3EvidenceConfigured, getEvidencePlaybackUrl } from '../services/s3.service';
 
 // ────────────────────────────────────────────────────────────
 // Emergency Events
@@ -73,6 +74,50 @@ emergencyRoutes.get('/:id', async (c) => {
   }
 
   return c.json(event);
+});
+
+/**
+ * GET /v1/admin/emergencies/:id/audio/url?key=<recording key>
+ *
+ * Generates a short-lived (10 minute) presigned S3 GET URL so an authorized
+ * monitoring officer can play back a private evidence recording. `key` must
+ * be one of the event's own `audioRecordingUrls` entries — this endpoint
+ * deliberately does not accept an arbitrary S3 key, so a caller can't use
+ * it to sign URLs for other emergency events' evidence.
+ *
+ * Falls back to a 404 in local development (no S3 bucket configured) —
+ * local-disk recordings are already served directly as static file URLs
+ * under /uploads/emergency-audio/, so no signed URL is needed there.
+ */
+emergencyRoutes.get('/:id/audio/url', async (c) => {
+  const id = c.req.param('id');
+  const key = c.req.query('key');
+
+  if (!key) {
+    return c.json({ error: { code: 400, message: 'key query parameter is required' } }, 400);
+  }
+
+  if (!isS3EvidenceConfigured()) {
+    return c.json(
+      { error: { code: 404, message: 'S3 evidence storage is not configured in this environment' } },
+      404
+    );
+  }
+
+  const event = await db.query.emergencyEvents.findFirst({
+    where: eq(emergencyEvents.id, id),
+  });
+
+  if (!event) {
+    return c.json({ error: { code: 404, message: 'Emergency event not found' } }, 404);
+  }
+
+  if (!event.audioRecordingUrls?.includes(key)) {
+    return c.json({ error: { code: 404, message: 'Recording not found on this emergency event' } }, 404);
+  }
+
+  const url = await getEvidencePlaybackUrl(key);
+  return c.json({ url, expiresInSeconds: 600 });
 });
 
 /**

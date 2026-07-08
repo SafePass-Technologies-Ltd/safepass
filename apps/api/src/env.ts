@@ -242,6 +242,13 @@ const envSchema = z.object({
   // (terraform/environments/production/main.tf); the default here matches
   // docker-compose's DynamoDB Local setup for local development.
   DYNAMODB_TABLE_NAME: z.string().default('safepass-development-realtime-state'),
+  // S3 evidence bucket (Object Lock / WORM) for emergency audio/video
+  // recordings -- see terraform/modules/s3/main.tf and
+  // apps/api/src/services/s3.service.ts. Optional: unset in local
+  // development, where emergency.routes.ts falls back to local disk
+  // storage instead. Terraform passes this in production (see
+  // terraform/environments/production/main.tf's `EVIDENCE_BUCKET_NAME`).
+  EVIDENCE_BUCKET_NAME: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);
