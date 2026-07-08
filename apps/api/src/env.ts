@@ -198,6 +198,26 @@ const envSchema = z.object({
   // corporate dashboard (single-token display + its own CSV export).
   // Token is appended as `${APP_DEEP_LINK_BASE_URL}/${token}`.
   APP_DEEP_LINK_BASE_URL: z.string().url().default('https://api.safepass-tech.com/join'),
+  // Real Universal Links (iOS) / App Links (Android) verification for the
+  // deep link above -- served at /.well-known/apple-app-site-association
+  // and /.well-known/assetlinks.json (see well-known.routes.ts). Both
+  // optional/unset by default: without a real value, those files still
+  // serve valid JSON with an empty association, so iOS/Android just fail
+  // verification silently and fall back to the join.routes.ts browser
+  // landing page -- same as before either existed, never a hard failure.
+  //
+  // Apple Developer Team ID (Apple Developer portal > Membership, or
+  // Xcode > Signing & Capabilities). Combined with the iOS bundle ID
+  // (com.safepass-tech.safepassMobile, hardcoded in well-known.routes.ts
+  // since it's not a secret) to form the AASA "appID".
+  APPLE_TEAM_ID: z.string().optional(),
+  // Comma-separated SHA-256 signing certificate fingerprints (colon-
+  // separated hex, e.g. "AA:BB:...") for the Android app's signing
+  // key(s) -- get the release one from Play Console > Setup > App
+  // signing (or `keytool -list -v -keystore your-release.keystore` if
+  // not using Play App Signing). Multiple allowed (e.g. debug + release)
+  // so App Links can be tested on a locally-built debug APK too.
+  ANDROID_SHA256_FINGERPRINTS: z.string().optional(),
   ENABLE_PANIC_RECORDING: z.coerce.boolean().default(true),
   // Resend -- transactional email (role upgrade approval/rejection notices).
   RESEND_API_KEY: z.string().optional(),

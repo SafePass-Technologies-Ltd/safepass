@@ -24,6 +24,22 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<!-- Custom-scheme fallback (safepass://join/<token>) for org invite deep
+	     links -- works immediately with no domain-ownership verification,
+	     unlike the Associated Domains / Universal Links entitlement in
+	     Runner.entitlements (which needs a real Apple Team ID before it
+	     actually verifies). See join.routes.ts's client-side redirect. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.safepass-tech.safepassMobile.join</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>safepass</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>

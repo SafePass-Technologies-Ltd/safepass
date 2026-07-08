@@ -10,6 +10,9 @@
 ///   3. If authenticated, checks for a persisted active trip and re-attaches
 ///      to the background GPS service without starting a duplicate instance.
 
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -130,12 +133,21 @@ class _AppBodyState extends State<_AppBody> {
   late final ProfileCubit _profileCubit;
   late final TripMonitoringCubit _tripMonitoringCubit;
 
+  // Created once (not inline in build()) so the deep-link handler below can
+  // call .push()/.go() on a stable instance -- it fires from an app_links
+  // stream callback that has no BuildContext of its own to route through.
+  late final GoRouter _router;
+
+  final _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSubscription;
+
   @override
   void initState() {
     super.initState();
     _authCubit = context.read<AuthCubit>();
     _profileCubit = context.read<ProfileCubit>();
     _tripMonitoringCubit = context.read<TripMonitoringCubit>();
+    _router = createRouter(_authCubit, _profileCubit, _tripMonitoringCubit);
 
     // Wire the push-notification deep-link callback so AuthCubit can navigate
     // to the correct trip's message thread when a notification is tapped.
@@ -157,6 +169,61 @@ class _AppBodyState extends State<_AppBody> {
     // Init after Activity is ready — flutter_local_notifications needs an
     // active Activity context to register receivers before showing notifications.
     NotificationService.instance.init();
+
+    _initDeepLinks();
+  }
+
+  /// Org invite deep links (C-02) -- handles both a real Universal Link /
+  /// App Link (https://api.safepass-tech.com/join/<token>, once
+  /// APPLE_TEAM_ID / ANDROID_SHA256_FINGERPRINTS are configured on the API
+  /// so iOS/Android actually verify domain ownership) and the
+  /// safepass://join/<token> custom-scheme fallback, which works today
+  /// with no verification step. See join.routes.ts's web landing page for
+  /// the non-app-installed case, and router.dart's joinOrg route for where
+  /// this navigates to.
+  Future<void> _initDeepLinks() async {
+    // Cold start: app was launched directly by tapping the link.
+    try {
+      final initialUri = await _appLinks.getInitialLink();
+      if (initialUri != null) _handleIncomingLink(initialUri);
+    } catch (_) {
+      // Non-fatal -- app still launches normally, just without the deep link.
+    }
+
+    // Warm: app already running in the background/foreground when the
+    // link is tapped.
+    _linkSubscription = _appLinks.uriLinkStream.listen(
+      _handleIncomingLink,
+      onError: (_) {},
+    );
+  }
+
+  void _handleIncomingLink(Uri uri) {
+    final segments = uri.pathSegments;
+    String? token;
+
+    if (uri.host == 'join') {
+      // safepass://join/<token> -- "join" is the URI *host* for a custom
+      // scheme, not a path segment, so the token is simply the first path
+      // segment (e.g. safepass://join/ABC123 -> pathSegments == ['ABC123']).
+      if (segments.isNotEmpty) token = segments.first;
+    } else {
+      // https://api.safepass-tech.com/join/<token> -- "join" is a path
+      // segment here; the token is whatever follows it.
+      final joinIndex = segments.indexOf('join');
+      if (joinIndex != -1 && joinIndex + 1 < segments.length) {
+        token = segments[joinIndex + 1];
+      }
+    }
+
+    if (token == null || token.isEmpty) return;
+    _router.push('${AppRoutes.joinOrg}?token=$token');
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -174,11 +241,7 @@ class _AppBodyState extends State<_AppBody> {
         title: 'SafePass',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
-        routerConfig: createRouter(
-          _authCubit,
-          _profileCubit,
-          _tripMonitoringCubit,
-        ),
+        routerConfig: _router,
       ),
     );
   }

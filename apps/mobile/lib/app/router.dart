@@ -313,9 +313,13 @@ GoRouter createRouter(
           GoRoute(
             path: AppRoutes.joinOrg,
             name: 'joinOrg',
+            // ?token=... is populated when this route is reached via an org
+            // invite deep link (see main.dart's _handleIncomingLink) --
+            // pre-fills and auto-submits the token instead of requiring
+            // manual entry.
             builder: (context, state) => BlocProvider<JoinOrgCubit>(
               create: (_) => JoinOrgCubit(),
-              child: const JoinOrgScreen(),
+              child: JoinOrgScreen(initialToken: state.uri.queryParameters['token']),
             ),
           ),
         ],

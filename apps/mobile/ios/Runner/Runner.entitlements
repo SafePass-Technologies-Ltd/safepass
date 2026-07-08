@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Universal Links: https://api.safepass-tech.com/join/<token> (org
+	     invite deep links, see apps/api/src/routes/join.routes.ts). iOS
+	     verifies this by fetching
+	     https://api.safepass-tech.com/.well-known/apple-app-site-association
+	     -- the AASA file's "appID" must be "<TEAM_ID>.com.safepass-tech.safepassMobile".
+	     TEAM_ID (a real Apple Developer Team ID) isn't known yet -- see
+	     apps/api's APPLE_TEAM_ID env var. Until that's set to the real
+	     value, iOS's verification fails silently and tapping the link just
+	     opens Safari to the join.routes.ts landing page instead -- never a
+	     hard failure, same as before this existed. -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:api.safepass-tech.com</string>
+	</array>
+</dict>
+</plist>

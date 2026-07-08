@@ -9,7 +9,13 @@ import '../../../app/router.dart';
 import '../cubit/join_org_cubit.dart';
 
 class JoinOrgScreen extends StatefulWidget {
-  const JoinOrgScreen({super.key});
+  /// Pre-fills and auto-submits the token when this screen is reached via
+  /// an org invite deep link (https://api.safepass-tech.com/join/<token> or
+  /// safepass://join/<token> -- see main.dart's _handleIncomingLink and
+  /// router.dart's joinOrg route). Null for the normal manual-entry flow.
+  final String? initialToken;
+
+  const JoinOrgScreen({super.key, this.initialToken});
 
   @override
   State<JoinOrgScreen> createState() => _JoinOrgScreenState();
@@ -18,6 +24,21 @@ class JoinOrgScreen extends StatefulWidget {
 class _JoinOrgScreenState extends State<JoinOrgScreen> {
   final _tokenController = TextEditingController();
   String? _pendingToken;
+
+  @override
+  void initState() {
+    super.initState();
+    final token = widget.initialToken?.trim();
+    if (token != null && token.isNotEmpty) {
+      _tokenController.text = token;
+      _pendingToken = token;
+      // Deferred to post-frame: context.read<JoinOrgCubit>() needs the
+      // BlocProvider above this widget to have finished building first.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.read<JoinOrgCubit>().resolveToken(token);
+      });
+    }
+  }
 
   @override
   void dispose() {

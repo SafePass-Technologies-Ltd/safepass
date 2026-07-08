@@ -232,6 +232,15 @@ module "ecs" {
     # (https://api.safepass-tech.com/join), so this is just made explicit/
     # overridable in infra rather than left implicit.
     APP_DEEP_LINK_BASE_URL = var.app_deep_link_base_url
+    # Universal Links (iOS) / App Links (Android) domain-ownership
+    # verification for the deep link above -- served at
+    # /.well-known/apple-app-site-association and
+    # /.well-known/assetlinks.json (apps/api/src/routes/well-known.routes.ts).
+    # Both blank by default: the files still serve valid-but-empty JSON in
+    # that case, so this is safe to leave unset until real values exist --
+    # see variables.tf's descriptions for where to get them.
+    APPLE_TEAM_ID               = var.apple_team_id
+    ANDROID_SHA256_FINGERPRINTS = var.android_sha256_fingerprints
   }
 }
 

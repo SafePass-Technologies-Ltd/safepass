@@ -24,6 +24,7 @@ import { documentRoutes } from './routes/document.routes';
 import { scheduledTripRoutes } from './routes/scheduled-trip.routes';
 import { orgSubscriptionRoutes, adminSubscriptionRoutes } from './routes/subscription.routes';
 import { joinRoutes } from './routes/join.routes';
+import { wellKnownRoutes } from './routes/well-known.routes';
 import { env } from './env';
 
 const app = new Hono();
@@ -97,6 +98,10 @@ app.get('/health', (c) => {
 // https://api.safepass-tech.com/join/<token>. Public, unauthenticated --
 // see join.routes.ts's header comment.
 app.route('/join', joinRoutes);
+
+// Universal Links (iOS) / App Links (Android) verification files for the
+// deep link above -- see well-known.routes.ts.
+app.route('/.well-known', wellKnownRoutes);
 
 // ──────────────────────────────────────────────────────────
 // API Routes (v1)

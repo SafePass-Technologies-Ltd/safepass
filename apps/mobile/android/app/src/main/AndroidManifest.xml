@@ -34,6 +34,34 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- App Links: https://api.safepass-tech.com/join/<token> (org invite
+                 deep links, see apps/api/src/routes/join.routes.ts). autoVerify
+                 makes Android confirm ownership via the assetlinks.json this API
+                 serves at /.well-known/assetlinks.json before treating this as a
+                 verified App Link (opens directly in-app, no chooser dialog) --
+                 until ANDROID_SHA256_FINGERPRINTS is set to a real signing cert
+                 fingerprint there, verification fails and Android falls back to
+                 showing the browser (the join.routes.ts landing page) instead,
+                 same as before this existed -- never a hard failure either way. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data
+                    android:scheme="https"
+                    android:host="api.safepass-tech.com"
+                    android:pathPrefix="/join"/>
+            </intent-filter>
+            <!-- Custom-scheme fallback (safepass://join/<token>) -- works
+                 immediately on any install with no domain verification step,
+                 unlike the App Link above. Used as the client-side redirect
+                 attempt in join.routes.ts's landing page. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="safepass" android:host="join"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

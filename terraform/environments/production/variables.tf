@@ -83,6 +83,18 @@ variable "app_deep_link_base_url" {
   default     = "https://api.safepass-tech.com/join"
 }
 
+variable "apple_team_id" {
+  description = "Apple Developer Team ID (Apple Developer portal > Membership, or Xcode > Signing & Capabilities) -- combined with the iOS bundle ID to form the Universal Links AASA appID (see apps/api/src/routes/well-known.routes.ts). Blank by default -- until set, /.well-known/apple-app-site-association serves a structurally valid but empty association, so Universal Links just don't verify yet (falls back to the join.routes.ts browser landing page) rather than erroring."
+  type        = string
+  default     = ""
+}
+
+variable "android_sha256_fingerprints" {
+  description = "Comma-separated SHA-256 signing certificate fingerprints for the Android app (Play Console > Setup > App signing, or `keytool -list -v -keystore your-release.keystore` if not using Play App Signing) -- populates /.well-known/assetlinks.json for App Links verification. Blank by default -- same safe-fallback behavior as apple_team_id above."
+  type        = string
+  default     = ""
+}
+
 variable "upstash_email" {
   description = "Email address of the Upstash account provisioning module.upstash's Redis database -- NOT a secret itself, but grouped with upstash_api_key below since both configure the same provider block. Supplied via TF_VAR_upstash_email in CI."
   type        = string
