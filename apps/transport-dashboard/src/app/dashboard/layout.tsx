@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Map, Car, Users, Wallet, FileText, QrCode, LogOut, Menu, X, Bell, CreditCard } from 'lucide-react';
+import { Map, MapPin, Car, Users, Wallet, FileText, QrCode, LogOut, Menu, X, Bell, CreditCard } from 'lucide-react';
 import { getUserSession } from '@/lib/auth-utils';
 import { apiClient } from '@/lib/api-client';
 
@@ -20,6 +20,7 @@ const navigation = [
   { name: 'Vehicles', href: '/dashboard/vehicles', icon: Car },
   { name: 'Drivers', href: '/dashboard/drivers', icon: Users },
   { name: 'Trips', href: '/dashboard/trips', icon: Map },
+  { name: 'Trip Map', href: '/dashboard/map', icon: MapPin },
   { name: 'Documents', href: '/dashboard/documents', icon: FileText },
   { name: 'QR Codes', href: '/dashboard/qr', icon: QrCode },
   { name: 'Wallet', href: '/dashboard/wallet', icon: Wallet },
