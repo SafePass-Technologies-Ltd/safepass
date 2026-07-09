@@ -15,6 +15,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../core/api/api_client.dart';
+import '../../../core/services/location_helper.dart';
 
 // ────────────────────────────────────────────────────────────
 // Models
@@ -281,13 +282,11 @@ class TripRegistrationCubit extends Cubit<TripRegistrationState> {
         return;
       }
 
-      // Get position with an 8-second timeout
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 8),
-        ),
-      );
+      // Get position quickly -- prefers a fresh fix but falls back to the
+      // last known cached position if one isn't ready within 15s, instead
+      // of either hanging indefinitely or throwing "GPS timed out" after
+      // only 8s (too short for a cold GPS fix, especially indoors).
+      final position = await getQuickPosition();
 
       // Reverse-geocode via our API
       try {

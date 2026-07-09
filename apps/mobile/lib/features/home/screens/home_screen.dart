@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme.dart';
 import '../../../app/router.dart';
 import '../../../core/constants.dart';
+import '../../../core/services/location_helper.dart';
 import '../../trips/cubit/trip_monitoring_cubit.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -53,6 +54,17 @@ class _HomeScreenState extends State<HomeScreen> {
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
       return;
+    }
+
+    // Snap to the last known cached position immediately (near-instant) so
+    // the map doesn't sit on the default Nigeria-wide view for however long
+    // the position stream's first fresh fix takes to arrive -- that first
+    // fix alone can take 30s+ on a cold GPS lock, especially indoors.
+    final lastKnown = await Geolocator.getLastKnownPosition();
+    if (lastKnown != null && _followUser && _mapController != null) {
+      unawaited(
+        _animateCamera(LatLng(lastKnown.latitude, lastKnown.longitude)),
+      );
     }
 
     unawaited(_positionSubscription?.cancel());
@@ -273,7 +285,7 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       if (permission == LocationPermission.deniedForever) return;
 
-      final position = await Geolocator.getCurrentPosition();
+      final position = await getQuickPosition();
       await _animateCamera(LatLng(position.latitude, position.longitude));
 
       // Resume auto-following the user's live location from here on.

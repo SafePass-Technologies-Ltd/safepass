@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../app/theme.dart';
+import '../../../core/services/location_helper.dart';
 import '../cubit/incident_cubit.dart';
 
 /// Arguments passed via [GoRouter] `extra` when navigating to this screen
@@ -80,7 +81,7 @@ class _IncidentReportViewState extends State<_IncidentReportView> {
       }
       if (permission == LocationPermission.deniedForever) return;
 
-      final position = await Geolocator.getCurrentPosition();
+      final position = await getQuickPosition();
       cubit.setLocation(position.latitude, position.longitude);
     } catch (e) {
       if (mounted) {
