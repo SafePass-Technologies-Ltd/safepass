@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { RotateCcw, MapPin, Plus, X } from 'lucide-react';
+import { RotateCcw, MapPin, Plus, X, Upload } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import MarkerLocationPicker from '@/components/map/marker-location-picker';
+import BulkImportMarkersModal from '@/components/BulkImportMarkersModal';
 
 // Matches the ACTUAL shape returned by GET /v1/admin/markers (raw Drizzle
 // rows off the map_markers table -- see apps/api/src/services/
@@ -77,6 +78,11 @@ export default function MarkersPage() {
   const [form, setForm] = useState<NewMarkerForm>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // CSV bulk import (A-09) — cold-start pre-seeding and ongoing re-seeding
+  // without engineering involvement. See BulkImportMarkersModal for the
+  // full validating/errors/duplicates/success state machine.
+  const [showBulkImport, setShowBulkImport] = useState(false);
 
   const fetchMarkers = useCallback(async () => {
     setLoading(true);
@@ -177,6 +183,13 @@ export default function MarkersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowBulkImport(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            <Upload className="h-4 w-4" />
+            Import CSV
+          </button>
           <button
             onClick={() => setShowForm((v) => !v)}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary/90"
@@ -400,6 +413,13 @@ export default function MarkersPage() {
         <p className="text-xs text-slate-400">
           Showing {markers.length} marker{markers.length !== 1 ? 's' : ''}
         </p>
+      )}
+
+      {showBulkImport && (
+        <BulkImportMarkersModal
+          onClose={() => setShowBulkImport(false)}
+          onImported={fetchMarkers}
+        />
       )}
     </div>
   );

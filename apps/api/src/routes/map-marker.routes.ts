@@ -18,6 +18,11 @@ import {
   deactivateMarker,
   interactWithMarker,
   getMarkerInteractions,
+  buildMarkerImportCsvTemplate,
+  parseMarkersImportCsv,
+  findDuplicateCandidates,
+  bulkImportMarkers,
+  MARKER_IMPORT_MAX_ROWS,
 } from '../services/map-marker.service';
 
 // ────────────────────────────────────────────────────────────
@@ -146,6 +151,126 @@ adminMarkerRoutes.post(
     return c.json(marker, 201);
   }
 );
+
+/**
+ * GET /v1/admin/markers/csv-template
+ * Downloads the CSV template (headers + one worked example row) for bulk
+ * import (A-09 AC #1). Registered before the /:id routes below so "csv-
+ * template" is never captured as a marker ID.
+ */
+adminMarkerRoutes.get('/csv-template', (c) => {
+  const csv = buildMarkerImportCsvTemplate();
+  c.header('Content-Type', 'text/csv; charset=utf-8');
+  c.header('Content-Disposition', 'attachment; filename="safepass-marker-import-template.csv"');
+  return c.body(csv);
+});
+
+/**
+ * POST /v1/admin/markers/bulk-import  (multipart/form-data)
+ *
+ * A-09 CSV bulk import. Two-phase, stateless flow (no server-side session
+ * needed): the client re-submits the SAME file on the confirmation call.
+ *
+ * Fields:
+ *   file             File     required
+ *   confirmDuplicates 'true'|'false'  optional, default 'false'
+ *   skipRows          JSON array of row numbers to skip (only meaningful
+ *                      alongside confirmDuplicates=true)
+ *
+ * Responses:
+ *   400 { error, validationErrors } — one or more rows invalid; nothing
+ *       committed (AC #4: all-or-nothing).
+ *   400 { error } — row count exceeds MARKER_IMPORT_MAX_ROWS (AC #3).
+ *   200 { status: 'needs_duplicate_review', duplicates, totalRows } — valid
+ *       file, but likely duplicates found and confirmDuplicates wasn't set;
+ *       nothing committed yet (AC #5).
+ *   201 { status: 'imported', created, skipped, total } — committed.
+ */
+adminMarkerRoutes.post('/bulk-import', async (c) => {
+  const user = c.get('user');
+
+  let formData: FormData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return c.json({ error: { code: 400, message: 'Request must be multipart/form-data' } }, 400);
+  }
+
+  const file = formData.get('file') as File | null;
+  if (!file || !(file instanceof File)) {
+    return c.json({ error: { code: 400, message: 'file is required' } }, 400);
+  }
+
+  const confirmDuplicates = formData.get('confirmDuplicates') === 'true';
+  let skipRows = new Set<number>();
+  const skipRowsRaw = formData.get('skipRows');
+  if (typeof skipRowsRaw === 'string' && skipRowsRaw.trim() !== '') {
+    try {
+      const parsed = JSON.parse(skipRowsRaw) as unknown;
+      if (Array.isArray(parsed)) {
+        skipRows = new Set(parsed.filter((n): n is number => typeof n === 'number'));
+      }
+    } catch {
+      return c.json({ error: { code: 400, message: 'skipRows must be a JSON array of row numbers' } }, 400);
+    }
+  }
+
+  const csvText = await file.text();
+
+  let parsedRows;
+  let errors;
+  try {
+    ({ rows: parsedRows, errors } = parseMarkersImportCsv(csvText));
+  } catch {
+    return c.json(
+      { error: { code: 400, message: 'File could not be parsed as CSV. Check the file format and try again.' } },
+      400
+    );
+  }
+
+  // AC #3: row-count limit, checked against the raw row count (including
+  // invalid rows) so a file crafted to dodge the limit via bad rows still
+  // gets caught.
+  const totalRowCount = parsedRows.length + errors.length;
+  if (totalRowCount > MARKER_IMPORT_MAX_ROWS) {
+    return c.json(
+      {
+        error: {
+          code: 400,
+          message: `File has ${totalRowCount} rows, exceeding the ${MARKER_IMPORT_MAX_ROWS}-row limit per upload. Split the file and re-upload.`,
+        },
+      },
+      400
+    );
+  }
+
+  // AC #4: all-or-nothing -- any invalid row blocks the entire file.
+  if (errors.length > 0) {
+    return c.json(
+      { error: { code: 400, message: `${errors.length} row(s) failed validation.` }, validationErrors: errors },
+      400
+    );
+  }
+
+  if (parsedRows.length === 0) {
+    return c.json({ error: { code: 400, message: 'File contains no data rows.' } }, 400);
+  }
+
+  // AC #5: duplicate review, unless the admin already confirmed past it
+  // (second call with the same file).
+  if (!confirmDuplicates) {
+    const duplicates = await findDuplicateCandidates(parsedRows);
+    if (duplicates.length > 0) {
+      return c.json({ status: 'needs_duplicate_review', duplicates, totalRows: parsedRows.length });
+    }
+  }
+
+  const result = await bulkImportMarkers(parsedRows, skipRows, user.sub, file.name);
+  return c.json(
+    { status: 'imported', created: result.created, skipped: result.skipped, total: parsedRows.length },
+    201
+  );
+});
 
 /**
  * GET /v1/admin/markers/:id

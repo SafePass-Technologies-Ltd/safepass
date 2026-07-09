@@ -3,6 +3,13 @@ import { markerTypeEnum, verificationStatusEnum, severityEnum, markerSourceEnum,
 import { users } from './users';
 import { incidents } from './incidents';
 
+// =============================================================================
+// Map Marker Bulk Imports (A-09 CSV bulk import audit log)
+// =============================================================================
+// One row per CSV bulk-import operation (not per marker) -- per features.md's
+// A-09 acceptance criterion #7: "Every bulk import is logged (uploaded_by
+// admin, filename, row count, timestamp) for audit purposes."
+
 export const mapMarkers = pgTable(
   'map_markers',
   {
@@ -30,6 +37,24 @@ export const mapMarkers = pgTable(
     typeIdx: index('markers_type_idx').on(table.markerType),
     statusIdx: index('markers_status_idx').on(table.verificationStatus),
     activeGeoIdx: index('markers_active_geo_idx').on(table.isActive, table.latitude, table.longitude),
+  })
+);
+
+export const mapMarkerImports = pgTable(
+  'map_marker_imports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    uploadedBy: uuid('uploaded_by')
+      .notNull()
+      .references(() => users.id),
+    fileName: varchar('file_name', { length: 255 }).notNull(),
+    rowCount: integer('row_count').notNull(),
+    createdCount: integer('created_count').notNull(),
+    skippedDuplicateCount: integer('skipped_duplicate_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uploadedByIdx: index('marker_imports_uploaded_by_idx').on(table.uploadedBy),
   })
 );
 

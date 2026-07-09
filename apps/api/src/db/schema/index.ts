@@ -35,7 +35,7 @@ export { wallets, walletTransactions } from './wallets';
 // Communication and safety tables
 export { messages } from './messages';
 export { incidents } from './incidents';
-export { mapMarkers, mapMarkerInteractions } from './map-markers';
+export { mapMarkers, mapMarkerInteractions, mapMarkerImports } from './map-markers';
 
 // Emergency and operations tables
 export { emergencyEvents, escalations, checkIns } from './emergency';
