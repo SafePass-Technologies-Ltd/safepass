@@ -15,7 +15,7 @@ import { orgRoutes, adminOrgRoutes } from './routes/organization.routes';
 import { emergencyRoutes, escalationRoutes, checkinRoutes, adminMessageRoutes } from './routes/admin-emergency.routes';
 import { emergencyTriggerRoutes } from './routes/emergency.routes';
 import { adminUserRoutes } from './routes/admin-user.routes';
-import { roleUpgradeRoutes } from './routes/role-upgrade.routes';
+import { roleUpgradeRoutes, selfServiceRoleUpgradeRoutes } from './routes/role-upgrade.routes';
 import { orgMembershipRoutes } from './routes/org-membership.routes';
 import { geocodingRoutes } from './routes/geocoding.routes';
 import { vehicleRoutes } from './routes/vehicle.routes';
@@ -164,6 +164,10 @@ v1.route('/documents', documentRoutes);
 
 // Emergency trigger (user-facing panic button)
 v1.route('/emergency', emergencyTriggerRoutes);
+
+// Self-service admin/staff access requests (any authenticated user) —
+// separate from the admin-only /v1/admin/role-upgrades review queue below.
+v1.route('/role-upgrades', selfServiceRoleUpgradeRoutes);
 
 // ──────────────────────────────────────────────────────────
 // Admin Routes (v1/admin) 

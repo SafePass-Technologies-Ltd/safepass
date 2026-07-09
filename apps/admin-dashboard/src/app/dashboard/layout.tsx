@@ -38,6 +38,13 @@ function getInitials(fullName: string): string {
   return parts.slice(0, 2).map((p) => p[0]!.toUpperCase()).join('');
 }
 
+// Roles allowed onto this dashboard at all. A plain `user` (or a
+// corporate_admin/transport_partner who mistakenly signed in here instead
+// of their own dashboard) gets redirected to /request-access rather than
+// seeing dashboard chrome full of 403s from every requireRole-gated
+// endpoint underneath it.
+const STAFF_ROLES = new Set(['admin', 'super_admin', 'monitoring_officer']);
+
 const navigation = [
   {
     name: 'Live Trip Map',
@@ -99,6 +106,10 @@ export default function DashboardLayout({
   const router = useRouter();
   const { trips } = useActiveTrips(30_000); // 30s poll for header only
   const [initials, setInitials] = useState<string | null>(null);
+  // Tri-state instead of boolean: null = still checking (render nothing but
+  // a spinner, so a non-staff user never sees a flash of dashboard chrome
+  // before the redirect fires), true = confirmed staff, false = redirecting.
+  const [isStaff, setIsStaff] = useState<boolean | null>(null);
 
   const activeCount = trips.filter(
     (t) => t.status === 'active' || t.status === 'delayed'
@@ -119,15 +130,41 @@ export default function DashboardLayout({
   }, []);
 
   useEffect(() => {
-    apiClient<{ fullName: string }>('/v1/users/me')
-      .then((data) => setInitials(getInitials(data.fullName ?? '')))
-      .catch(() => setInitials(''));
-  }, []);
+    apiClient<{ fullName: string; role: string }>('/v1/users/me')
+      .then((data) => {
+        setInitials(getInitials(data.fullName ?? ''));
+        if (STAFF_ROLES.has(data.role)) {
+          setIsStaff(true);
+        } else {
+          setIsStaff(false);
+          router.replace('/request-access');
+        }
+      })
+      .catch(() => {
+        // /v1/users/me failing outright (bad/expired token) means apiClient's
+        // own 401 handling will already be redirecting to '/' -- don't also
+        // race it with a request-access redirect here.
+        setInitials('');
+      });
+  }, [router]);
 
   function handleSignOut() {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     router.push('/');
+  }
+
+  // Block on the role check before mounting DashboardWsProvider/any
+  // dashboard chrome at all -- a non-staff user should never see the
+  // sidebar (even briefly) before being bounced to /request-access, and
+  // there's no reason to open a WebSocket connection for someone about to
+  // be redirected away.
+  if (isStaff !== true) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
   }
 
   // DashboardWsProvider owns the single WebSocket connection for the whole
