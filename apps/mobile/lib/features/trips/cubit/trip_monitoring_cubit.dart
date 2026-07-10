@@ -183,6 +183,14 @@ enum TripMonitorStatus {
   error,
 }
 
+/// Backend trip statuses that mean "still being monitored" -- matches the
+/// same set the web dashboards treat as "currently monitored" (see e.g.
+/// transport-dashboard's Trip Map MONITORED_STATUSES). Anything else
+/// (completed, cancelled) is terminal: a persisted `active_trip_id` pointing
+/// at one of these is stale and must not be resumed/redirected into on
+/// app restart (see startMonitoring/resumeIfActiveTrip below).
+const _ongoingTripStatuses = {'active', 'delayed', 'emergency', 'escalated'};
+
 class TripMonitoringState extends Equatable {
   final TripMonitorStatus status;
   final TripDetail? trip;
@@ -283,6 +291,23 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
       final response = await _dio.get('/v1/trips/$tripId');
       final trip = TripDetail.fromJson(response.data as Map<String, dynamic>);
 
+      // The trip may already be completed/cancelled server-side (e.g. an
+      // admin/dashboard action, or a stale persisted ID from a previous
+      // session that was never cleared) -- never start tracking or mark the
+      // cubit "active" for a trip that isn't actually ongoing anymore, or
+      // the router's auto-resume redirect sends the user right back into a
+      // finished trip.
+      if (!_ongoingTripStatuses.contains(trip.status)) {
+        await ApiClient.instance.clearActiveTripId();
+        emit(state.copyWith(
+          status: trip.status == 'cancelled'
+              ? TripMonitorStatus.cancelled
+              : TripMonitorStatus.completed,
+          trip: trip,
+        ));
+        return;
+      }
+
       // Persist trip ID only after a confirmed successful API response so a
       // transient network error never stores a stale trip ID.
       await ApiClient.instance.saveActiveTripId(tripId);
@@ -328,6 +353,25 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
       try {
         final response = await _dio.get('/v1/trips/$tripId');
         final trip = TripDetail.fromJson(response.data as Map<String, dynamic>);
+
+        // Same staleness check as startMonitoring: the background service
+        // being alive only means it hasn't been killed yet, not that the
+        // trip is still ongoing server-side (e.g. completed/cancelled from
+        // another device while this one was closed). Resuming into a
+        // finished trip -- and leaving an orphaned service uploading GPS
+        // for it -- was the actual bug being fixed here.
+        if (!_ongoingTripStatuses.contains(trip.status)) {
+          await ApiClient.instance.clearActiveTripId();
+          await FlutterForegroundTask.stopService();
+          emit(state.copyWith(
+            status: trip.status == 'cancelled'
+                ? TripMonitorStatus.cancelled
+                : TripMonitorStatus.completed,
+            trip: trip,
+          ));
+          return;
+        }
+
         emit(state.copyWith(
           status: TripMonitorStatus.active,
           trip: trip,
