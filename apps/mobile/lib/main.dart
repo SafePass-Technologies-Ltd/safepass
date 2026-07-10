@@ -151,7 +151,7 @@ class _AppBodyState extends State<_AppBody> {
 
     // Wire the push-notification deep-link callback so AuthCubit can navigate
     // to the correct trip's message thread when a notification is tapped.
-    _authCubit.onPushNavigateToTrip = (tripId) {
+    void navigateToTripChat(String tripId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           // Navigate to the trip-scoped message thread.
@@ -159,7 +159,17 @@ class _AppBodyState extends State<_AppBody> {
           context.push('/trips/$tripId/messages');
         }
       });
-    };
+    }
+
+    _authCubit.onPushNavigateToTrip = navigateToTripChat;
+
+    // Same navigation, but for a tap on the LOCAL notification
+    // NotificationService shows for a foreground push (see
+    // AuthCubit._initFcmHandlers' onMessage listener) -- FCM's own
+    // onMessageOpenedApp/getInitialMessage (wired above) only fire for a tap
+    // on FCM's own system notification, which only appears when the app was
+    // backgrounded/terminated, not when it was already open.
+    NotificationService.instance.onNotificationTap = navigateToTripChat;
 
     // Attempt to restore the previous session from stored tokens.
     // If a valid token exists, this emits AuthStatus.authenticated which

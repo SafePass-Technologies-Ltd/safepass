@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../app/theme.dart';
+import '../../../core/services/active_chat_tracker.dart';
 import '../cubit/messaging_cubit.dart';
 
 class MessageThreadScreen extends StatelessWidget {
@@ -58,6 +59,7 @@ class _MessageThreadViewState extends State<_MessageThreadView> {
   @override
   void initState() {
     super.initState();
+    ActiveChatTracker.openTripId = widget.tripId;
     _connectWebSocket();
   }
 
@@ -76,6 +78,12 @@ class _MessageThreadViewState extends State<_MessageThreadView> {
 
   @override
   void dispose() {
+    // Only clear if it's still ours -- guards against a theoretical race
+    // where a second thread screen was pushed on top before this one's
+    // dispose ran, which would otherwise wipe out the newer screen's entry.
+    if (ActiveChatTracker.openTripId == widget.tripId) {
+      ActiveChatTracker.openTripId = null;
+    }
     _messageController.dispose();
     _scrollController.dispose();
     // Close the WebSocket when the user leaves the screen.

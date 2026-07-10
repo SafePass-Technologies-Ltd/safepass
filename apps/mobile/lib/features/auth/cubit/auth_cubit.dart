@@ -20,6 +20,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/constants.dart';
+import '../../../core/services/active_chat_tracker.dart';
+import '../../../core/services/notification_service.dart';
 
 part 'auth_state.dart';
 
@@ -62,23 +64,40 @@ class AuthCubit extends Cubit<AuthState> {
 
   /// Wire up FCM foreground and tap handlers once at construction.
   void _initFcmHandlers() {
-    // Foreground: app is open and running.
+    // Foreground: app is open and running. FCM does NOT automatically show a
+    // system notification for a foreground push -- without this listener,
+    // a message/check-in that arrives while the app is open would be
+    // completely invisible until the user happened to reopen the chat.
     _foregroundSub = FirebaseMessaging.onMessage.listen((message) {
       final tripId = message.data['tripId'] as String?;
       final type = message.data['type'] as String?;
 
       if (tripId == null) return;
+      if (type != 'new_message' && type != 'check_in') return;
 
-      // If the user is looking at this trip's thread already, a refresh would
-      // happen via WebSocket. We show a local notification for all other cases.
-      if (type == 'new_message' || type == 'check_in') {
-        // NotificationService shows a heads-up banner via flutter_local_notifications.
-        // The service is initialized in main.dart; this is a best-effort call.
-        try {
-          // Lazy import to avoid circular dependency — NotificationService is
-          // a singleton and may not yet be fully initialized.
-        } catch (_) {}
-      }
+      // If the user is already looking at this exact trip's thread, skip the
+      // popup entirely -- the open screen's own WebSocket connection already
+      // shows the message live, so a system notification on top would just
+      // be redundant noise.
+      if (ActiveChatTracker.openTripId == tripId) return;
+
+      final title = message.notification?.title ??
+          (type == 'check_in'
+              ? 'Check-in from monitoring officer'
+              : 'New message');
+      final body = message.notification?.body ?? message.data['body'] as String? ?? '';
+
+      // Best-effort: NotificationService is initialized in main.dart
+      // slightly after this cubit is constructed, but by the time any real
+      // push arrives (network round-trip + user interaction) init() has
+      // always already completed in practice.
+      unawaited(
+        NotificationService.instance.showMessageNotification(
+          tripId: tripId,
+          title: title,
+          body: body,
+        ),
+      );
     });
 
     // Foreground-to-background tap: user tapped a notification while the app
