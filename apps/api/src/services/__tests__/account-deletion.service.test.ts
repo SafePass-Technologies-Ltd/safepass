@@ -56,6 +56,16 @@ vi.mock('../wallet.service', () => ({
   getWallet: hoisted.mockGetWallet,
 }));
 
+// Bypasses env.ts's real startup validation (DATABASE_URL, JWT secrets, etc.),
+// which isn't set in CI's test job — only the two constants this service
+// actually reads are needed here, mirroring the schema's own defaults.
+vi.mock('../../env', () => ({
+  env: {
+    ACCOUNT_DELETION_WALLET_FORFEIT_THRESHOLD_NGN: 500,
+    ACCOUNT_DELETION_COOLING_OFF_DAYS: 14,
+  },
+}));
+
 import {
   createDeletionRequest,
   cancelDeletionRequest,
