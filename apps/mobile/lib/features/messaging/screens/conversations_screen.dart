@@ -83,7 +83,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                     ),
                     const SizedBox(height: 24),
                     const Text(
-                      'No active trip',
+                      'No active journey',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
@@ -93,7 +93,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                     const SizedBox(height: 12),
                     const Text(
                       'Messages with your monitoring officer appear here '
-                      'during an active trip. Start a trip to begin messaging.',
+                      'during an active journey. Start a journey to begin messaging.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: AppColors.darkSlate),
                     ),
@@ -101,7 +101,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                     FilledButton.icon(
                       onPressed: () => context.go('/trip/register'),
                       icon: const Icon(Icons.add_location_alt_outlined),
-                      label: const Text('Register a Trip'),
+                      label: const Text('Register a Journey'),
                     ),
                   ],
                 ),

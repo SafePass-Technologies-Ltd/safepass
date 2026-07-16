@@ -611,7 +611,7 @@ class TripRegistrationCubit extends Cubit<TripRegistrationState> {
       emit(state.copyWith(
         status: TripFormStatus.error,
         errorMessage: e.response?.data?['error']?['message'] ??
-            'Failed to start trip',
+            'Failed to start journey',
       ));
     }
   }

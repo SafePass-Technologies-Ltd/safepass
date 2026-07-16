@@ -227,7 +227,7 @@ class ScheduledTripsCubit extends Cubit<ScheduledTripsState> {
       emit(state.copyWith(
         status: ScheduledTripsStatus.error,
         errorMessage: e.response?.data?['error']?['message'] ??
-            'Failed to load scheduled trips',
+            'Failed to load scheduled journeys',
       ));
     }
   }
@@ -286,7 +286,7 @@ class ScheduledTripsCubit extends Cubit<ScheduledTripsState> {
       emit(state.copyWith(
         isMutating: false,
         errorMessage: e.response?.data?['error']?['message'] ??
-            'Failed to schedule trip',
+            'Failed to schedule journey',
       ));
     }
   }
@@ -312,7 +312,7 @@ class ScheduledTripsCubit extends Cubit<ScheduledTripsState> {
       emit(state.copyWith(
         isMutating: false,
         errorMessage: e.response?.data?['error']?['message'] ??
-            'Failed to cancel scheduled trip',
+            'Failed to cancel scheduled journey',
       ));
     }
   }

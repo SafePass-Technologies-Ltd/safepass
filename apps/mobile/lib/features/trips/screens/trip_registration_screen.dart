@@ -44,6 +44,23 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
   void initState() {
     super.initState();
     _cubit = context.read<TripRegistrationCubit>();
+
+    // TripRegistrationCubit is a single app-lifetime instance (see
+    // main.dart's MultiBlocProvider) — it is never recreated between trips,
+    // so a previous trip's origin/destination/vehicle-info/tagged-members
+    // would otherwise still be sitting in [_cubit.state] here. Left
+    // unreset, that stale destination immediately re-populates the
+    // collapsed "Where to?" summary and pre-fills the destination field,
+    // which looks like "recent destinations" isn't refreshing since the
+    // last-used place appears to already be selected instead of the form
+    // starting blank for a new trip. Only reset when the cubit is actually
+    // carrying over a *completed* start (status == started) so we don't
+    // wipe an in-progress draft the user is still filling in (e.g. after a
+    // hot-reload or a transient rebuild of this screen).
+    if (_cubit.state.status == TripFormStatus.started) {
+      _cubit.reset();
+    }
+
     // Auto-detect GPS location on open
     _cubit.detectLocation();
 
@@ -67,8 +84,7 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       isOrgMember: membership != null,
       orgId: membership?.orgId,
     );
-    if (membership != null &&
-        (membership.orgType == 'transport_partner')) {
+    if (membership != null && (membership.orgType == 'transport_partner')) {
       _cubit.setIsTransportPartner(value: true);
     }
 
@@ -95,137 +111,145 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
     // Outer listener: redirects to the active trip screen if a trip becomes
     // active while the user is on this screen (e.g. resume from background).
     return BlocListener<TripMonitoringCubit, TripMonitoringState>(
-      listenWhen: (prev, curr) =>
-          (curr.status == TripMonitorStatus.active ||
-              curr.status == TripMonitorStatus.gpsUpdating) &&
-          curr.trip != null &&
-          prev.status != TripMonitorStatus.active,
-      listener: (context, state) =>
-          context.go('/trip/active/${state.trip!.id}'),
+      listenWhen:
+          (prev, curr) =>
+              (curr.status == TripMonitorStatus.active ||
+                  curr.status == TripMonitorStatus.gpsUpdating) &&
+              curr.trip != null &&
+              prev.status != TripMonitorStatus.active,
+      listener:
+          (context, state) => context.go('/trip/active/${state.trip!.id}'),
       child: BlocConsumer<TripRegistrationCubit, TripRegistrationState>(
         listener: (context, state) {
-        // Sync origin text field when GPS resolves
-        if (state.origin?.name != null &&
-            _originController.text != state.origin!.name) {
-          _originController.text = state.origin!.name!;
-        }
+          // Sync origin text field when GPS resolves
+          if (state.origin?.name != null &&
+              _originController.text != state.origin!.name) {
+            _originController.text = state.origin!.name!;
+          }
 
-        if (state.status == TripFormStatus.started &&
-            state.startedTripId != null) {
-          final tripId = state.startedTripId!;
-          context.read<TripMonitoringCubit>().startMonitoring(tripId);
-          context.go('/trip/active/$tripId');
-        }
+          if (state.status == TripFormStatus.started &&
+              state.startedTripId != null) {
+            final tripId = state.startedTripId!;
+            context.read<TripMonitoringCubit>().startMonitoring(tripId);
+            context.go('/trip/active/$tripId');
+          }
 
-        // draftSaved status is no longer used — scheduling is handled by the sheet.
-      },
-      builder: (context, state) {
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Start New Trip'),
-            centerTitle: true,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.calendar_month_outlined),
-                tooltip: 'Scheduled Trips',
-                onPressed: () => context.push(AppRoutes.scheduledTrips),
-              ),
-              IconButton(
-                icon: const Icon(Icons.history),
-                tooltip: 'Trip History',
-                onPressed: () => context.push(AppRoutes.tripHistory),
-              ),
-            ],
-          ),
-          body: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // ── 1 & 2. Where to? (collapsed origin + destination) ──
-                _buildWhereToBlock(state),
-                const SizedBox(height: 12),
-
-                // ── 3. Vehicle Info (plate + description) ──
-                _buildVehiclePlateField(state),
-                const SizedBox(height: 8),
-                _buildVehicleDescriptionField(state),
-                const SizedBox(height: 12),
-
-                // ── 4. Transport Company ──
-                _buildTransportCompanySection(state),
-                const SizedBox(height: 16),
-
-                // ── 5. Org Tag Section ──
-                if (state.isOrgMember) ...[
-                  _buildOrgTagSection(state),
-                  const SizedBox(height: 16),
-                ],
-
-                // ── Cost Hint ──
-                _buildCostHint(state),
-                const SizedBox(height: 12),
-
-                // ── Error Banner ──
-                if (state.errorMessage != null) ...[
-                  _buildErrorBanner(state.errorMessage!),
-                  const SizedBox(height: 12),
-                ],
-
-                // ── Actions ──
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: state.status == TripFormStatus.submitting
-                            ? null
-                            : () => _openScheduleSheet(context, state),
-                        icon: const Icon(Icons.calendar_month_outlined, size: 18),
-                        label: const Text('Schedule Trip'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: FilledButton.icon(
-                        onPressed: state.isFormValid &&
-                                state.status != TripFormStatus.submitting
-                            ? () => _requestAlwaysLocationThenStart(context)
-                            : null,
-                        icon: state.status == TripFormStatus.submitting
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.play_arrow, size: 18),
-                        label: Text(
-                          state.status == TripFormStatus.submitting
-                              ? 'Starting...'
-                              : state.isOrgMember
-                                  ? 'Start Monitoring — No charge'
-                                  : 'Start Monitoring',
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.safetyGreen,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                      ),
-                    ),
-                  ],
+          // draftSaved status is no longer used — scheduling is handled by the sheet.
+        },
+        builder: (context, state) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Start New Journey'),
+              centerTitle: true,
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.calendar_month_outlined),
+                  tooltip: 'Scheduled Journeys',
+                  onPressed: () => context.push(AppRoutes.scheduledTrips),
                 ),
-                const SizedBox(height: 32),
+                IconButton(
+                  icon: const Icon(Icons.history),
+                  tooltip: 'Journey History',
+                  onPressed: () => context.push(AppRoutes.tripHistory),
+                ),
               ],
             ),
-          ),
-        );
-      },
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ── 1 & 2. Where to? (collapsed origin + destination) ──
+                  _buildWhereToBlock(state),
+                  const SizedBox(height: 12),
+
+                  // ── 3. Vehicle Info (plate + description) ──
+                  _buildVehiclePlateField(state),
+                  const SizedBox(height: 8),
+                  _buildVehicleDescriptionField(state),
+                  const SizedBox(height: 12),
+
+                  // ── 4. Transport Company ──
+                  _buildTransportCompanySection(state),
+                  const SizedBox(height: 16),
+
+                  // ── 5. Org Tag Section ──
+                  if (state.isOrgMember) ...[
+                    _buildOrgTagSection(state),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // ── Cost Hint ──
+                  _buildCostHint(state),
+                  const SizedBox(height: 12),
+
+                  // ── Error Banner ──
+                  if (state.errorMessage != null) ...[
+                    _buildErrorBanner(state.errorMessage!),
+                    const SizedBox(height: 12),
+                  ],
+
+                  // ── Actions ──
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed:
+                              state.status == TripFormStatus.submitting
+                                  ? null
+                                  : () => _openScheduleSheet(context, state),
+                          icon: const Icon(
+                            Icons.calendar_month_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('Schedule'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: FilledButton.icon(
+                          onPressed:
+                              state.isFormValid &&
+                                      state.status != TripFormStatus.submitting
+                                  ? () =>
+                                      _requestAlwaysLocationThenStart(context)
+                                  : null,
+                          icon:
+                              state.status == TripFormStatus.submitting
+                                  ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                  : const Icon(Icons.play_arrow, size: 18),
+                          label: Text(
+                            state.status == TripFormStatus.submitting
+                                ? 'Starting...'
+                                : state.isOrgMember
+                                ? 'Start Journey — No charge'
+                                : 'Start Journey',
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.safetyGreen,
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -248,12 +272,9 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
-            'Background location denied. Trip tracking will only work while the app is open.',
+            'Background location denied. Journey tracking will only work while the app is open.',
           ),
-          action: SnackBarAction(
-            label: 'Settings',
-            onPressed: openAppSettings,
-          ),
+          action: SnackBarAction(label: 'Settings', onPressed: openAppSettings),
           duration: const Duration(seconds: 5),
         ),
       );
@@ -284,10 +305,11 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => BlocProvider(
-        create: (_) => ScheduledTripsCubit(),
-        child: ScheduleTripSheet(prefillDestination: destination),
-      ),
+      builder:
+          (_) => BlocProvider(
+            create: (_) => ScheduledTripsCubit(),
+            child: ScheduleTripSheet(prefillDestination: destination),
+          ),
     );
 
     // Only navigate to Screen 21 when the sheet was closed via save (result == true).
@@ -308,16 +330,18 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
   /// expandable sheet ([_openWhereToSheet]) where the origin/destination
   /// fields and recent-destinations quick-pick live. This mirrors the
   /// "collapsed summary → tap to expand" pattern already used elsewhere in
-  /// this flow (see "Schedule Trip" and "Tag a member" bottom sheets below).
+  /// this flow (see "Schedule Journey" and "Tag a member" bottom sheets below).
   Widget _buildWhereToBlock(TripRegistrationState state) {
     final originName = state.origin?.name?.trim();
     final destinationName = state.destination?.name?.trim();
     final hasOrigin = originName != null && originName.isNotEmpty;
-    final hasDestination = destinationName != null && destinationName.isNotEmpty;
+    final hasDestination =
+        destinationName != null && destinationName.isNotEmpty;
 
     final String title;
     if (hasDestination) {
-      title = hasOrigin ? 'From $originName to $destinationName' : destinationName;
+      title =
+          hasOrigin ? 'From $originName to $destinationName' : destinationName;
     } else {
       title = 'Where to?';
     }
@@ -330,7 +354,9 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
         decoration: BoxDecoration(
           color: AppColors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.darkSlate.withValues(alpha: 0.15)),
+          border: Border.all(
+            color: AppColors.darkSlate.withValues(alpha: 0.15),
+          ),
         ),
         child: Row(
           children: [
@@ -348,19 +374,20 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          fontWeight:
-                              hasDestination ? FontWeight.w600 : FontWeight.w500,
-                          color: hasDestination
+                      fontWeight:
+                          hasDestination ? FontWeight.w600 : FontWeight.w500,
+                      color:
+                          hasDestination
                               ? AppColors.darkSlate
                               : AppColors.primary,
-                        ),
+                    ),
                   ),
                   if (!hasDestination || !hasOrigin)
                     Text(
                       'Tap to set origin & destination',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.darkSlate.withValues(alpha: 0.5),
-                          ),
+                        color: AppColors.darkSlate.withValues(alpha: 0.5),
+                      ),
                     ),
                 ],
               ),
@@ -420,8 +447,8 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
                     Text(
                       'Where to?',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 20),
 
@@ -441,9 +468,10 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
                     const SizedBox(height: 20),
 
                     FilledButton(
-                      onPressed: state.isFormValid
-                          ? () => Navigator.of(sheetContext).pop()
-                          : null,
+                      onPressed:
+                          state.isFormValid
+                              ? () => Navigator.of(sheetContext).pop()
+                              : null,
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.safetyGreen,
                         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -484,7 +512,8 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
 
     String? helperText;
     if (state.isGpsDenied) {
-      helperText = 'Location permission denied. Enter your starting point manually.';
+      helperText =
+          'Location permission denied. Enter your starting point manually.';
     } else if (state.isGpsTimeout) {
       helperText = 'GPS timed out. Enter your starting point manually.';
     }
@@ -494,22 +523,27 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       enabled: !state.isGpsLocating,
       decoration: InputDecoration(
         labelText: 'Origin *',
-        hintText: state.isGpsLocating ? 'Detecting location…' : 'e.g., Lagos, Ikeja',
+        hintText:
+            state.isGpsLocating ? 'Detecting location…' : 'e.g., Lagos, Ikeja',
         prefixIcon: const Icon(Icons.trip_origin),
         suffixIcon: suffixIcon,
         border: const OutlineInputBorder(),
         helperText: helperText,
         helperMaxLines: 2,
-        helperStyle: TextStyle(color: AppColors.emergencyRed.withValues(alpha: 0.8)),
+        helperStyle: TextStyle(
+          color: AppColors.emergencyRed.withValues(alpha: 0.8),
+        ),
       ),
       onChanged: (v) {
         if (v.isNotEmpty) {
-          _cubit.setOrigin(PlaceLocation(
-            name: v,
-            // Use placeholder coords — will be resolved on backend if needed
-            latitude: 0,
-            longitude: 0,
-          ));
+          _cubit.setOrigin(
+            PlaceLocation(
+              name: v,
+              // Use placeholder coords — will be resolved on backend if needed
+              latitude: 0,
+              longitude: 0,
+            ),
+          );
         }
       },
     );
@@ -525,26 +559,25 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
             labelText: 'Destination *',
             hintText: 'e.g., Benin, Ring Road',
             prefixIcon: const Icon(Icons.flag_outlined),
-            suffixIcon: state.isSearchingDestination
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : null,
+            suffixIcon:
+                state.isSearchingDestination
+                    ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                    : null,
             border: const OutlineInputBorder(),
           ),
           onChanged: (v) {
             // Clear selected destination when user types
             if (state.destination != null) {
-              _cubit.setDestination(PlaceLocation(
-                name: v,
-                latitude: 0,
-                longitude: 0,
-              ));
+              _cubit.setDestination(
+                PlaceLocation(name: v, latitude: 0, longitude: 0),
+              );
             }
             _cubit.searchDestination(v);
           },
@@ -555,22 +588,24 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
             margin: const EdgeInsets.only(top: 2),
             elevation: 4,
             child: Column(
-              children: state.destinationSuggestions.map((suggestion) {
-                return ListTile(
-                  leading: const Icon(Icons.location_on_outlined),
-                  title: Text(suggestion.name),
-                  subtitle: suggestion.secondaryText != null
-                      ? Text(
-                          suggestion.secondaryText!,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        )
-                      : null,
-                  onTap: () {
-                    _destinationController.text = suggestion.name;
-                    _cubit.selectDestination(suggestion);
-                  },
-                );
-              }).toList(),
+              children:
+                  state.destinationSuggestions.map((suggestion) {
+                    return ListTile(
+                      leading: const Icon(Icons.location_on_outlined),
+                      title: Text(suggestion.name),
+                      subtitle:
+                          suggestion.secondaryText != null
+                              ? Text(
+                                suggestion.secondaryText!,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              )
+                              : null,
+                      onTap: () {
+                        _destinationController.text = suggestion.name;
+                        _cubit.selectDestination(suggestion);
+                      },
+                    );
+                  }).toList(),
             ),
           ),
       ],
@@ -584,7 +619,7 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       controller: _vehiclePlateController,
       textCapitalization: TextCapitalization.characters,
       decoration: const InputDecoration(
-        labelText: 'Vehicle Plate Number',
+        labelText: 'Vehicle Registration',
         hintText: 'e.g., ABC-123-XY',
         prefixIcon: Icon(Icons.directions_car_outlined),
         border: OutlineInputBorder(),
@@ -599,7 +634,7 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       controller: _vehicleDescriptionController,
       maxLines: 2,
       decoration: const InputDecoration(
-        labelText: 'Vehicle Description (optional)',
+        labelText: 'Vehicle Details (optional)',
         hintText: 'e.g., Red Toyota Hiace bus',
         prefixIcon: Icon(Icons.description_outlined),
         border: OutlineInputBorder(),
@@ -621,30 +656,38 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
         ),
         child: Row(
           children: [
-            const Icon(Icons.business_outlined,
-                color: AppColors.darkSlate, size: 20),
+            const Icon(
+              Icons.business_outlined,
+              color: AppColors.darkSlate,
+              size: 20,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Transport Company',
+                    'Transport Provider/Company',
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: AppColors.darkSlate.withValues(alpha: 0.6),
-                        ),
+                      color: AppColors.darkSlate.withValues(alpha: 0.6),
+                    ),
                   ),
                   Text(
-                    state.transportCompany ?? 'Auto-filled from your organisation',
+                    state.transportCompany ??
+                        'Auto-filled from your organisation',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.darkSlate,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      color: AppColors.darkSlate,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.lock_outline, size: 16, color: AppColors.darkSlate),
+            const Icon(
+              Icons.lock_outline,
+              size: 16,
+              color: AppColors.darkSlate,
+            ),
           ],
         ),
       );
@@ -667,8 +710,8 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
                 onPressed: () => context.push(AppRoutes.qrScanner),
               ),
             ),
-            onChanged: (v) =>
-                _cubit.setTransportCompany(v.isNotEmpty ? v : null),
+            onChanged:
+                (v) => _cubit.setTransportCompany(v.isNotEmpty ? v : null),
           ),
           const SizedBox(height: 8),
         ],
@@ -682,7 +725,7 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
               _cubit.unSkipTransportCompany();
             }
           },
-          title: const Text('Skip / Not applicable'),
+          title: const Text("I'm using a private vehicle"),
           controlAffinity: ListTileControlAffinity.leading,
           contentPadding: EdgeInsets.zero,
           dense: true,
@@ -705,15 +748,18 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
         // Section header
         Row(
           children: [
-            const Icon(Icons.group_add_outlined,
-                size: 18, color: AppColors.darkSlate),
+            const Icon(
+              Icons.group_add_outlined,
+              size: 18,
+              color: AppColors.darkSlate,
+            ),
             const SizedBox(width: 8),
             Text(
               'Tag a member',
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.darkSlate,
-                  ),
+                fontWeight: FontWeight.w600,
+                color: AppColors.darkSlate,
+              ),
             ),
           ],
         ),
@@ -726,9 +772,9 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
             child: Text(
               'Add a plate number first to enable member tagging.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.darkSlate.withValues(alpha: 0.5),
-                    fontStyle: FontStyle.italic,
-                  ),
+                color: AppColors.darkSlate.withValues(alpha: 0.5),
+                fontStyle: FontStyle.italic,
+              ),
             ),
           ),
 
@@ -737,23 +783,25 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
           Wrap(
             spacing: 8,
             runSpacing: 4,
-            children: tagged.map((m) {
-              return Chip(
-                label: Text(m.fullName),
-                avatar: const Icon(Icons.person_outline, size: 16),
-                onDeleted: () {
-                  _cubit.setTaggedMembers(
-                    tagged.where((t) => t.userId != m.userId).toList(),
+            children:
+                tagged.map((m) {
+                  return Chip(
+                    label: Text(m.fullName),
+                    avatar: const Icon(Icons.person_outline, size: 16),
+                    onDeleted: () {
+                      _cubit.setTaggedMembers(
+                        tagged.where((t) => t.userId != m.userId).toList(),
+                      );
+                    },
+                    deleteIconColor: AppColors.darkSlate.withValues(alpha: 0.6),
+                    backgroundColor: AppColors.safetyGreen.withValues(
+                      alpha: 0.1,
+                    ),
+                    side: BorderSide(
+                      color: AppColors.safetyGreen.withValues(alpha: 0.3),
+                    ),
                   );
-                },
-                deleteIconColor: AppColors.darkSlate.withValues(alpha: 0.6),
-                backgroundColor:
-                    AppColors.safetyGreen.withValues(alpha: 0.1),
-                side: BorderSide(
-                  color: AppColors.safetyGreen.withValues(alpha: 0.3),
-                ),
-              );
-            }).toList(),
+                }).toList(),
           ),
           const SizedBox(height: 8),
         ],
@@ -762,15 +810,14 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
         OutlinedButton.icon(
           onPressed: canTag ? () => _openMemberPicker(state) : null,
           icon: const Icon(Icons.person_add_outlined, size: 18),
-          label: Text(
-            tagged.isEmpty ? 'Tag a member' : 'Add more members',
-          ),
+          label: Text(tagged.isEmpty ? 'Tag a member' : 'Add more members'),
           style: OutlinedButton.styleFrom(
             foregroundColor: AppColors.darkSlate,
             side: BorderSide(
-              color: canTag
-                  ? AppColors.darkSlate.withValues(alpha: 0.4)
-                  : AppColors.darkSlate.withValues(alpha: 0.15),
+              color:
+                  canTag
+                      ? AppColors.darkSlate.withValues(alpha: 0.4)
+                      : AppColors.darkSlate.withValues(alpha: 0.15),
             ),
           ),
         ),
@@ -788,10 +835,11 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _MemberPickerSheet(
-        cubit: _cubit,
-        alreadyTagged: state.taggedMembers,
-      ),
+      builder:
+          (_) => _MemberPickerSheet(
+            cubit: _cubit,
+            alreadyTagged: state.taggedMembers,
+          ),
     );
 
     if (selected != null) {
@@ -810,18 +858,21 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.info_outline, color: AppColors.safetyGreen, size: 18),
+          const Icon(
+            Icons.info_outline,
+            color: AppColors.safetyGreen,
+            size: 18,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               isOrgMember
-                  ? 'Trip monitoring is covered by your organisation.'
-                  : 'Trip monitoring costs ₦$kTripPriceNaira. '
-                      'Auto-deducted from your wallet on Start.',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: AppColors.darkSlate),
+                  ? 'Journey monitoring is covered by your organisation.'
+                  : 'Journey monitoring fee: ₦2,000.\n'
+                      'Your wallet will only be charged when monitoring begins.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: AppColors.darkSlate),
             ),
           ),
         ],
@@ -835,12 +886,18 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
       decoration: BoxDecoration(
         color: AppColors.emergencyRed.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.emergencyRed.withValues(alpha: 0.3)),
+        border: Border.all(
+          color: AppColors.emergencyRed.withValues(alpha: 0.3),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline, color: AppColors.emergencyRed, size: 18),
+          const Icon(
+            Icons.error_outline,
+            color: AppColors.emergencyRed,
+            size: 18,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
@@ -848,10 +905,9 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
               children: [
                 Text(
                   message,
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: AppColors.emergencyRed),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.emergencyRed,
+                  ),
                 ),
                 if (message.contains('balance')) ...[
                   const SizedBox(height: 6),
@@ -860,10 +916,10 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
                     child: Text(
                       'Top up wallet →',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.emergencyRed,
-                            fontWeight: FontWeight.w600,
-                            decoration: TextDecoration.underline,
-                          ),
+                        color: AppColors.emergencyRed,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                      ),
                     ),
                   ),
                 ],
@@ -946,15 +1002,18 @@ class _RecentDestinationsSectionState
       children: [
         Row(
           children: [
-            Icon(Icons.history,
-                size: 16, color: AppColors.darkSlate.withValues(alpha: 0.6)),
+            Icon(
+              Icons.history,
+              size: 16,
+              color: AppColors.darkSlate.withValues(alpha: 0.6),
+            ),
             const SizedBox(width: 6),
             Text(
               'Recent destinations',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.darkSlate.withValues(alpha: 0.6),
-                  ),
+                fontWeight: FontWeight.w600,
+                color: AppColors.darkSlate.withValues(alpha: 0.6),
+              ),
             ),
           ],
         ),
@@ -963,8 +1022,10 @@ class _RecentDestinationsSectionState
           return ListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
-            leading: const Icon(Icons.location_on_outlined,
-                color: AppColors.primary),
+            leading: const Icon(
+              Icons.location_on_outlined,
+              color: AppColors.primary,
+            ),
             title: Text(
               recent.destination.name ?? 'Unknown destination',
               maxLines: 1,
@@ -1004,10 +1065,7 @@ class _MemberPickerSheet extends StatefulWidget {
   final TripRegistrationCubit cubit;
   final List<OrgMemberModel> alreadyTagged;
 
-  const _MemberPickerSheet({
-    required this.cubit,
-    required this.alreadyTagged,
-  });
+  const _MemberPickerSheet({required this.cubit, required this.alreadyTagged});
 
   @override
   State<_MemberPickerSheet> createState() => _MemberPickerSheetState();
@@ -1076,22 +1134,25 @@ class _MemberPickerSheetState extends State<_MemberPickerSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  const Icon(Icons.group_add_outlined,
-                      color: AppColors.darkSlate),
+                  const Icon(
+                    Icons.group_add_outlined,
+                    color: AppColors.darkSlate,
+                  ),
                   const SizedBox(width: 10),
                   Text(
                     'Tag a member',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const Spacer(),
                   TextButton(
-                    onPressed: () => Navigator.of(context).pop(
-                      _members
-                          .where((m) => _selectedIds.contains(m.userId))
-                          .toList(),
-                    ),
+                    onPressed:
+                        () => Navigator.of(context).pop(
+                          _members
+                              .where((m) => _selectedIds.contains(m.userId))
+                              .toList(),
+                        ),
                     child: const Text('Confirm'),
                   ),
                 ],
@@ -1101,83 +1162,90 @@ class _MemberPickerSheetState extends State<_MemberPickerSheet> {
 
             // Body — loading / error / list
             Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _errorMessage != null
+              child:
+                  _loading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _errorMessage != null
                       ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.people_outline,
-                                    size: 48, color: AppColors.darkSlate),
-                                const SizedBox(height: 12),
-                                Text(
-                                  _errorMessage!,
-                                  textAlign: TextAlign.center,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(
-                                        color: AppColors.darkSlate
-                                            .withValues(alpha: 0.6),
-                                      ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.people_outline,
+                                size: 48,
+                                color: AppColors.darkSlate,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                _errorMessage!,
+                                textAlign: TextAlign.center,
+                                style: Theme.of(
+                                  context,
+                                ).textTheme.bodyMedium?.copyWith(
+                                  color: AppColors.darkSlate.withValues(
+                                    alpha: 0.6,
+                                  ),
                                 ),
-                                const SizedBox(height: 16),
-                                OutlinedButton(
-                                  onPressed: _loadMembers,
-                                  child: const Text('Retry'),
-                                ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 16),
+                              OutlinedButton(
+                                onPressed: _loadMembers,
+                                child: const Text('Retry'),
+                              ),
+                            ],
                           ),
-                        )
+                        ),
+                      )
                       : ListView.builder(
-                          controller: scrollController,
-                          itemCount: _members.length,
-                          itemBuilder: (_, index) {
-                            final member = _members[index];
-                            final isSelected =
-                                _selectedIds.contains(member.userId);
+                        controller: scrollController,
+                        itemCount: _members.length,
+                        itemBuilder: (_, index) {
+                          final member = _members[index];
+                          final isSelected = _selectedIds.contains(
+                            member.userId,
+                          );
 
-                            return CheckboxListTile(
-                              value: isSelected,
-                              onChanged: (checked) {
-                                setState(() {
-                                  if (checked == true) {
-                                    _selectedIds.add(member.userId);
-                                  } else {
-                                    _selectedIds.remove(member.userId);
-                                  }
-                                });
-                              },
-                              title: Text(member.fullName),
-                              subtitle: member.phone != null
-                                  ? Text(
+                          return CheckboxListTile(
+                            value: isSelected,
+                            onChanged: (checked) {
+                              setState(() {
+                                if (checked == true) {
+                                  _selectedIds.add(member.userId);
+                                } else {
+                                  _selectedIds.remove(member.userId);
+                                }
+                              });
+                            },
+                            title: Text(member.fullName),
+                            subtitle:
+                                member.phone != null
+                                    ? Text(
                                       member.phone!,
                                       style:
                                           Theme.of(context).textTheme.bodySmall,
                                     )
-                                  : null,
-                              secondary: CircleAvatar(
-                                backgroundColor: AppColors.safetyGreen
-                                    .withValues(alpha: 0.15),
-                                child: Text(
-                                  member.fullName.isNotEmpty
-                                      ? member.fullName[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(
-                                    color: AppColors.safetyGreen,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                    : null,
+                            secondary: CircleAvatar(
+                              backgroundColor: AppColors.safetyGreen.withValues(
+                                alpha: 0.15,
+                              ),
+                              child: Text(
+                                member.fullName.isNotEmpty
+                                    ? member.fullName[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  color: AppColors.safetyGreen,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              activeColor: AppColors.safetyGreen,
-                              controlAffinity: ListTileControlAffinity.trailing,
-                            );
-                          },
-                        ),
+                            ),
+                            activeColor: AppColors.safetyGreen,
+                            controlAffinity: ListTileControlAffinity.trailing,
+                          );
+                        },
+                      ),
             ),
           ],
         );

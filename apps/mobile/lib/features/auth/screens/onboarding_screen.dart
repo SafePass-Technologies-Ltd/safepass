@@ -109,7 +109,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         title: 'Terms of Service',
                         description:
                             'I agree to SafePass\'s Terms of Service and Privacy Policy. '
-                            'SafePass provides trip monitoring and alerting — it does not '
+                            'SafePass provides journey monitoring and alerting — it does not '
                             'provide physical security.',
                         value: _tosAccepted,
                         onChanged:
@@ -121,7 +121,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       _ConsentCard(
                         title: 'Emergency Audio Recording Consent',
                         description:
-                            'I understand that pressing the panic button during a trip will '
+                            'I understand that pressing the panic button during a journey will '
                             'activate silent background audio recording. This recording is '
                             'uploaded securely to SafePass for emergency response purposes only.',
                         value: _recordingConsent,

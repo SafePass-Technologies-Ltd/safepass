@@ -42,7 +42,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
       });
     } catch (e) {
       setState(() {
-        _error = 'Failed to load trips. Please try again.';
+        _error = 'Failed to load journeys. Please try again.';
         _loading = false;
       });
     }
@@ -52,7 +52,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Trip History'),
+        title: const Text('Journey History'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -93,7 +93,7 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
           children: [
             Icon(Icons.route, size: 64, color: AppColors.darkSlate.withValues(alpha: 0.2)),
             const SizedBox(height: 12),
-            const Text('No trips yet', style: TextStyle(fontSize: 16, color: Colors.grey)),
+            const Text('No journeys yet', style: TextStyle(fontSize: 16, color: Colors.grey)),
           ],
         ),
       );

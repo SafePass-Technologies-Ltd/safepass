@@ -154,7 +154,7 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Fund your wallet to start monitoring trips.',
+              'Fund your wallet to start monitoring journeys.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: AppColors.darkSlate.withValues(alpha: 0.6),
                   ),

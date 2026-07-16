@@ -73,7 +73,7 @@ class LoginScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Never Travel Alone.',
+                          'Every Journey Matters.',
                           style: TextStyle(
                             color: Colors.white.withValues(alpha: 0.7),
                             fontSize: 20,

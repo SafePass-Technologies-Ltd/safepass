@@ -157,7 +157,7 @@ class _WarningCard extends StatelessWidget {
             const SizedBox(height: 12),
             const Text(
               'Your profile, name, and contact details will be removed. Your '
-              'trip history, payments, and safety reports are kept for legal '
+              'journey history, payments, and safety reports are kept for legal '
               'and financial record-keeping, with your personal details '
               'removed from them. This can take up to 14 days, during which '
               'you can cancel any time.',

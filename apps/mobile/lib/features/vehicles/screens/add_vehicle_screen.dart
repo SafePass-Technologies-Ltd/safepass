@@ -142,7 +142,7 @@ class _AddVehicleScreenState extends State<AddVehicleScreen> {
               child: SwitchListTile(
                 title: const Text('Set as default vehicle'),
                 subtitle: const Text(
-                    'This vehicle will be pre-selected on trip registration'),
+                    'This vehicle will be pre-selected on journey registration'),
                 value: _isDefault,
                 onChanged: (value) => setState(() => _isDefault = value),
               ),

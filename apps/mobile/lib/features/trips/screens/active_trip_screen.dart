@@ -99,6 +99,26 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
 
   // ── Emergency countdown logic ──────────────────────────────────────────────
 
+  /// Shows a one-line explainer for the emergency button on a plain tap.
+  ///
+  /// A single tap is otherwise a harmless no-op (the real action needs a
+  /// 10-second hold), so this is a safe place to teach first-time users what
+  /// the button does instead of leaving them to guess or accidentally
+  /// discover it.
+  void _showEmergencyExplainer(BuildContext context, {required bool ended}) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ended
+              ? 'This journey has ended — emergency alerts are no longer available.'
+              : 'Press and hold for 10 seconds to alert your emergency contacts and monitoring officer.',
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
   /// Starts the 10-second countdown. Called on long press of the emergency
   /// button. Shows the [_EmergencyCountdownBanner] overlay immediately and
   /// calls [_fireEmergency] if the user does not cancel in time.
@@ -270,8 +290,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             SnackBar(
               content: Text(
                 state.status == TripMonitorStatus.completed
-                    ? 'Trip completed — safe arrival!'
-                    : 'Trip cancelled',
+                    ? 'Journey completed — safe arrival!'
+                    : 'Journey cancelled',
               ),
             ),
           );
@@ -470,7 +490,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                 ? AppColors.darkSlate.withValues(alpha: 0.3)
                 : AppColors.primary,
             tooltip: _isTripEnded(state)
-                ? 'This trip has ended'
+                ? 'This journey has ended'
                 : 'Message officer',
             style: IconButton.styleFrom(
               minimumSize: Size.zero,
@@ -619,8 +639,18 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
 
               // Emergency — compact square icon button, long-press only.
               // A GestureDetector is used because OutlinedButton has no
-              // onLongPress parameter. The Tooltip informs the user that a
-              // long press (hold) is required so a stray tap is harmless.
+              // onLongPress parameter.
+              //
+              // The button used to rely solely on a [Tooltip] to explain
+              // itself, but tooltips need their own long-press to reveal on
+              // mobile -- which collides with the real long-press action
+              // (starts the 10s countdown) and so was effectively never
+              // discoverable by touch. Two additions make it self-explanatory
+              // without depending on that: (1) a small permanent "Hold" label
+              // under the icon, matching the caption style already used by
+              // the quick-action buttons elsewhere on this screen, and (2) a
+              // single tap (which does nothing destructive on its own) shows
+              // a snackbar spelling out exactly what holding the button does.
               //
               // Long press is disabled when:
               //   • The trip is already in emergency/escalated status.
@@ -629,19 +659,21 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               //     escalating a finished trip makes no sense and the
               //     backend rejects it (see admin-emergency.routes.ts).
               Builder(builder: (_) {
+                final ended = _isTripEnded(state);
                 final disabled = state.trip?.status == 'emergency' ||
                     state.trip?.status == 'escalated' ||
                     _emergencyPending ||
-                    _isTripEnded(state);
+                    ended;
                 return Tooltip(
-                  message: _isTripEnded(state)
-                      ? 'This trip has ended'
-                      : 'Hold to trigger emergency',
+                  message:
+                      ended ? 'This journey has ended' : 'Hold to trigger emergency',
                   preferBelow: false,
                   child: GestureDetector(
+                    onTap: () => _showEmergencyExplainer(context, ended: ended),
                     onLongPress: disabled ? null : _startEmergencyCountdown,
                     child: Container(
-                      padding: const EdgeInsets.all(14),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
                       decoration: BoxDecoration(
                         border: Border.all(
                           color: disabled
@@ -650,12 +682,28 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                         ),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(
-                        Icons.warning_amber_rounded,
-                        color: disabled
-                            ? AppColors.emergencyRed.withValues(alpha: 0.4)
-                            : AppColors.emergencyRed,
-                        size: 24,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: disabled
+                                ? AppColors.emergencyRed.withValues(alpha: 0.4)
+                                : AppColors.emergencyRed,
+                            size: 22,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Hold',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: disabled
+                                  ? AppColors.emergencyRed.withValues(alpha: 0.4)
+                                  : AppColors.emergencyRed,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -692,9 +740,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Cancel Trip?'),
+        title: const Text('Cancel Journey?'),
         content: const Text(
-          'Are you sure you want to cancel this trip? Monitoring will stop.',
+          'Are you sure you want to cancel this journey? Monitoring will stop.',
         ),
         actions: [
           TextButton(
@@ -771,8 +819,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       };
 
   String _statusLabel(String status) => switch (status) {
-        'active' => 'Trip Active',
-        'delayed' => 'Trip Delayed',
+        'active' => 'Journey Active',
+        'delayed' => 'Journey Delayed',
         'emergency' => '⚠ Emergency',
         'escalated' => '⚠ Escalated',
         _ => status,
@@ -1041,7 +1089,7 @@ class _VehicleCopiedBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = initiatorName != null
         ? "Vehicle details copied from $initiatorName's trip."
-        : 'Vehicle details copied from trip initiator.';
+        : 'Vehicle details copied from journey initiator.';
 
     return Container(
       width: double.infinity,

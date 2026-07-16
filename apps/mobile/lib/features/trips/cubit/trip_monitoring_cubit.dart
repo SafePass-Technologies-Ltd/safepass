@@ -330,7 +330,7 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
       emit(state.copyWith(
         status: TripMonitorStatus.error,
         errorMessage:
-            e.response?.data?['error']?['message'] ?? 'Failed to load trip',
+            e.response?.data?['error']?['message'] ?? 'Failed to load journey',
       ));
     }
   }
@@ -405,7 +405,7 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
       emit(state.copyWith(
         status: TripMonitorStatus.error,
         errorMessage:
-            e.response?.data?['error']?['message'] ?? 'Failed to complete trip',
+            e.response?.data?['error']?['message'] ?? 'Failed to complete journey',
       ));
     }
   }
@@ -427,7 +427,7 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
       emit(state.copyWith(
         status: TripMonitorStatus.error,
         errorMessage:
-            e.response?.data?['error']?['message'] ?? 'Failed to cancel trip',
+            e.response?.data?['error']?['message'] ?? 'Failed to cancel journey',
       ));
     }
   }
@@ -442,7 +442,7 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
 
     if (trip == null || position == null) {
       emit(state.copyWith(
-        errorMessage: 'Cannot trigger emergency — no active trip or GPS signal',
+        errorMessage: 'Cannot trigger emergency — no active journey or GPS signal',
       ));
       return;
     }
@@ -486,8 +486,8 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
         channelId: 'safepass_trip_tracking',
-        channelName: 'SafePass Trip Tracking',
-        channelDescription: 'Background GPS tracking during an active trip',
+        channelName: 'SafePass Journey Tracking',
+        channelDescription: 'Background GPS tracking during an active journey',
         onlyAlertOnce: true,
       ),
       iosNotificationOptions: const IOSNotificationOptions(
@@ -504,8 +504,8 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
 
     await FlutterForegroundTask.startService(
       serviceId: 1001,
-      notificationTitle: 'SafePass Trip Active',
-      notificationText: 'Monitoring your trip...',
+      notificationTitle: 'SafePass Journey Active',
+      notificationText: 'Monitoring your journey...',
       callback: tripBackgroundServiceEntryPoint,
     );
   }

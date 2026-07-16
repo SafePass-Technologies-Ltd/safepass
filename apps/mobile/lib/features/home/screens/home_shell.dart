@@ -7,6 +7,7 @@
 /// once trip state tracking is implemented (M-09, M-10).
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +15,13 @@ import '../../../app/router.dart';
 import '../../../app/theme.dart';
 import '../../profile/cubit/profile_cubit.dart';
 import '../../trips/cubit/trip_monitoring_cubit.dart';
+
+/// Explicit background for the bottom [NavigationBar], shared with the OS
+/// system navigation bar via [AnnotatedRegion] below so the two visually
+/// merge into one bar instead of Material 3's default tinted-surface color
+/// (which doesn't match the system bar's default black/white) creating a
+/// visible seam.
+const Color _kNavBarBackground = AppColors.white;
 
 class HomeShell extends StatefulWidget {
   final Widget child;
@@ -46,47 +54,60 @@ class _HomeShellState extends State<HomeShell> {
     final tripActive = tripState.status == TripMonitorStatus.active ||
         tripState.status == TripMonitorStatus.gpsUpdating;
 
-    return Scaffold(
-      body: widget.child,
-      // The banner and nav bar share the bottomNavigationBar slot so the banner
-      // is part of the layout rather than an overlay. This ensures modal bottom
-      // sheets opened from child screens are never obscured by the banner.
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (tripActive) _ActiveTripBanner(tripState: tripState),
-          NavigationBar(
-            selectedIndex: currentIndex,
-            onDestinationSelected: (index) => _onTabSelected(
-              context,
-              index,
-              currentIndex: currentIndex,
-              hasEmergencyContact: hasEmergencyContact,
+    // Keep the OS system navigation bar (the gesture-bar/button strip at the
+    // very bottom of the screen, outside Flutter's own widget tree) in sync
+    // with this shell's NavigationBar background instead of the platform
+    // default black/white -- otherwise there's a visible seam between our
+    // nav bar and the system bar directly beneath it.
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        systemNavigationBarColor: _kNavBarBackground,
+        systemNavigationBarIconBrightness: Brightness.dark,
+        systemNavigationBarDividerColor: _kNavBarBackground,
+      ),
+      child: Scaffold(
+        body: widget.child,
+        // The banner and nav bar share the bottomNavigationBar slot so the banner
+        // is part of the layout rather than an overlay. This ensures modal bottom
+        // sheets opened from child screens are never obscured by the banner.
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (tripActive) _ActiveTripBanner(tripState: tripState),
+            NavigationBar(
+              backgroundColor: _kNavBarBackground,
+              selectedIndex: currentIndex,
+              onDestinationSelected: (index) => _onTabSelected(
+                context,
+                index,
+                currentIndex: currentIndex,
+                hasEmergencyContact: hasEmergencyContact,
+              ),
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.map_outlined),
+                  selectedIcon: Icon(Icons.map),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.route_outlined),
+                  selectedIcon: Icon(Icons.route),
+                  label: 'Journeys',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.account_balance_wallet_outlined),
+                  selectedIcon: Icon(Icons.account_balance_wallet),
+                  label: 'Wallet',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Profile',
+                ),
+              ],
             ),
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.map_outlined),
-                selectedIcon: Icon(Icons.map),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.route_outlined),
-                selectedIcon: Icon(Icons.route),
-                label: 'Trips',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.account_balance_wallet_outlined),
-                selectedIcon: Icon(Icons.account_balance_wallet),
-                label: 'Wallet',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_outline),
-                selectedIcon: Icon(Icons.person),
-                label: 'Profile',
-              ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -253,7 +274,7 @@ class _ActiveTripBannerState extends State<_ActiveTripBanner>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Trip in progress',
+                    'Journey in progress',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 12,

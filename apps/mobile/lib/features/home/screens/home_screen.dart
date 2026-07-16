@@ -40,6 +40,12 @@ class _HomeScreenState extends State<HomeScreen> {
   /// user gesture and avoid disabling follow mode by mistake.
   bool _isProgrammaticMove = false;
 
+  /// Whether the bottom sheet is showing its full content (subtitle +
+  /// quick actions row) or just the minimal at-rest summary (title/card +
+  /// primary action). Starts collapsed so the map has more visible room by
+  /// default; the user expands it by tapping/dragging the handle.
+  bool _sheetExpanded = false;
+
   @override
   void dispose() {
     _positionSubscription?.cancel();
@@ -128,6 +134,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
 
+              // SafePass mark — top-left corner, mirrors the LIVE badge's
+              // floating-pill treatment on the opposite side so the top of
+              // the map reads as a balanced bar rather than the badge
+              // looking like an orphaned one-off element.
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 12,
+                left: 16,
+                child: const _HomeBrandMark(),
+              ),
+
               // Pulsing "LIVE" badge — top-right corner, visible when trip is active.
               if (tripActive)
                 Positioned(
@@ -137,133 +153,175 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
 
               // Bottom sheet — trip status + Start button.
+              //
+              // Expandable: collapsed (at-rest) shows only the essential
+              // prompt/card + primary action so the map stays mostly visible;
+              // expanding (tap or drag the handle) reveals the subtitle and
+              // the quick-actions row (My Location / Scheduled / Report).
               Positioned(
                 bottom: 0,
                 left: 0,
                 right: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0x1A000000),
-                        blurRadius: 12,
-                        offset: Offset(0, -4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Drag handle.
-                      Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE2E8F0),
-                          borderRadius: BorderRadius.circular(2),
+                child: GestureDetector(
+                  // Swipe up/down anywhere on the sheet also toggles it,
+                  // mirroring a standard draggable bottom sheet without the
+                  // overhead of a full DraggableScrollableSheet for what is
+                  // only a two-state (collapsed/expanded) panel.
+                  onVerticalDragEnd: (details) {
+                    final velocity = details.primaryVelocity ?? 0;
+                    if (velocity < -100) {
+                      setState(() => _sheetExpanded = true);
+                    } else if (velocity > 100) {
+                      setState(() => _sheetExpanded = false);
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOut,
+                    padding: const EdgeInsets.all(20),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(20)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0x1A000000),
+                          blurRadius: 12,
+                          offset: Offset(0, -4),
                         ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Conditional content — active trip card OR start prompt.
-                      if (tripActive) ...[
-                        _ActiveTripCard(
-                          trip: tripState.trip,
-                          onViewTrip: () {
-                            final tripId = tripState.trip?.id;
-                            if (tripId != null) {
-                              context.push('/trip/active/$tripId');
-                            }
-                          },
-                        ),
-                      ] else ...[
-                        // No active trip.
-                        Text(
-                          'Ready to travel?',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Start monitoring your journey from as little as ₦$kTripPriceNaira',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.darkSlate.withValues(alpha: 0.6),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Drag handle — also tappable to toggle expand/collapse.
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () =>
+                              setState(() => _sheetExpanded = !_sheetExpanded),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Container(
+                              width: 40,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE2E8F0),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
                           ),
                         ),
                         const SizedBox(height: 16),
 
-                        // Start New Trip button.
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: FilledButton.icon(
-                            onPressed: () => context.push(AppRoutes.tripRegistration),
-                            icon: const Icon(Icons.play_arrow),
-                            label: const Text('Start New Trip'),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: AppColors.safetyGreen,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
+                        // Conditional content — active trip card OR start prompt.
+                        if (tripActive) ...[
+                          _ActiveTripCard(
+                            trip: tripState.trip,
+                            onViewTrip: () {
+                              final tripId = tripState.trip?.id;
+                              if (tripId != null) {
+                                context.push('/trip/active/$tripId');
+                              }
+                            },
                           ),
-                        ),
-                      ],
+                        ] else ...[
+                          // No active trip.
+                          Text(
+                            'Ready to travel?',
+                            style:
+                                Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                          ),
+                          // Subtitle is part of the "extra" detail, hidden at
+                          // rest and revealed only when expanded.
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOut,
+                            alignment: Alignment.topCenter,
+                            child: _sheetExpanded
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(
+                                      'Start monitoring your journey from as little as ₦$kTripPriceNaira',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: AppColors.darkSlate
+                                                .withValues(alpha: 0.6),
+                                          ),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
+                          const SizedBox(height: 16),
 
-                      const SizedBox(height: 12),
-
-                      // Quick actions row.
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _centerOnUser(),
-                              icon: const Icon(Icons.my_location, size: 16),
-                              label: const Text('My Location'),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
+                          // Start New Journey button — always visible, even
+                          // at rest, since it's the primary action.
+                          SizedBox(
+                            width: double.infinity,
+                            height: 52,
+                            child: FilledButton.icon(
+                              onPressed: () =>
+                                  context.push(AppRoutes.tripRegistration),
+                              icon: const Icon(Icons.play_arrow),
+                              label: const Text('Start New Journey'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: AppColors.safetyGreen,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => context.push(AppRoutes.scheduledTrips),
-                              icon: const Icon(Icons.calendar_month_outlined, size: 16),
-                              label: const Text('Scheduled'),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => context.push(AppRoutes.incidentReport),
-                              icon: const Icon(Icons.report_outlined, size: 16),
-                              label: const Text('Report'),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 10),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
                               ),
                             ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 8),
-                    ],
+
+                        // Quick actions row — big icon, small caption below.
+                        // Hidden at rest and only revealed when expanded, so
+                        // the sheet stays minimal by default.
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                          alignment: Alignment.topCenter,
+                          child: _sheetExpanded
+                              ? Padding(
+                                  padding: const EdgeInsets.only(top: 12),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: _QuickActionButton(
+                                          icon: Icons.my_location,
+                                          label: 'My Location',
+                                          onPressed: () => _centerOnUser(),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: _QuickActionButton(
+                                          icon: Icons.calendar_month_outlined,
+                                          label: 'Scheduled',
+                                          onPressed: () => context
+                                              .push(AppRoutes.scheduledTrips),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: _QuickActionButton(
+                                          icon: Icons.report_outlined,
+                                          label: 'Report',
+                                          onPressed: () => context
+                                              .push(AppRoutes.incidentReport),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                        SizedBox(height: _sheetExpanded ? 8 : 0),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -390,6 +448,115 @@ class _LiveTripBadgeState extends State<_LiveTripBadge>
   }
 }
 
+/// Small SafePass brand mark floating over the top-left of the Home map,
+/// mirroring the white-pill + shadow treatment used elsewhere on this screen
+/// (e.g. the quick-action buttons) so it reads as part of the same visual
+/// language rather than a foreign logo slapped over the map.
+///
+/// Starts expanded with a "SafePass" label next to the icon, then
+/// auto-collapses down to an icon-only circle a few seconds after the
+/// screen appears -- introduces the brand on load without permanently
+/// taking up extra width over the map. Tapping it re-expands the label,
+/// auto-collapsing again after the same delay.
+class _HomeBrandMark extends StatefulWidget {
+  const _HomeBrandMark();
+
+  @override
+  State<_HomeBrandMark> createState() => _HomeBrandMarkState();
+}
+
+class _HomeBrandMarkState extends State<_HomeBrandMark> {
+  static const _collapseDelay = Duration(seconds: 5);
+
+  bool _expanded = true;
+  Timer? _collapseTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleCollapse();
+  }
+
+  void _scheduleCollapse() {
+    _collapseTimer?.cancel();
+    _collapseTimer = Timer(_collapseDelay, () {
+      if (mounted) setState(() => _expanded = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _collapseTimer?.cancel();
+    super.dispose();
+  }
+
+  void _handleTap() {
+    setState(() => _expanded = true);
+    _scheduleCollapse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: _handleTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.symmetric(
+            horizontal: _expanded ? 10 : 6,
+            vertical: 6,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: const [
+              BoxShadow(color: Color(0x1A000000), blurRadius: 8),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipOval(
+                child: Image.asset(
+                  'assets/images/safepass-logo.png',
+                  width: 28,
+                  height: 28,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              // Collapsing label — animates its width down to zero rather
+              // than just disappearing, so the pill visibly shrinks shut
+              // around the icon instead of the text abruptly vanishing.
+              ClipRect(
+                child: AnimatedSize(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                  alignment: Alignment.centerLeft,
+                  child: _expanded
+                      ? Padding(
+                          padding: const EdgeInsets.only(left: 8, right: 2),
+                          child: Text(
+                            'SafePass',
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.darkSlate,
+                                ),
+                          ),
+                        )
+                      : const SizedBox(width: 0, height: 28),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Bottom-sheet card shown in place of the "Ready to travel?" prompt when
 /// a trip is currently active. Displays route summary and a "View Trip"
 /// button that returns the user to the active trip screen.
@@ -438,7 +605,7 @@ class _ActiveTripCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Trip in progress',
+                  'Journey in progress',
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: AppColors.safetyGreen,
                         fontWeight: FontWeight.w700,
@@ -468,9 +635,54 @@ class _ActiveTripCard extends StatelessWidget {
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
             child: const Text(
-              'View Trip',
+              'View Journey',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single quick-action button for the home screen's bottom sheet row
+/// ("My Location", "Scheduled", "Report").
+///
+/// Uses a big icon with a small caption stacked underneath rather than the
+/// inline icon+label pill this replaces — the vertical layout is narrower
+/// per-button, so all three fit comfortably without crowding or text
+/// wrapping on smaller screens.
+class _QuickActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  const _QuickActionButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 24),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 11),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

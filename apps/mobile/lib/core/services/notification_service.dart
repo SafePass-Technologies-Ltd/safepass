@@ -80,8 +80,8 @@ class NotificationService {
     // without silencing emergency alerts.
     const messageChannel = AndroidNotificationChannel(
       'safepass_messages',
-      'Trip Messages',
-      description: 'New messages and check-ins from your monitoring officer during an active trip.',
+      'Journey Messages',
+      description: 'New messages and check-ins from your monitoring officer during an active journey.',
       importance: Importance.high,
       playSound: true,
     );
@@ -141,7 +141,7 @@ class NotificationService {
   }) async {
     const androidDetails = AndroidNotificationDetails(
       'safepass_messages',
-      'Trip Messages',
+      'Journey Messages',
       importance: Importance.high,
       priority: Priority.high,
       playSound: true,

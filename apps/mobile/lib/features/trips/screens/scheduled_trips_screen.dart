@@ -35,7 +35,7 @@ class _ScheduledTripsView extends StatelessWidget {
       length: ScheduledTripFilter.values.length,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Scheduled Trips'),
+          title: const Text('Scheduled Journeys'),
           centerTitle: true,
           bottom: TabBar(
             onTap: (index) {
@@ -95,7 +95,7 @@ class _ScheduledTripsView extends StatelessWidget {
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () => _openCreateSheet(context, prefillDestination: null),
           icon: const Icon(Icons.add),
-          label: const Text('Schedule Trip'),
+          label: const Text('Schedule Journey'),
           backgroundColor: AppColors.primary,
         ),
       ),
@@ -238,7 +238,7 @@ class _TripCard extends StatelessWidget {
                   FilledButton.icon(
                     onPressed: () => _startTripNow(context, trip),
                     icon: const Icon(Icons.play_arrow, size: 16),
-                    label: const Text('Start Trip'),
+                    label: const Text('Start Journey'),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.safetyGreen,
                       padding: const EdgeInsets.symmetric(
@@ -259,9 +259,9 @@ class _TripCard extends StatelessWidget {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Cancel scheduled trip?'),
+        title: const Text('Cancel scheduled journey?'),
         content: Text(
-          'This will cancel your trip to '
+          'This will cancel your journey to '
           '${trip.destination.name ?? 'the destination'}. '
           'You can schedule a new one at any time.',
         ),
@@ -279,7 +279,7 @@ class _TripCard extends StatelessWidget {
             },
             style: TextButton.styleFrom(
                 foregroundColor: AppColors.emergencyRed),
-            child: const Text('Cancel Trip'),
+            child: const Text('Cancel Journey'),
           ),
         ],
       ),
@@ -350,10 +350,10 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final messages = {
       ScheduledTripFilter.upcoming:
-          'No upcoming trips.\nTap the button below to schedule one.',
+          'No upcoming journeys.\nTap the button below to schedule one.',
       ScheduledTripFilter.missed:
-          'No missed trips — great job staying on schedule!',
-      ScheduledTripFilter.past: 'No past scheduled trips yet.',
+          'No missed journeys — great job staying on schedule!',
+      ScheduledTripFilter.past: 'No past scheduled journeys yet.',
     };
 
     return Center(

@@ -217,7 +217,7 @@ class _JoinOrgScreenState extends State<JoinOrgScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'By joining, $orgName will be able to monitor your trip '
+                  'By joining, $orgName will be able to monitor your journey '
                   'activity while you are an active member. You can leave the '
                   'organisation at any time from your Profile.',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(

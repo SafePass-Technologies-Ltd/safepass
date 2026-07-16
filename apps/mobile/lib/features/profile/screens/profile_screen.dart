@@ -293,7 +293,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text('Leave Organisation?'),
         content: Text(
           'Are you sure you want to leave $orgName? '
-          'You will no longer receive org-covered trip monitoring.',
+          'You will no longer receive org-covered journey monitoring.',
         ),
         actions: [
           TextButton(
@@ -337,7 +337,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const Divider(height: 1),
                 SwitchListTile(
                   title: const Text('Email Notifications'),
-                  subtitle: const Text('Receive trip reports and alerts'),
+                  subtitle: const Text('Receive journey reports and alerts'),
                   value: state.emailEnabled,
                   onChanged: cubit.setEmailEnabled,
                 ),
@@ -427,7 +427,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       children: [
         Text(
           'Permanently close your SafePass account. Your profile, name, and '
-          'contact details are removed; trip history, payments, and safety '
+          'contact details are removed; journey history, payments, and safety '
           'reports are kept (with your personal details removed from them) '
           'for legal and financial record-keeping. Requests are processed '
           'after a 14-day cooling-off period, which you can cancel at any '

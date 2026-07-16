@@ -271,7 +271,7 @@ class _ScheduleTripSheetState extends State<ScheduleTripSheet> {
 
               // ── Title ──
               Text(
-                'Schedule a Trip',
+                'Schedule a Journey',
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -282,8 +282,8 @@ class _ScheduleTripSheetState extends State<ScheduleTripSheet> {
               TextField(
                 controller: _labelController,
                 decoration: const InputDecoration(
-                  labelText: 'Trip Label (optional)',
-                  hintText: 'e.g., Lagos trip, Holiday travel',
+                  labelText: 'Journey Label (optional)',
+                  hintText: 'e.g., Lagos journey, Holiday travel',
                   prefixIcon: Icon(Icons.label_outline),
                   border: OutlineInputBorder(),
                 ),
@@ -353,7 +353,7 @@ class _ScheduleTripSheetState extends State<ScheduleTripSheet> {
               TextField(
                 controller: _transportController,
                 decoration: const InputDecoration(
-                  labelText: 'Transport Company (optional)',
+                  labelText: 'Transport Provider/Company (optional)',
                   hintText: 'e.g., ABC Transport',
                   prefixIcon: Icon(Icons.business_outlined),
                   border: OutlineInputBorder(),
@@ -406,7 +406,7 @@ class _ScheduleTripSheetState extends State<ScheduleTripSheet> {
                         ),
                       )
                     : const Text(
-                        'Save Scheduled Trip',
+                        'Save Scheduled Journey',
                         style: TextStyle(fontWeight: FontWeight.w600),
                       ),
               ),
