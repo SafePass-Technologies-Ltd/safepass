@@ -71,6 +71,34 @@ class OrgMemberModel extends Equatable {
   List<Object?> get props => [userId, fullName, phone];
 }
 
+/// A distinct past destination, returned by
+/// `GET /v1/trips/destinations/recent`. Powers the "Recent destinations"
+/// quick-pick list in the "Where to?" sheet so the user can reuse a
+/// previously-travelled-to place without retyping/re-searching it.
+class RecentDestinationModel extends Equatable {
+  final PlaceLocation destination;
+  final String lastTripId;
+  final DateTime lastTravelledAt;
+
+  const RecentDestinationModel({
+    required this.destination,
+    required this.lastTripId,
+    required this.lastTravelledAt,
+  });
+
+  factory RecentDestinationModel.fromJson(Map<String, dynamic> json) =>
+      RecentDestinationModel(
+        destination: PlaceLocation.fromJson(
+            json['destination'] as Map<String, dynamic>),
+        lastTripId: json['lastTripId'] as String,
+        lastTravelledAt:
+            DateTime.parse(json['lastTravelledAt'] as String),
+      );
+
+  @override
+  List<Object?> get props => [destination, lastTripId, lastTravelledAt];
+}
+
 /// A place suggestion returned from the geocoding autocomplete API.
 class PlaceSuggestion {
   final String placeId;
@@ -400,6 +428,29 @@ class TripRegistrationCubit extends Cubit<TripRegistrationState> {
           [];
       return items
           .map((e) => OrgMemberModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Fetch the caller's most recent distinct past destinations, for the
+  /// "Recent destinations" quick-pick list in the "Where to?" sheet.
+  ///
+  /// Returns an empty list on failure (e.g. offline) so the sheet can simply
+  /// hide the section rather than showing an error for a non-essential
+  /// convenience feature.
+  Future<List<RecentDestinationModel>> fetchRecentDestinations(
+      {int limit = 5}) async {
+    try {
+      final response = await _dio.get(
+        '/v1/trips/destinations/recent',
+        queryParameters: {'limit': limit},
+      );
+      final items = response.data['destinations'] as List<dynamic>? ?? [];
+      return items
+          .map((e) =>
+              RecentDestinationModel.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (_) {
       return [];

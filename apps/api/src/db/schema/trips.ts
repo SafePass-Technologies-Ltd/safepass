@@ -2,7 +2,7 @@
 // not in PostgreSQL. See apps/api/src/services/dynamo.service.ts.
 import { pgTable, uuid, varchar, text, boolean, jsonb, timestamp, index } from 'drizzle-orm/pg-core';
 import { tripStatusEnum, vehicleTypeEnum } from './enums';
-import type { Location } from './types';
+import type { Location, StatusTransitionCounts } from './types';
 import { users } from './users';
 import { userVehicles } from './user-vehicles';
 import { organizations } from './organizations';
@@ -34,6 +34,15 @@ export const trips = pgTable(
     driverPhone: varchar('driver_phone', { length: 20 }),
     routePolyline: text('route_polyline'),
     paymentIds: jsonb('payment_ids').$type<string[]>().default([]),
+    // A-26 Trip Persistence & Archival: tracks how many times this trip has
+    // re-entered the 'delayed' status (the only non-terminal status without
+    // a dedicated durable table of its own -- see types.ts's
+    // StatusTransitionCounts doc comment). Read at trip completion/
+    // cancellation time to populate TripSummary.status_transition_counts.
+    statusTransitionCounts: jsonb('status_transition_counts')
+      .$type<StatusTransitionCounts>()
+      .notNull()
+      .default({ delayed: 0 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

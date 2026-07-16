@@ -97,14 +97,22 @@ messageRoutes.post(
       return c.json({ error: { code: 404, message: 'Trip not found' } }, 404);
     }
 
-    const message = await sendMessage({
-      tripId: conversationId,
-      senderId: user.sub,
-      senderRole: 'monitoring_officer',
-      content,
-    });
+    try {
+      const message = await sendMessage({
+        tripId: conversationId,
+        senderId: user.sub,
+        senderRole: 'monitoring_officer',
+        content,
+      });
 
-    return c.json({ ...message, conversationId: message.tripId }, 201);
+      return c.json({ ...message, conversationId: message.tripId }, 201);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        const code = (err as { statusCode?: number }).statusCode ?? 500;
+        return c.json({ error: { code, message: err.message } }, code as 404 | 422);
+      }
+      throw err;
+    }
   }
 );
 
@@ -167,15 +175,23 @@ messageRoutes.post(
     // Determine sender role.
     const senderRole = isAdmin ? 'monitoring_officer' as const : 'user' as const;
 
-    const message = await sendMessage({
-      tripId,
-      senderId: user.sub,
-      senderRole,
-      content: data.content,
-      messageType: data.messageType,
-    });
+    try {
+      const message = await sendMessage({
+        tripId,
+        senderId: user.sub,
+        senderRole,
+        content: data.content,
+        messageType: data.messageType,
+      });
 
-    return c.json(message, 201);
+      return c.json(message, 201);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        const code = (err as { statusCode?: number }).statusCode ?? 500;
+        return c.json({ error: { code, message: err.message } }, code as 404 | 422);
+      }
+      throw err;
+    }
   }
 );
 

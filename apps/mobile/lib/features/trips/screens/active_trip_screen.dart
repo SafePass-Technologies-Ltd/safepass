@@ -430,6 +430,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         const Spacer(),
 
         // ── Message officer button — opens the trip's chat thread ──
+        // Disabled once the trip has ended: there is no one left monitoring
+        // to message, and the backend would reject the send anyway.
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -439,20 +441,26 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
             ],
           ),
           child: IconButton(
-            onPressed: () {
-              final tripId = state.trip?.id ?? widget.tripId;
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => MessageThreadScreen(
-                    tripId: tripId,
-                    participantName: 'Monitoring Officer',
-                  ),
-                ),
-              );
-            },
+            onPressed: _isTripEnded(state)
+                ? null
+                : () {
+                    final tripId = state.trip?.id ?? widget.tripId;
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => MessageThreadScreen(
+                          tripId: tripId,
+                          participantName: 'Monitoring Officer',
+                        ),
+                      ),
+                    );
+                  },
             icon: const Icon(Icons.chat_bubble_outline),
-            color: AppColors.primary,
-            tooltip: 'Message officer',
+            color: _isTripEnded(state)
+                ? AppColors.darkSlate.withValues(alpha: 0.3)
+                : AppColors.primary,
+            tooltip: _isTripEnded(state)
+                ? 'This trip has ended'
+                : 'Message officer',
             style: IconButton.styleFrom(
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -606,37 +614,42 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               // Long press is disabled when:
               //   • The trip is already in emergency/escalated status.
               //   • A countdown is already in progress (_emergencyPending).
-              Tooltip(
-                message: 'Hold to trigger emergency',
-                preferBelow: false,
-                child: GestureDetector(
-                  onLongPress: (state.trip?.status == 'emergency' ||
-                          state.trip?.status == 'escalated' ||
-                          _emergencyPending)
-                      ? null
-                      : _startEmergencyCountdown,
-                  child: Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: (state.trip?.status == 'emergency' ||
-                                state.trip?.status == 'escalated')
+              //   • The trip has already ended (completed/cancelled) --
+              //     escalating a finished trip makes no sense and the
+              //     backend rejects it (see admin-emergency.routes.ts).
+              Builder(builder: (_) {
+                final disabled = state.trip?.status == 'emergency' ||
+                    state.trip?.status == 'escalated' ||
+                    _emergencyPending ||
+                    _isTripEnded(state);
+                return Tooltip(
+                  message: _isTripEnded(state)
+                      ? 'This trip has ended'
+                      : 'Hold to trigger emergency',
+                  preferBelow: false,
+                  child: GestureDetector(
+                    onLongPress: disabled ? null : _startEmergencyCountdown,
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: disabled
+                              ? AppColors.emergencyRed.withValues(alpha: 0.4)
+                              : AppColors.emergencyRed,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.warning_amber_rounded,
+                        color: disabled
                             ? AppColors.emergencyRed.withValues(alpha: 0.4)
                             : AppColors.emergencyRed,
+                        size: 24,
                       ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.warning_amber_rounded,
-                      color: (state.trip?.status == 'emergency' ||
-                              state.trip?.status == 'escalated')
-                          ? AppColors.emergencyRed.withValues(alpha: 0.4)
-                          : AppColors.emergencyRed,
-                      size: 24,
                     ),
                   ),
-                ),
-              ),
+                );
+              }),
             ],
           ),
 
@@ -753,6 +766,23 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         'escalated' => '⚠ Escalated',
         _ => status,
       };
+
+  /// True once the trip has reached a terminal state (completed/cancelled).
+  ///
+  /// Messaging, check-in, and escalation only make sense while a trip is
+  /// still being monitored -- the backend rejects these actions server-side
+  /// once the trip is terminal (see message.service.ts / emergency.routes.ts),
+  /// but the UI should also disable them proactively rather than let the user
+  /// tap into a request that's guaranteed to fail. This mirrors the existing
+  /// pattern just below for disabling the emergency button once already in
+  /// emergency/escalated status.
+  ///
+  /// Note: the BlocConsumer listener above already navigates back to '/home'
+  /// as soon as [TripMonitorStatus.completed]/[TripMonitorStatus.cancelled]
+  /// is emitted, so this mainly guards the brief frame between the server
+  /// confirming the status change and that navigation actually occurring.
+  bool _isTripEnded(TripMonitoringState state) =>
+      state.trip?.status == 'completed' || state.trip?.status == 'cancelled';
 
   String _formatDuration(DateTime startedAt) {
     final diff = DateTime.now().difference(startedAt);

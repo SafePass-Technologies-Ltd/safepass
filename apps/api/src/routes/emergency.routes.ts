@@ -211,6 +211,24 @@ emergencyTriggerRoutes.post('/:tripId/check-in', async (c) => {
     return c.json({ error: { code: 403, message: 'Access denied — not your trip' } }, 403);
   }
 
+  // Defense in depth: a trip's status can only be 'cancelled'/'completed'
+  // while it still has an "active" emergency event if an admin force-
+  // transitioned it via adminUpdateTripStatus (which — unlike
+  // startTrip/completeTrip/cancelTrip — does not run assertValidTransition).
+  // Reject the check-in explicitly rather than silently reviving a terminal
+  // trip back to 'active'.
+  if (trip.status === 'cancelled' || trip.status === 'completed') {
+    return c.json(
+      {
+        error: {
+          code: 422,
+          message: `Cannot check in on a trip with status '${trip.status}'`,
+        },
+      },
+      422
+    );
+  }
+
   const activeEmergency = await db.query.emergencyEvents.findFirst({
     where: and(eq(emergencyEvents.tripId, tripId), eq(emergencyEvents.status, 'active')),
     orderBy: (e, { desc }) => [desc(e.createdAt)],

@@ -214,6 +214,26 @@ export const subscriptionRequestStatusEnum = pgEnum('subscription_request_status
   'cancelled',
 ]);
 
+// --- Account Deletion (M-38 / A-27) ---
+
+export const accountDeletionStatusEnum = pgEnum('account_deletion_status', [
+  'pending',
+  'cancelled',
+  'legal_hold',
+  'completed',
+  'force_deleted',
+]);
+
+// --- Trip Archival (A-26 Trip Persistence & Archival) ---
+
+// TripSummary.final_status is a strict subset of trip_status -- a summary is
+// only ever written once a trip reaches one of these two terminal states
+// (see trip.service.ts completeTrip/cancelTrip and trip-archive.service.ts).
+export const tripSummaryFinalStatusEnum = pgEnum('trip_summary_final_status', [
+  'completed',
+  'cancelled',
+]);
+
 // --- Documents ---
 
 export const documentEntityEnum = pgEnum('document_entity', ['vehicle', 'driver', 'organization']);

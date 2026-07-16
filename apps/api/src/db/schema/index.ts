@@ -19,7 +19,7 @@
 
 // Enums and types first (no table dependencies)
 export * from './enums';
-export type { EmergencyContact, NotificationPreferences, Location } from './types';
+export type { EmergencyContact, NotificationPreferences, Location, StatusTransitionCounts } from './types';
 
 // Core entity tables
 export { users } from './users';
@@ -59,3 +59,12 @@ export {
   scheduledTripStatusEnum,
   tripTagInviteStatusEnum,
 } from './org-membership';
+
+// Trip archival (A-26): trip summary + sampled route breadcrumb history
+export { tripSummaries, tripLocationHistory } from './trip-archive';
+export { tripSummaryFinalStatusEnum } from './enums';
+
+// Account deletion (M-38 / A-27)
+export { accountDeletionRequests } from './account-deletion-requests';
+export type { DeletionPreFlightChecks } from './account-deletion-requests';
+export { accountDeletionStatusEnum } from './enums';

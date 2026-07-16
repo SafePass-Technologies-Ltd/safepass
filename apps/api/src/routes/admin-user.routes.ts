@@ -7,9 +7,13 @@
  */
 import { Hono } from 'hono';
 import { eq, like, or, and, sql } from 'drizzle-orm';
+import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
+import { ForceDeleteSchema } from '@safepass/shared';
 import { authMiddleware, requireRole } from '../middleware/auth';
 import { db } from '../db';
 import { users } from '../db/schema';
+import { forceDeleteUser, getLatestDeletionRequest } from '../services/account-deletion.service';
 
 const adminUserRoutes = new Hono();
 adminUserRoutes.use('*', authMiddleware);
@@ -77,7 +81,12 @@ adminUserRoutes.get('/:id', async (c) => {
     return c.json({ error: { code: 404, message: 'User not found' } }, 404);
   }
 
-  return c.json(user);
+  // M-38/A-27: surface the latest deletion request (if any) so the User
+  // Management view can show "Account scheduled for deletion on [date]" /
+  // "Deletion on hold" per screens.md Screen 15.
+  const deletionRequest = await getLatestDeletionRequest(user.id);
+
+  return c.json({ ...user, deletionRequest });
 });
 
 /**
@@ -85,9 +94,6 @@ adminUserRoutes.get('/:id', async (c) => {
  * Suspend or activate a user account.
  * Body: { isActive: boolean }
  */
-import { z } from 'zod';
-import { zValidator } from '@hono/zod-validator';
-
 const SuspendSchema = z.object({
   isActive: z.boolean(),
 });
@@ -117,5 +123,36 @@ adminUserRoutes.patch('/:id/suspend', zValidator('json', SuspendSchema), async (
     message: isActive ? 'User activated' : 'User suspended',
   });
 });
+
+/**
+ * POST /v1/admin/users/:id/force-delete
+ * super_admin-only (screens.md Screen 15/17c: "Not shown to non-super_admin
+ * reviewers"). Bypasses the 14-day cooling-off period entirely -- for
+ * confirmed legal/regulatory erasure requests (e.g. an escalated NDPR
+ * data-subject request). Still respects an open legal hold unless
+ * `overrideHold` is explicitly passed in the same request.
+ * Body: { reason: string, overrideHold?: boolean }
+ */
+adminUserRoutes.post(
+  '/:id/force-delete',
+  requireRole('super_admin'),
+  zValidator('json', ForceDeleteSchema),
+  async (c) => {
+    const actor = c.get('user') as { sub: string };
+    const id = c.req.param('id');
+    const { reason, overrideHold } = c.req.valid('json');
+
+    try {
+      const request = await forceDeleteUser(id, actor.sub, reason, overrideHold);
+      return c.json(request, 200);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        const code = (err as { statusCode?: number }).statusCode ?? 500;
+        return c.json({ error: { code, message: err.message } }, code as 400 | 404 | 409);
+      }
+      throw err;
+    }
+  }
+);
 
 export { adminUserRoutes };

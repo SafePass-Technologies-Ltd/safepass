@@ -142,12 +142,8 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // ── 1. Origin ──
-                _buildOriginField(state),
-                const SizedBox(height: 12),
-
-                // ── 2. Destination ──
-                _buildDestinationField(state),
+                // ── 1 & 2. Where to? (collapsed origin + destination) ──
+                _buildWhereToBlock(state),
                 const SizedBox(height: 12),
 
                 // ── 3. Vehicle Info (plate + description) ──
@@ -304,6 +300,168 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
   // ──────────────────────────────────────────────────────────
   // Widget builders
   // ──────────────────────────────────────────────────────────
+
+  /// Collapsed "Where to?" summary block.
+  ///
+  /// Shows a plain "Where to?" prompt until both origin and destination are
+  /// set, then collapses to "From X to Y". Tapping either state opens the
+  /// expandable sheet ([_openWhereToSheet]) where the origin/destination
+  /// fields and recent-destinations quick-pick live. This mirrors the
+  /// "collapsed summary → tap to expand" pattern already used elsewhere in
+  /// this flow (see "Schedule Trip" and "Tag a member" bottom sheets below).
+  Widget _buildWhereToBlock(TripRegistrationState state) {
+    final originName = state.origin?.name?.trim();
+    final destinationName = state.destination?.name?.trim();
+    final hasOrigin = originName != null && originName.isNotEmpty;
+    final hasDestination = destinationName != null && destinationName.isNotEmpty;
+
+    final String title;
+    if (hasDestination) {
+      title = hasOrigin ? 'From $originName to $destinationName' : destinationName;
+    } else {
+      title = 'Where to?';
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _openWhereToSheet(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.darkSlate.withValues(alpha: 0.15)),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.search,
+              color: hasDestination ? AppColors.darkSlate : AppColors.primary,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight:
+                              hasDestination ? FontWeight.w600 : FontWeight.w500,
+                          color: hasDestination
+                              ? AppColors.darkSlate
+                              : AppColors.primary,
+                        ),
+                  ),
+                  if (!hasDestination || !hasOrigin)
+                    Text(
+                      'Tap to set origin & destination',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.darkSlate.withValues(alpha: 0.5),
+                          ),
+                    ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Opens the "Where to?" bottom sheet — origin field, destination field
+  /// (both with their existing GPS-detect / autocomplete behavior unchanged)
+  /// plus a "Recent destinations" quick-pick list sourced from
+  /// `GET /v1/trips/destinations/recent`.
+  ///
+  /// Uses a [BlocBuilder] (rather than relying on the outer screen's
+  /// BlocConsumer) because the sheet is pushed as a separate route by
+  /// [showModalBottomSheet] and needs its own subscription to rebuild when
+  /// GPS/autocomplete state changes while the sheet is open.
+  Future<void> _openWhereToSheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return BlocBuilder<TripRegistrationCubit, TripRegistrationState>(
+          bloc: _cubit,
+          builder: (context, state) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Handle bar
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Where to?',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    _buildOriginField(state),
+                    const SizedBox(height: 12),
+                    _buildDestinationField(state),
+                    const SizedBox(height: 16),
+
+                    _RecentDestinationsSection(
+                      cubit: _cubit,
+                      onSelect: (recent) {
+                        _destinationController.text =
+                            recent.destination.name ?? '';
+                        _cubit.setDestination(recent.destination);
+                      },
+                    ),
+                    const SizedBox(height: 20),
+
+                    FilledButton(
+                      onPressed: state.isFormValid
+                          ? () => Navigator.of(sheetContext).pop()
+                          : null,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.safetyGreen,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: const Text(
+                        'Done',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   Widget _buildOriginField(TripRegistrationState state) {
     Widget suffixIcon;
@@ -715,6 +873,122 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
         ],
       ),
     );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Recent Destinations Section (inside the "Where to?" sheet)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Lists the user's most recent distinct past destinations so they can be
+/// picked with one tap instead of retyping/re-searching an address.
+///
+/// Fetches lazily on mount (mirrors [_MemberPickerSheet]'s `_loadMembers`
+/// pattern) rather than living in [TripRegistrationState], since this data
+/// is only ever needed while the sheet is open.
+class _RecentDestinationsSection extends StatefulWidget {
+  final TripRegistrationCubit cubit;
+  final ValueChanged<RecentDestinationModel> onSelect;
+
+  const _RecentDestinationsSection({
+    required this.cubit,
+    required this.onSelect,
+  });
+
+  @override
+  State<_RecentDestinationsSection> createState() =>
+      _RecentDestinationsSectionState();
+}
+
+class _RecentDestinationsSectionState
+    extends State<_RecentDestinationsSection> {
+  List<RecentDestinationModel> _destinations = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final result = await widget.cubit.fetchRecentDestinations();
+    if (!mounted) return;
+    setState(() {
+      _destinations = result;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+
+    // No trip history yet (or the lookup failed) — stay silent rather than
+    // showing an empty-state / error for a non-essential convenience list.
+    if (_destinations.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.history,
+                size: 16, color: AppColors.darkSlate.withValues(alpha: 0.6)),
+            const SizedBox(width: 6),
+            Text(
+              'Recent destinations',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.darkSlate.withValues(alpha: 0.6),
+                  ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        ..._destinations.map((recent) {
+          return ListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            leading: const Icon(Icons.location_on_outlined,
+                color: AppColors.primary),
+            title: Text(
+              recent.destination.name ?? 'Unknown destination',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              _formatRelativeDate(recent.lastTravelledAt),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            onTap: () => widget.onSelect(recent),
+          );
+        }),
+      ],
+    );
+  }
+
+  /// Formats a past date as a short relative label ("Today", "Yesterday",
+  /// "3 days ago") falling back to a plain date once it's over a week old.
+  String _formatRelativeDate(DateTime dt) {
+    final days = DateTime.now().difference(dt).inDays;
+    if (days <= 0) return 'Today';
+    if (days == 1) return 'Yesterday';
+    if (days < 7) return '$days days ago';
+    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
   }
 }
 

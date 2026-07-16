@@ -10,6 +10,8 @@ import { app } from './index';
 import { env } from './env';
 import { attachWebSocketServer } from './services/websocket.service';
 import { initDynamoTable } from './services/dynamo.service';
+import { startBreadcrumbFlushing } from './services/trip-archive.service';
+import { startScheduledJobs } from './jobs/scheduler';
 
 console.log(`🚀 SafePass API starting...`);
 console.log(`   Environment: ${env.NODE_ENV}`);
@@ -34,3 +36,9 @@ initDynamoTable().catch((err: Error) => {
     err.message
   );
 });
+
+// A-26 Tier 3: start the periodic breadcrumb batch flush (trip_location_history).
+startBreadcrumbFlushing();
+
+// M-38: start the hourly account-deletion sweep job (see jobs/scheduler.ts).
+startScheduledJobs();

@@ -15,3 +15,4 @@ export * from './vehicle.schema';
 export * from './driver.schema';
 export * from './document.schema';
 export * from './org-membership.schema';
+export * from './account-deletion.schema';

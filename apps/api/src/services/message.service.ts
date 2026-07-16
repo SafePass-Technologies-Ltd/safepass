@@ -10,6 +10,7 @@ import { db } from '../db';
 import { messages, trips } from '../db/schema';
 import { broadcastNewMessage } from './websocket.service';
 import { sendPushToUser, sendPushToRole } from './push.service';
+import { isActiveStatus } from './trip.service';
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -43,6 +44,18 @@ export async function sendMessage(
 
   if (!trip) {
     throw Object.assign(new Error('Trip not found'), { statusCode: 404 });
+  }
+
+  // Guard: messaging only makes sense while a trip is still being monitored.
+  // A cancelled/completed trip is terminal (no further ALLOWED_TRANSITIONS
+  // out of it in trip.service.ts) so there is nothing left to communicate
+  // about -- reject with the same 422 convention used elsewhere for
+  // invalid-state actions (see updateGpsPosition).
+  if (!isActiveStatus(trip.status)) {
+    throw Object.assign(
+      new Error(`Cannot send a message on a trip with status '${trip.status}'`),
+      { statusCode: 422 }
+    );
   }
 
   const [message] = await db

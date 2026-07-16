@@ -87,6 +87,36 @@ class EmergencyContactModel extends Equatable {
       [name, relationship, phone, phoneWhatsappEnabled, email];
 }
 
+/// M-38 Account Deletion: summary of the caller's latest
+/// AccountDeletionRequest, as returned by GET /v1/users/me/deletion-request.
+class DeletionRequestSummary extends Equatable {
+  final String id;
+  final String status;
+  final DateTime scheduledFor;
+
+  const DeletionRequestSummary({
+    required this.id,
+    required this.status,
+    required this.scheduledFor,
+  });
+
+  factory DeletionRequestSummary.fromJson(Map<String, dynamic> json) =>
+      DeletionRequestSummary(
+        id: json['id'] as String,
+        status: json['status'] as String,
+        scheduledFor: DateTime.tryParse(json['scheduledFor'] as String? ?? '') ??
+            DateTime.now(),
+      );
+
+  bool get isPending => status == 'pending';
+  bool get isLegalHold => status == 'legal_hold';
+  /// Whether a scheduled-deletion banner should be shown on Profile/Home.
+  bool get showsBanner => isPending || isLegalHold;
+
+  @override
+  List<Object?> get props => [id, status, scheduledFor];
+}
+
 /// State for the ProfileCubit.
 class ProfileState extends Equatable {
   final ProfileStatus status;
@@ -107,6 +137,10 @@ class ProfileState extends Equatable {
   /// Current org membership, or null if not in an org.
   final OrgMembership? orgMembership;
 
+  /// M-38: the caller's latest deletion request, or null if none exists
+  /// (or their only request was cancelled/completed and shouldn't be shown).
+  final DeletionRequestSummary? deletionRequest;
+
   const ProfileState({
     required this.status,
     this.errorMessage,
@@ -118,6 +152,7 @@ class ProfileState extends Equatable {
     this.emailEnabled = true,
     this.hasEmergencyContact = false,
     this.orgMembership,
+    this.deletionRequest,
   });
 
   /// Initial unloaded state.
@@ -131,7 +166,8 @@ class ProfileState extends Equatable {
         pushEnabled = true,
         emailEnabled = true,
         hasEmergencyContact = false,
-        orgMembership = null;
+        orgMembership = null,
+        deletionRequest = null;
 
   ProfileState copyWith({
     ProfileStatus? status,
@@ -145,6 +181,8 @@ class ProfileState extends Equatable {
     bool? hasEmergencyContact,
     OrgMembership? orgMembership,
     bool clearOrgMembership = false,
+    DeletionRequestSummary? deletionRequest,
+    bool clearDeletionRequest = false,
   }) {
     return ProfileState(
       status: status ?? this.status,
@@ -158,6 +196,9 @@ class ProfileState extends Equatable {
       hasEmergencyContact: hasEmergencyContact ?? this.hasEmergencyContact,
       orgMembership:
           clearOrgMembership ? null : (orgMembership ?? this.orgMembership),
+      deletionRequest: clearDeletionRequest
+          ? null
+          : (deletionRequest ?? this.deletionRequest),
     );
   }
 
@@ -173,5 +214,6 @@ class ProfileState extends Equatable {
         emailEnabled,
         hasEmergencyContact,
         orgMembership,
+        deletionRequest,
       ];
 }

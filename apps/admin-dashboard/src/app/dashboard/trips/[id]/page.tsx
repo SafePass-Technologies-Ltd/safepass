@@ -246,7 +246,7 @@ function useTripMessages(tripId: string, onMessage: (msg: Message) => void) {
 // Messages section
 // =============================================================================
 
-function MessagesSection({ tripId }: { tripId: string }) {
+function MessagesSection({ tripId, tripEnded }: { tripId: string; tripEnded: boolean }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -360,28 +360,36 @@ function MessagesSection({ tripId }: { tripId: string }) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <form
-        onSubmit={handleSend}
-        className="flex items-center gap-2 border-t border-slate-100 px-4 py-3"
-      >
-        <input
-          type="text"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="Type a message…"
-          className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50"
-          disabled={sending}
-        />
-        <button
-          type="submit"
-          disabled={sending || !content.trim()}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+      {/* Input — disabled once the trip has ended; the backend rejects
+          sends against a cancelled/completed trip anyway (see
+          message.service.ts's sendMessage status guard). */}
+      {tripEnded ? (
+        <p className="border-t border-slate-100 px-6 py-3 text-center text-xs text-slate-400">
+          This trip has ended — messaging is no longer available.
+        </p>
+      ) : (
+        <form
+          onSubmit={handleSend}
+          className="flex items-center gap-2 border-t border-slate-100 px-4 py-3"
         >
-          <Send className="h-4 w-4" />
-          {sending ? 'Sending…' : 'Send'}
-        </button>
-      </form>
+          <input
+            type="text"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Type a message…"
+            className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:opacity-50"
+            disabled={sending}
+          />
+          <button
+            type="submit"
+            disabled={sending || !content.trim()}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          >
+            <Send className="h-4 w-4" />
+            {sending ? 'Sending…' : 'Send'}
+          </button>
+        </form>
+      )}
     </div>
   );
 }
@@ -390,7 +398,7 @@ function MessagesSection({ tripId }: { tripId: string }) {
 // Check-Ins section
 // =============================================================================
 
-function CheckInsSection({ tripId }: { tripId: string }) {
+function CheckInsSection({ tripId, tripEnded }: { tripId: string; tripEnded: boolean }) {
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -445,19 +453,29 @@ function CheckInsSection({ tripId }: { tripId: string }) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-        <h2 className="text-sm font-semibold text-slate-700">Check-Ins</h2>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
-        >
-          <PhoneCall className="h-3.5 w-3.5" />
-          Log Check-In
-          {showForm ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        </button>
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-slate-700">Check-Ins</h2>
+          {tripEnded && (
+            <span className="text-xs text-slate-400">This trip has ended</span>
+          )}
+        </div>
+        {/* Disabled once the trip has ended — the backend rejects new
+            check-ins against a cancelled/completed trip (see
+            admin-emergency.routes.ts's checkinRoutes.post guard). */}
+        {!tripEnded && (
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            <PhoneCall className="h-3.5 w-3.5" />
+            Log Check-In
+            {showForm ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+        )}
       </div>
 
       {/* Inline form */}
-      {showForm && (
+      {showForm && !tripEnded && (
         <form onSubmit={handleSubmit} className="border-b border-slate-100 bg-slate-50 px-6 py-4 space-y-3">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
@@ -714,7 +732,7 @@ function EmergencyEventsSection({ tripId }: { tripId: string }) {
 // Escalations section
 // =============================================================================
 
-function EscalationsSection({ tripId }: { tripId: string }) {
+function EscalationsSection({ tripId, tripEnded }: { tripId: string; tripEnded: boolean }) {
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -779,9 +797,15 @@ function EscalationsSection({ tripId }: { tripId: string }) {
           {activeEscalation && (
             <Badge {...ESCALATION_STATUS_STYLE[activeEscalation.status]} />
           )}
+          {tripEnded && (
+            <span className="text-xs text-slate-400">This trip has ended</span>
+          )}
         </div>
-        {/* Only allow a new escalation if there is no active one */}
-        {!activeEscalation && (
+        {/* Only allow a new escalation if there is no active one, and the
+            trip is still in progress — the backend rejects escalating a
+            cancelled/completed trip (see admin-emergency.routes.ts's
+            escalationRoutes.post guard). */}
+        {!activeEscalation && !tripEnded && (
           <button
             onClick={() => setShowForm((v) => !v)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100"
@@ -794,7 +818,7 @@ function EscalationsSection({ tripId }: { tripId: string }) {
       </div>
 
       {/* Inline escalation form */}
-      {showForm && !activeEscalation && (
+      {showForm && !activeEscalation && !tripEnded && (
         <form onSubmit={handleSubmit} className="border-b border-slate-100 bg-red-50/40 px-6 py-4 space-y-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">
@@ -940,6 +964,10 @@ export default function TripDetailPage() {
   const statusStyle = STATUS_STYLE[trip.status];
   const originName = trip.origin?.name ?? `${trip.origin.latitude.toFixed(4)}, ${trip.origin.longitude.toFixed(4)}`;
   const destName = trip.destination?.name ?? `${trip.destination.latitude.toFixed(4)}, ${trip.destination.longitude.toFixed(4)}`;
+  // Messaging, check-ins, and escalation only make sense while the trip is
+  // still being monitored — mirrors the backend guards in message.service.ts
+  // and admin-emergency.routes.ts.
+  const tripEnded = trip.status === 'completed' || trip.status === 'cancelled';
 
   return (
     <div className="space-y-6">
@@ -1068,11 +1096,11 @@ export default function TripDetailPage() {
 
       <EmergencyEventsSection tripId={trip.id} />
 
-      <MessagesSection tripId={trip.id} />
+      <MessagesSection tripId={trip.id} tripEnded={tripEnded} />
 
-      <CheckInsSection tripId={trip.id} />
+      <CheckInsSection tripId={trip.id} tripEnded={tripEnded} />
 
-      <EscalationsSection tripId={trip.id} />
+      <EscalationsSection tripId={trip.id} tripEnded={tripEnded} />
     </div>
   );
 }

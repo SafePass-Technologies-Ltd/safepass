@@ -20,6 +20,8 @@ import '../features/home/screens/home_shell.dart';
 import '../features/home/screens/home_screen.dart';
 import '../features/profile/cubit/profile_cubit.dart';
 import '../features/profile/screens/profile_screen.dart';
+import '../features/profile/cubit/delete_account_cubit.dart';
+import '../features/profile/screens/delete_account_screen.dart';
 import '../features/vehicles/screens/vehicle_list_screen.dart';
 import '../features/vehicles/screens/add_vehicle_screen.dart';
 import '../features/trips/screens/trip_registration_screen.dart';
@@ -46,6 +48,7 @@ class AppRoutes {
   static const String onboarding = '/onboarding';
   static const String home = '/home';
   static const String profile = '/profile';
+  static const String deleteAccount = '/profile/delete-account';
   static const String vehicles = '/vehicles';
   static const String addVehicle = '/vehicles/add';
   static const String phoneAuth = '/phone-auth';
@@ -223,6 +226,14 @@ GoRouter createRouter(
             path: AppRoutes.profile,
             name: 'profile',
             builder: (context, state) => const ProfileScreen(),
+          ),
+          GoRoute(
+            path: AppRoutes.deleteAccount,
+            name: 'deleteAccount',
+            builder: (context, state) => BlocProvider<DeleteAccountCubit>(
+              create: (_) => DeleteAccountCubit(),
+              child: const DeleteAccountScreen(),
+            ),
           ),
           GoRoute(
             path: AppRoutes.vehicles,

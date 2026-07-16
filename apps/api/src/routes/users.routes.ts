@@ -5,6 +5,7 @@ import {
   EmergencyContactSchema,
   UserVehicleCreateSchema,
   UserVehicleUpdateSchema,
+  CreateDeletionRequestSchema,
 } from '@safepass/shared';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
@@ -21,6 +22,11 @@ import {
   updateUserVehicle,
   deleteUserVehicle,
 } from '../services/user.service';
+import {
+  createDeletionRequest,
+  getLatestDeletionRequest,
+  cancelDeletionRequest,
+} from '../services/account-deletion.service';
 
 const userRoutes = new Hono();
 
@@ -197,5 +203,72 @@ userRoutes.delete(
     return c.json({ status: 'removed' }, 200);
   }
 );
+
+// =============================================================================
+// Account Deletion (M-38) — see Flow 10 in docs/SafePass/user_flow.md
+// =============================================================================
+
+/**
+ * POST /v1/users/me/deletion-request
+ * Create a self-service account deletion request. Re-authentication and the
+ * typed-confirmation UI live entirely client-side (Firebase reauth + the
+ * mobile confirmation screen) -- this endpoint's `confirmation` field is a
+ * server-side belt-and-braces check that the exact string was submitted,
+ * and runs the pre-flight checks (active trip / wallet balance / sole org
+ * admin) documented in Flow 10a.
+ */
+userRoutes.post(
+  '/me/deletion-request',
+  zValidator('json', CreateDeletionRequestSchema),
+  async (c) => {
+    const user = c.get('user') as { sub: string };
+    const { forfeitWalletBalance } = c.req.valid('json');
+
+    try {
+      const request = await createDeletionRequest({
+        userId: user.sub,
+        forfeitWalletBalance,
+      });
+      return c.json(request, 201);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        const code = (err as { statusCode?: number }).statusCode ?? 500;
+        return c.json({ error: { code, message: err.message } }, code as 404 | 409);
+      }
+      throw err;
+    }
+  }
+);
+
+/**
+ * GET /v1/users/me/deletion-request
+ * Most recent deletion request for the caller (any status), or null.
+ * Powers the Profile screen's scheduled-deletion / legal-hold banner.
+ */
+userRoutes.get('/me/deletion-request', async (c) => {
+  const user = c.get('user') as { sub: string };
+  const request = await getLatestDeletionRequest(user.sub);
+  return c.json({ request }, 200);
+});
+
+/**
+ * DELETE /v1/users/me/deletion-request
+ * Cancel a pending or legal_hold deletion request during/after the
+ * cooling-off window (Flow 10b).
+ */
+userRoutes.delete('/me/deletion-request', async (c) => {
+  const user = c.get('user') as { sub: string };
+
+  try {
+    const request = await cancelDeletionRequest(user.sub);
+    return c.json(request, 200);
+  } catch (err: unknown) {
+    if (err instanceof Error) {
+      const code = (err as { statusCode?: number }).statusCode ?? 500;
+      return c.json({ error: { code, message: err.message } }, code as 404);
+    }
+    throw err;
+  }
+});
 
 export { userRoutes };

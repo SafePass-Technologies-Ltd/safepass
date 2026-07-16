@@ -310,10 +310,14 @@ function handleClientMessage(client: ConnectedClient, msg: WsClientMessage): voi
       }
 
       // Lazy-import trip.service to avoid a circular module dependency.
-      // Fetch all currently active trip IDs then batch-read their last known
-      // GPS positions from DynamoDB and deliver as a single snapshot message.
+      // Fetch all currently in-progress trip IDs then batch-read their last
+      // known GPS positions from DynamoDB and deliver as a single snapshot
+      // message. Explicitly pass ACTIVE_STATUSES here — completed/cancelled
+      // trips have no live GPS to broadcast, so unlike the admin trip-list
+      // endpoint (which defaults to all non-draft statuses) this feed stays
+      // scoped to in-progress trips only.
       import('./trip.service')
-        .then(({ getActiveTrips }) => getActiveTrips())
+        .then(({ getActiveTrips, ACTIVE_STATUSES }) => getActiveTrips(ACTIVE_STATUSES))
         .then(async (activeTrips) => {
           const tripIds = activeTrips.map((t) => t.id);
           const locations = await getAllTripLocations(tripIds);

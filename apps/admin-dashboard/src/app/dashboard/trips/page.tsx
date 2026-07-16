@@ -62,7 +62,9 @@ export default function TripManagementPage() {
   const [trips, setTrips] = useState<TripData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<TripStatus | 'all'>('active');
+  // Default to "All" (not just active trips) so cancelled/completed trips are
+  // visible by default instead of appearing to vanish once a trip ends.
+  const [statusFilter, setStatusFilter] = useState<TripStatus | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   const fetchTrips = useCallback(async () => {
@@ -74,19 +76,15 @@ export default function TripManagementPage() {
       if (statusFilter !== 'all') {
         params.set('status', statusFilter);
       }
+      // The API now filters server-side by `status` (including terminal
+      // 'completed'/'cancelled' trips), or returns every non-draft trip when
+      // no status param is sent (the 'all' tab) — no client-side re-filtering
+      // needed, and none of the returned trips need to be dropped here.
       const data = await apiClient<{ trips: TripData[] }>(
         `/v1/admin/trips/active?${params.toString()}`
       );
-      const allTrips = data.trips;
 
-      // If filtering by non-active status, we filter client-side
-      // (active trips endpoint returns all active; admin full list is Week 3)
-      const filtered =
-        statusFilter === 'all' || ['active', 'delayed', 'emergency', 'escalated'].includes(statusFilter)
-          ? allTrips
-          : allTrips.filter((t) => t.status === statusFilter);
-
-      setTrips(filtered);
+      setTrips(data.trips);
     } catch (err) {
       setError('Failed to load trips. Is the API server running?');
       console.error(err);

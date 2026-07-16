@@ -20,6 +20,12 @@ export const users = pgTable(
     notificationPreferences: jsonb('notification_preferences')
       .$type<NotificationPreferences>()
       .default({ pushEnabled: true, emailEnabled: true }),
+    // M-38 Account Deletion: set by the deletion-sweep job when this user's
+    // AccountDeletionRequest cascade executes. The row itself is anonymized
+    // (this column, plus fullName/email/phone/emergencyContacts/
+    // authProviderId scrubbed and isActive=false), never hard-deleted -- see
+    // docs/SafePass/schema.md's Account Deletion Data Retention Matrix.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

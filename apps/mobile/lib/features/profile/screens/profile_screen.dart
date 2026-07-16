@@ -91,6 +91,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _buildSaveButton(context, state),
                 const SizedBox(height: 12),
                 _buildSignOutButton(context),
+                const SizedBox(height: 24),
+                const Divider(),
+                const SizedBox(height: 12),
+                _buildAccountDeletionSection(context, state),
                 const SizedBox(height: 40),
               ],
             ),
@@ -375,6 +379,97 @@ class _ProfileScreenState extends State<ProfileScreen> {
               )
               : const Text('Save Changes'),
     );
+  }
+
+  /// M-38 Account Deletion — screens.md Screen 7's "Delete My Account"
+  /// element. Shows a scheduled-deletion / legal-hold banner with a Cancel
+  /// Deletion action if a request is already in flight; otherwise shows the
+  /// destructive "Delete My Account" text action that navigates to Screen 7a.
+  Widget _buildAccountDeletionSection(BuildContext context, ProfileState state) {
+    final request = state.deletionRequest;
+
+    if (request != null && request.showsBanner) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.emergencyRed.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.emergencyRed.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              request.isLegalHold
+                  ? 'Your deletion is on hold pending resolution of an open safety matter — no action needed from you.'
+                  : 'Account scheduled for deletion on ${_formatDate(request.scheduledFor)}.',
+              style: TextStyle(color: AppColors.emergencyRed),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: state.status == ProfileStatus.saving
+                  ? null
+                  : () => _confirmCancelDeletion(context),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.emergencyRed,
+                side: BorderSide(color: AppColors.emergencyRed),
+              ),
+              child: const Text('Cancel Deletion'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Permanently close your SafePass account. Your profile, name, and '
+          'contact details are removed; trip history, payments, and safety '
+          'reports are kept (with your personal details removed from them) '
+          'for legal and financial record-keeping. Requests are processed '
+          'after a 14-day cooling-off period, which you can cancel at any '
+          'time — you\'ll see a countdown banner here until then.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppColors.darkSlate.withValues(alpha: 0.6),
+              ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => context.push(AppRoutes.deleteAccount),
+            style: TextButton.styleFrom(foregroundColor: AppColors.emergencyRed),
+            child: const Text('Delete My Account'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmCancelDeletion(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel your scheduled account deletion?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Back'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Cancel Deletion'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      context.read<ProfileCubit>().cancelDeletionRequest();
+    }
   }
 
   Widget _buildSignOutButton(BuildContext context) {

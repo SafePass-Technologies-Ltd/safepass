@@ -210,6 +210,27 @@ escalationRoutes.post('/', zValidator('json', EscalationCreateSchema), async (c)
   const user = c.get('user');
   const data = c.req.valid('json');
 
+  // A trip must exist and still be in progress to be escalated -- escalating
+  // a trip that has already ended (cancelled/completed) makes no sense and
+  // would otherwise silently revive it back to 'escalated' below.
+  const trip = await db.query.trips.findFirst({
+    where: eq(trips.id, data.tripId),
+  });
+  if (!trip) {
+    return c.json({ error: { code: 404, message: 'Trip not found' } }, 404);
+  }
+  if (trip.status === 'cancelled' || trip.status === 'completed') {
+    return c.json(
+      {
+        error: {
+          code: 422,
+          message: `Cannot escalate a trip with status '${trip.status}'`,
+        },
+      },
+      422
+    );
+  }
+
   const [escalation] = await db
     .insert(escalations)
     .values({
@@ -224,10 +245,7 @@ escalationRoutes.post('/', zValidator('json', EscalationCreateSchema), async (c)
     .returning();
 
   // Update the trip status to escalated if it isn't already.
-  const trip = await db.query.trips.findFirst({
-    where: eq(trips.id, data.tripId),
-  });
-  if (trip && trip.status !== 'escalated') {
+  if (trip.status !== 'escalated') {
     await db
       .update(trips)
       .set({ status: 'escalated', updatedAt: new Date() })
@@ -318,6 +336,28 @@ checkinRoutes.post('/', zValidator('json', CheckInCreateSchema), async (c) => {
   const user = c.get('user');
   const data = c.req.valid('json');
 
+  // A check-in only makes sense while the trip is still being monitored --
+  // reject up front for a terminal trip so we don't log a check-in attempt
+  // (and, for method='message', silently fail the follow-on sendMessage call
+  // below) against a trip that has already ended.
+  const targetTrip = await db.query.trips.findFirst({
+    where: eq(trips.id, data.tripId),
+  });
+  if (!targetTrip) {
+    return c.json({ error: { code: 404, message: 'Trip not found' } }, 404);
+  }
+  if (targetTrip.status === 'cancelled' || targetTrip.status === 'completed') {
+    return c.json(
+      {
+        error: {
+          code: 422,
+          message: `Cannot check in on a trip with status '${targetTrip.status}'`,
+        },
+      },
+      422
+    );
+  }
+
   const [checkin] = await db
     .insert(checkIns)
     .values({
@@ -333,14 +373,10 @@ checkinRoutes.post('/', zValidator('json', CheckInCreateSchema), async (c) => {
   // When the check-in method is 'message', create a Message record so the
   // traveller sees the officer's contact attempt inside the chat thread.
   if (data.method === 'message') {
-    // Look up the trip owner so we can push-notify them.
-    const trip = await db.query.trips.findFirst({
-      where: eq(trips.id, data.tripId),
-      columns: { userId: true },
-    });
-
     // Create message in the trip thread — visible to both parties.
     // Non-fatal: message/push failures must not block check-in creation.
+    // (targetTrip's status was already confirmed non-terminal above, so
+    // sendMessage's own status guard will not reject this.)
     const messageContent =
       data.notes?.trim() || 'Monitoring check-in: Are you okay?';
 
@@ -352,14 +388,12 @@ checkinRoutes.post('/', zValidator('json', CheckInCreateSchema), async (c) => {
       messageType: 'check_in',
     })
       .then(() => {
-        if (trip) {
-          return sendPushToUser(
-            trip.userId,
-            'Monitoring Check-in',
-            'Your officer sent you a message',
-            { tripId: data.tripId, type: 'check_in' }
-          );
-        }
+        return sendPushToUser(
+          targetTrip.userId,
+          'Monitoring Check-in',
+          'Your officer sent you a message',
+          { tripId: data.tripId, type: 'check_in' }
+        );
       })
       .catch((err) => {
         console.error('[checkin] message/push failed:', err);

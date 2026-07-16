@@ -183,6 +183,14 @@ const envSchema = z.object({
   // password) -- kept only in case a REST-based integration is added later.
   UPSTASH_REDIS_TOKEN: z.string().optional(),
   TRIP_PRICE_NGN: z.coerce.number().int().positive().default(2000),
+  // M-38 Account Deletion: a wallet balance at or below this amount can be
+  // explicitly forfeited by the user to proceed with deletion (checkbox
+  // confirmation); balances above it require a manual refund via support
+  // (no automated wallet payout rail exists yet). See
+  // docs/SafePass/features.md M-38 edge case 3.
+  ACCOUNT_DELETION_WALLET_FORFEIT_THRESHOLD_NGN: z.coerce.number().nonnegative().default(500),
+  // M-38: cooling-off period before a pending deletion request executes.
+  ACCOUNT_DELETION_COOLING_OFF_DAYS: z.coerce.number().int().positive().default(14),
   ADMIN_DASHBOARD_URL: z.string().url().default('http://localhost:3001'),
   // Corporate/transport dashboards are separate Next.js apps with their own
   // origins -- all three need to be in the CORS allowlist below (see

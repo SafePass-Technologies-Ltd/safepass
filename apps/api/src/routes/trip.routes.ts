@@ -19,6 +19,7 @@ import {
   getUserTrips,
   getOrgTrips,
   getTripById,
+  getRecentDestinations,
   getActiveTrips,
   adminUpdateTripStatus,
   createTripTagInvite,
@@ -27,6 +28,7 @@ import {
   type ActiveTripRow,
 } from '../services/trip.service';
 import { getUserById } from '../services/user.service';
+import { getTripSummary, getTripLocationHistory } from '../services/trip-archive.service';
 
 // ────────────────────────────────────────────────────────────
 // User-facing trip routes
@@ -143,6 +145,26 @@ tripRoutes.get('/', async (c) => {
 });
 
 /**
+ * GET /v1/trips/destinations/recent
+ * List the caller's distinct past destinations, most-recent first, for the
+ * "Where to?" quick-pick list on the Start New Trip screen.
+ *
+ * Registered ahead of GET /:tripId so "destinations" is never swallowed by
+ * the :tripId param route. Excludes draft/cancelled trips -- see
+ * getRecentDestinations doc comment in trip.service.ts.
+ *
+ * Optional ?limit= query param (defaults to 5, capped at 20).
+ */
+tripRoutes.get('/destinations/recent', async (c) => {
+  const user = c.get('user') as { sub: string };
+  const limitParam = Number(c.req.query('limit'));
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 20) : 5;
+
+  const destinations = await getRecentDestinations(user.sub, limit);
+  return c.json({ destinations }, 200);
+});
+
+/**
  * GET /v1/trips/:tripId
  * Get a single trip by ID.
  *
@@ -163,6 +185,38 @@ tripRoutes.get('/:tripId', async (c) => {
     return c.json({ error: { code: 404, message: 'Trip not found' } }, 404);
   }
   return c.json(trip, 200);
+});
+
+/**
+ * GET /v1/trips/:tripId/summary
+ * A-26: fetch the trip's TripSummary (aggregate stats -- distance,
+ * duration, speed, incident/status-transition counts, message count).
+ *
+ * Access follows the same trip-visibility rules as GET /:tripId (direct
+ * ownership, org-membership, or tagged-user access, plus the admin/
+ * monitoring_officer bypass) -- per schema.md, TripSummary has "no
+ * additional restriction beyond normal trip access", unlike the
+ * admin/super_admin-only route-history endpoint below.
+ */
+tripRoutes.get('/:tripId/summary', async (c) => {
+  const user = c.get('user') as { sub: string; role: string; orgId?: string };
+  const tripId = c.req.param('tripId');
+
+  const isAdmin = ['admin', 'super_admin', 'monitoring_officer'].includes(user.role);
+  const trip = await getTripById(tripId, isAdmin ? undefined : user.sub, isAdmin ? undefined : user.orgId);
+  if (!trip) {
+    return c.json({ error: { code: 404, message: 'Trip not found' } }, 404);
+  }
+
+  const summary = await getTripSummary(tripId);
+  if (!summary) {
+    // Trip exists but hasn't reached a terminal status yet (or the summary
+    // write is still in flight -- see trip.service.ts's fire-and-forget
+    // computeAndWriteTripSummary call).
+    return c.json({ error: { code: 404, message: 'Trip summary not available yet' } }, 404);
+  }
+
+  return c.json(summary, 200);
 });
 
 /**
@@ -331,17 +385,41 @@ const adminTripRoutes = new Hono();
 adminTripRoutes.use('*', authMiddleware);
 adminTripRoutes.use('*', requireRole('admin', 'monitoring_officer', 'super_admin'));
 
+/** Valid values for the admin trip list `?status=` query param (all non-draft statuses). */
+const ADMIN_TRIP_STATUS_VALUES = [
+  'active', 'delayed', 'emergency', 'escalated', 'completed', 'cancelled',
+] as const;
+type AdminTripStatusQuery = (typeof ADMIN_TRIP_STATUS_VALUES)[number];
+
+/** Narrow an untrusted `?status=` query value, ignoring anything unrecognised. */
+function parseAdminStatusQuery(value: string | undefined): AdminTripStatusQuery | undefined {
+  if (value && (ADMIN_TRIP_STATUS_VALUES as readonly string[]).includes(value)) {
+    return value as AdminTripStatusQuery;
+  }
+  return undefined;
+}
+
 /**
  * GET /v1/admin/trips/active
- * List all active trips across all users, enriched with the last-known GPS
- * position fetched from DynamoDB.
+ * List trips across all users for the admin Trip Management view, enriched
+ * with the last-known GPS position fetched from DynamoDB.
+ *
+ * Despite the route name ("/active"), this endpoint is the admin dashboard's
+ * general trip list — by default it returns every non-draft trip, including
+ * terminal 'completed'/'cancelled' ones, so trips stay visible in Trip
+ * Management after their status changes instead of disappearing (they used
+ * to be dropped entirely because this endpoint only queried in-progress
+ * statuses). Pass `?status=` to narrow to a single status.
  *
  * DynamoDB is the source of truth for current GPS positions (24-hour TTL).
  * A 3-second Promise.race timeout prevents a DynamoDB hang from blocking
  * the response — trips will simply show currentLocation: null in that case.
  */
 adminTripRoutes.get('/active', async (c) => {
-  const activeTrips: ActiveTripRow[] = await getActiveTrips();
+  const statusParam = parseAdminStatusQuery(c.req.query('status'));
+  const activeTrips: ActiveTripRow[] = await getActiveTrips(
+    statusParam ? [statusParam] : undefined
+  );
 
   const timeout = new Promise<Map<string, TripLocationRecord>>((resolve) =>
     setTimeout(() => resolve(new Map()), 3_000)
@@ -382,6 +460,35 @@ adminTripRoutes.get('/:tripId', async (c) => {
   }
   return c.json(trip, 200);
 });
+
+/**
+ * GET /v1/admin/trips/:tripId/route-history
+ * A-26 "Replay Route" action (A-04 Trip Detail View cross-reference).
+ *
+ * ADMIN-ONLY per schema.md's TripLocationHistory access-control note and
+ * risk_log.md R-013 (resolved): full-fidelity breadcrumb route replay is
+ * restricted to admin/super_admin. The adminTripRoutes group above already
+ * requires admin/monitoring_officer/super_admin, so requireRole here
+ * additionally excludes monitoring_officer specifically for this endpoint --
+ * everyone else (monitoring_officer, corporate_admin, transport_partner,
+ * the trip's own user) must use GET /v1/trips/:tripId/summary instead, which
+ * exposes aggregate stats only, never the raw breadcrumb trail.
+ */
+adminTripRoutes.get(
+  '/:tripId/route-history',
+  requireRole('admin', 'super_admin'),
+  async (c) => {
+    const tripId = c.req.param('tripId');
+
+    const trip = await getTripById(tripId);
+    if (!trip) {
+      return c.json({ error: { code: 404, message: 'Trip not found' } }, 404);
+    }
+
+    const history = await getTripLocationHistory(tripId);
+    return c.json({ tripId, points: history }, 200);
+  }
+);
 
 /**
  * PATCH /v1/admin/trips/:tripId/status

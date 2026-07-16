@@ -1,8 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Search, UserCheck, UserX, RotateCcw, Users } from 'lucide-react';
+import { Fragment, useState, useEffect, useCallback } from 'react';
+import { Search, UserCheck, UserX, RotateCcw, Users, Trash2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+
+interface DeletionRequestSummary {
+  id: string;
+  status: 'pending' | 'cancelled' | 'legal_hold' | 'completed' | 'force_deleted';
+  scheduledFor: string;
+}
 
 interface User {
   id: string;
@@ -12,6 +18,9 @@ interface User {
   role: string;
   isActive: boolean;
   createdAt: string;
+  deletedAt?: string | null;
+  /** Only populated when fetched via GET /v1/admin/users/:id (detail lookup), not the list endpoint. */
+  deletionRequest?: DeletionRequestSummary | null;
 }
 
 type RoleFilter = 'all' | 'user' | 'admin' | 'monitoring_officer' | 'super_admin';
@@ -30,6 +39,19 @@ export default function UsersPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [currentRole, setCurrentRole] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [detailUsers, setDetailUsers] = useState<Record<string, User>>({});
+  const [forceDeleteTarget, setForceDeleteTarget] = useState<User | null>(null);
+  const [forceDeleteReason, setForceDeleteReason] = useState('');
+
+  const isSuperAdmin = currentRole === 'super_admin';
+
+  useEffect(() => {
+    apiClient<{ role: string }>('/v1/users/me')
+      .then((data) => setCurrentRole(data.role))
+      .catch(() => setCurrentRole(null));
+  }, []);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -65,6 +87,52 @@ export default function UsersPage() {
       );
     } catch {
       setError('Failed to update user status.');
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  // M-38/A-27: fetch the full user detail (including deletionRequest, only
+  // returned by the single-user GET, not the list endpoint) on demand when
+  // a row is expanded, rather than N+1 fetching it for every row up front.
+  async function toggleExpand(user: User) {
+    if (expandedId === user.id) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(user.id);
+    if (!detailUsers[user.id]) {
+      try {
+        const detail = await apiClient<User>(`/v1/admin/users/${user.id}`);
+        setDetailUsers((prev) => ({ ...prev, [user.id]: detail }));
+      } catch {
+        setError('Failed to load user detail.');
+      }
+    }
+  }
+
+  function openForceDeleteDialog(user: User) {
+    setForceDeleteReason('');
+    setForceDeleteTarget(user);
+  }
+
+  async function confirmForceDelete() {
+    if (!forceDeleteTarget) return;
+    const trimmed = forceDeleteReason.trim();
+    if (!trimmed) return;
+
+    setPendingId(forceDeleteTarget.id);
+    try {
+      await apiClient(`/v1/admin/users/${forceDeleteTarget.id}/force-delete`, {
+        method: 'POST',
+        body: { reason: trimmed },
+      });
+      setForceDeleteTarget(null);
+      // Refresh this user's detail so the expanded row reflects the new status.
+      const detail = await apiClient<User>(`/v1/admin/users/${forceDeleteTarget.id}`);
+      setDetailUsers((prev) => ({ ...prev, [forceDeleteTarget.id]: detail }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to force-delete account.');
     } finally {
       setPendingId(null);
     }
@@ -145,57 +213,103 @@ export default function UsersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {users.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50">
-                    <td className="px-6 py-3">
-                      <p className="text-sm font-medium text-slate-700">
-                        {user.fullName ?? '—'}
-                      </p>
-                      <p className="text-xs text-slate-400">{user.phone ?? ''}</p>
-                    </td>
-                    <td className="px-6 py-3 text-sm text-slate-600">{user.email ?? '—'}</td>
-                    <td className="px-6 py-3">
-                      <span className="inline-flex rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium capitalize text-primary">
-                        {user.role.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          user.isActive
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-600'
-                        }`}
-                      >
-                        {user.isActive ? 'Active' : 'Suspended'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3 text-sm text-slate-500">
-                      {new Date(user.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-3">
-                      <button
-                        onClick={() => toggleSuspend(user)}
-                        disabled={pendingId === user.id}
-                        className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
-                          user.isActive
-                            ? 'border border-red-200 text-red-600 hover:bg-red-50'
-                            : 'border border-green-200 text-green-700 hover:bg-green-50'
-                        }`}
-                      >
-                        {user.isActive ? (
-                          <>
-                            <UserX className="h-3.5 w-3.5" /> Suspend
-                          </>
-                        ) : (
-                          <>
-                            <UserCheck className="h-3.5 w-3.5" /> Activate
-                          </>
-                        )}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {users.map((user) => {
+                  const isExpanded = expandedId === user.id;
+                  const detail = detailUsers[user.id];
+                  const deletionRequest = detail?.deletionRequest;
+
+                  return (
+                    <Fragment key={user.id}>
+                      <tr className="cursor-pointer hover:bg-slate-50" onClick={() => toggleExpand(user)}>
+                        <td className="px-6 py-3">
+                          <p className="text-sm font-medium text-slate-700">
+                            {user.fullName ?? '—'}
+                          </p>
+                          <p className="text-xs text-slate-400">{user.phone ?? ''}</p>
+                        </td>
+                        <td className="px-6 py-3 text-sm text-slate-600">{user.email ?? '—'}</td>
+                        <td className="px-6 py-3">
+                          <span className="inline-flex rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium capitalize text-primary">
+                            {user.role.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                              user.isActive
+                                ? 'bg-green-100 text-green-700'
+                                : 'bg-red-100 text-red-600'
+                            }`}
+                          >
+                            {user.isActive ? 'Active' : 'Suspended'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3 text-sm text-slate-500">
+                          {new Date(user.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-3">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSuspend(user);
+                            }}
+                            disabled={pendingId === user.id}
+                            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+                              user.isActive
+                                ? 'border border-red-200 text-red-600 hover:bg-red-50'
+                                : 'border border-green-200 text-green-700 hover:bg-green-50'
+                            }`}
+                          >
+                            {user.isActive ? (
+                              <>
+                                <UserX className="h-3.5 w-3.5" /> Suspend
+                              </>
+                            ) : (
+                              <>
+                                <UserCheck className="h-3.5 w-3.5" /> Activate
+                              </>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-slate-50">
+                          <td colSpan={6} className="px-6 py-4">
+                            {/* M-38/A-27: Deletion Status Note (screens.md Screen 15) */}
+                            {deletionRequest &&
+                            (deletionRequest.status === 'pending' || deletionRequest.status === 'legal_hold') ? (
+                              <p className="text-sm text-slate-600">
+                                {deletionRequest.status === 'pending'
+                                  ? `Account scheduled for deletion on ${new Date(deletionRequest.scheduledFor).toLocaleDateString()}`
+                                  : 'Deletion on hold — see Legal Hold Queue'}{' '}
+                                <a href="/dashboard/account-deletions" className="text-primary underline">
+                                  View in Account Deletions
+                                </a>
+                              </p>
+                            ) : deletionRequest?.status === 'completed' || deletionRequest?.status === 'force_deleted' ? (
+                              <p className="text-sm text-slate-500">
+                                Account deleted{' '}
+                                {deletionRequest.status === 'force_deleted' ? '(force-deleted by an admin)' : ''}
+                              </p>
+                            ) : (
+                              <p className="text-sm text-slate-400">No account deletion request on file.</p>
+                            )}
+
+                            {/* Force Delete (super_admin only, screens.md Screen 15) */}
+                            {isSuperAdmin && !detail?.deletedAt && deletionRequest?.status !== 'completed' && deletionRequest?.status !== 'force_deleted' && (
+                              <button
+                                onClick={() => openForceDeleteDialog(user)}
+                                className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" /> Force Delete Account
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -206,6 +320,42 @@ export default function UsersPage() {
         <p className="text-xs text-slate-400">
           Showing {users.length} user{users.length !== 1 ? 's' : ''}
         </p>
+      )}
+
+      {forceDeleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-dark">Force delete account</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              This immediately deletes {forceDeleteTarget.fullName ?? 'this user'}&rsquo;s account,
+              bypassing the 14-day cooling-off period. Blocked by an open legal hold unless already
+              overridden. This action is logged with your name, reason, and timestamp.
+            </p>
+            <textarea
+              value={forceDeleteReason}
+              onChange={(e) => setForceDeleteReason(e.target.value)}
+              placeholder="Justification reason (required)"
+              rows={4}
+              className="mt-4 w-full rounded-lg border border-slate-200 p-3 text-sm focus:border-primary focus:outline-none"
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setForceDeleteTarget(null)}
+                disabled={pendingId === forceDeleteTarget.id}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmForceDelete}
+                disabled={pendingId === forceDeleteTarget.id || !forceDeleteReason.trim()}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {pendingId === forceDeleteTarget.id ? 'Deleting...' : 'Force delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

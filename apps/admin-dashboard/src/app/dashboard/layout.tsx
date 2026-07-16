@@ -25,6 +25,7 @@ import {
   MapPin,
   ShieldCheck,
   CreditCard,
+  UserMinus,
 } from 'lucide-react';
 import { useActiveTrips } from '@/hooks/useActiveTrips';
 import { DashboardWsProvider } from '@/hooks/useDashboardWebSocket';
@@ -93,6 +94,12 @@ const navigation = [
     href: '/dashboard/subscriptions',
     icon: CreditCard,
     description: 'Review and activate org subscription plan requests',
+  },
+  {
+    name: 'Account Deletions',
+    href: '/dashboard/account-deletions',
+    icon: UserMinus,
+    description: 'Legal hold queue for self-service account deletion requests',
   },
 ];
 

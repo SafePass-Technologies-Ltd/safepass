@@ -15,6 +15,7 @@ import { orgRoutes, adminOrgRoutes } from './routes/organization.routes';
 import { emergencyRoutes, escalationRoutes, checkinRoutes, adminMessageRoutes } from './routes/admin-emergency.routes';
 import { emergencyTriggerRoutes } from './routes/emergency.routes';
 import { adminUserRoutes } from './routes/admin-user.routes';
+import { adminAccountDeletionRoutes } from './routes/admin-account-deletion.routes';
 import { roleUpgradeRoutes, selfServiceRoleUpgradeRoutes } from './routes/role-upgrade.routes';
 import { orgMembershipRoutes } from './routes/org-membership.routes';
 import { geocodingRoutes } from './routes/geocoding.routes';
@@ -186,6 +187,7 @@ adminV1.route('/checkins', checkinRoutes);
 adminV1.route('/messages', adminMessageRoutes);
 adminV1.route('/role-upgrades', roleUpgradeRoutes);
 adminV1.route('/subscriptions', adminSubscriptionRoutes);
+adminV1.route('/account-deletions', adminAccountDeletionRoutes);
 
 v1.route('/admin', adminV1);
 

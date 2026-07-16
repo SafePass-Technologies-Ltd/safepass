@@ -57,6 +57,21 @@ class ProfileCubit extends Cubit<ProfileState> {
         orgMembership = null;
       }
 
+      // M-38: fetch the caller's latest deletion request, if any. Best-effort
+      // — a failure here shouldn't block the rest of the profile from loading.
+      DeletionRequestSummary? deletionRequest;
+      try {
+        final delResponse =
+            await ApiClient.instance.dio.get('/v1/users/me/deletion-request');
+        final delBody = delResponse.data as Map<String, dynamic>?;
+        final requestJson = delBody?['request'] as Map<String, dynamic>?;
+        if (requestJson != null) {
+          deletionRequest = DeletionRequestSummary.fromJson(requestJson);
+        }
+      } catch (_) {
+        deletionRequest = null;
+      }
+
       emit(
         ProfileState(
           status: ProfileStatus.loaded,
@@ -68,6 +83,7 @@ class ProfileCubit extends Cubit<ProfileState> {
           emailEnabled: notifPrefs?['emailEnabled'] as bool? ?? true,
           hasEmergencyContact: hasEmergencyContact,
           orgMembership: orgMembership,
+          deletionRequest: deletionRequest,
         ),
       );
     } on Exception {
@@ -93,6 +109,25 @@ class ProfileCubit extends Cubit<ProfileState> {
         state.copyWith(
           status: ProfileStatus.error,
           errorMessage: 'Failed to leave organisation',
+        ),
+      );
+    }
+  }
+
+  /// Cancel a pending/legal_hold deletion request (Flow 10b) via
+  /// DELETE /v1/users/me/deletion-request.
+  Future<void> cancelDeletionRequest() async {
+    emit(state.copyWith(status: ProfileStatus.saving));
+
+    try {
+      await ApiClient.instance.dio.delete('/v1/users/me/deletion-request');
+      // Reload to reflect the cleared banner state.
+      await loadProfile();
+    } on Exception {
+      emit(
+        state.copyWith(
+          status: ProfileStatus.error,
+          errorMessage: 'Failed to cancel account deletion',
         ),
       );
     }

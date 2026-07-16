@@ -94,6 +94,13 @@ export const TripGpsUpdateSchema = z.object({
   speed: z.number().optional(),
   heading: z.number().optional(),
   accuracy: z.number().optional(),
+  // A-26: optional on-device GPS reading time. Not sent by the current
+  // mobile client (which relies on server-receive time) -- forward-
+  // compatible field for a future mobile release that replays
+  // offline-buffered points on reconnect, so trip_location_history
+  // breadcrumbs can be ordered by actual GPS reading time rather than
+  // arrival order. See trip-archive.service.ts's GpsSamplePoint.
+  recordedAt: z.string().datetime().optional(),
 });
 
 export type TripStatus = z.infer<typeof TripStatusEnum>;

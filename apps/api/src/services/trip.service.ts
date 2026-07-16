@@ -17,6 +17,7 @@ import {
 } from './websocket.service';
 import { saveTripLocation } from './dynamo.service';
 import { createWallet } from './wallet.service';
+import { sampleGpsPoint, computeAndWriteTripSummary } from './trip-archive.service';
 
 // ────────────────────────────────────────────────────────────
 // Enum column types (for Drizzle strict enum comparisons)
@@ -59,6 +60,8 @@ export interface GpsUpdateInput {
   speed?: number;
   heading?: number;
   accuracy?: number;
+  /** A-26: optional on-device GPS reading time (ISO 8601). See TripGpsUpdateSchema. */
+  recordedAt?: string;
 }
 
 export interface TripFilter {
@@ -535,6 +538,18 @@ export async function updateGpsPosition(
     console.warn('[DynamoDB] saveTripLocation failed for trip', tripId, (err as Error)?.message);
   });
 
+  // A-26 Tier 3: queue this point for the significant-change sampling filter.
+  // This is a synchronous in-memory buffer append (see trip-archive.service.ts)
+  // -- the actual durable PostgreSQL write happens on a periodic batch flush,
+  // so this call never blocks or slows down the GPS ingestion path.
+  sampleGpsPoint(tripId, {
+    latitude: data.latitude,
+    longitude: data.longitude,
+    speed: data.speed ?? null,
+    heading: data.heading ?? null,
+    recordedAt: data.recordedAt ? new Date(data.recordedAt) : undefined,
+  });
+
   // Broadcast GPS position to all WebSocket clients subscribed to this trip
   // and to all connected admin/monitoring_officer clients for the live map.
   broadcastGpsUpdate(tripId, {
@@ -577,6 +592,19 @@ export async function completeTrip(
     .returning();
 
   broadcastTripStatus(tripId, 'completed');
+
+  // A-26 Tier 2: write the durable TripSummary row. Fire-and-forget from the
+  // caller's perspective (failures are logged, not thrown) -- the
+  // user-facing safe-arrival confirmation has already succeeded by this
+  // point and must not be blocked or failed by a compliance-log write.
+  // computeAndWriteTripSummary is idempotent (unique constraint + conflict
+  // guard), so a later retry of this same trip's completion (or the
+  // scheduled purge job, or an admin re-triggering completion) safely
+  // no-ops instead of duplicating the row.
+  computeAndWriteTripSummary(tripId, 'completed').catch((err: unknown) => {
+    console.warn('[trip-archive] failed to write TripSummary for trip', tripId, (err as Error)?.message);
+  });
+
   return updated;
 }
 
@@ -607,6 +635,13 @@ export async function cancelTrip(
     .returning();
 
   broadcastTripStatus(tripId, 'cancelled');
+
+  // A-26 Tier 2: write the durable TripSummary row (see completeTrip above
+  // for why this is fire-and-forget from the caller's perspective).
+  computeAndWriteTripSummary(tripId, 'cancelled').catch((err: unknown) => {
+    console.warn('[trip-archive] failed to write TripSummary for trip', tripId, (err as Error)?.message);
+  });
+
   return updated;
 }
 
@@ -629,17 +664,39 @@ export async function adminUpdateTripStatus(
     throw Object.assign(new Error('Trip not found'), { statusCode: 404 });
   }
 
+  // A-26: 'delayed' has no dedicated durable table of its own (unlike
+  // 'emergency'/'escalated', which are tracked via emergency_events/
+  // escalations rows created outside this function -- see
+  // emergency.routes.ts and admin-emergency.routes.ts). This is currently
+  // the only code path that can set a trip to 'delayed', so it's the single
+  // place that increments the counter TripSummary reads at completion time.
+  const nextStatusTransitionCounts =
+    newStatus === 'delayed'
+      ? { delayed: (trip.statusTransitionCounts?.delayed ?? 0) + 1 }
+      : trip.statusTransitionCounts;
+
   const [updated] = await db
     .update(trips)
     .set({
       status: newStatus,
       updatedAt: new Date(),
+      statusTransitionCounts: nextStatusTransitionCounts,
       ...(newStatus === 'completed' ? { actualArrival: new Date() } : {}),
     })
     .where(eq(trips.id, tripId))
     .returning();
 
   broadcastTripStatus(tripId, newStatus);
+
+  // Admin dashboard can also force a trip straight to completed/cancelled
+  // (not just the user-facing completeTrip/cancelTrip flows above) -- write
+  // the TripSummary from this path too so no terminal trip is missed.
+  if (newStatus === 'completed' || newStatus === 'cancelled') {
+    computeAndWriteTripSummary(tripId, newStatus).catch((err: unknown) => {
+      console.warn('[trip-archive] failed to write TripSummary for trip', tripId, (err as Error)?.message);
+    });
+  }
+
   return updated;
 }
 
@@ -817,19 +874,100 @@ export async function getUserTrips(
 }
 
 /**
+ * A distinct past destination, annotated with when the user last travelled
+ * there. Powers the "Recent destinations" quick-pick list on the mobile
+ * Start New Trip screen.
+ */
+export interface RecentDestination {
+  destination: Location;
+  lastTripId: string;
+  lastTravelledAt: Date;
+}
+
+/**
+ * List the user's most recent distinct destinations, most-recent first.
+ *
+ * "Past destination" means a trip that actually got underway (or further) --
+ * draft trips that were never started and cancelled trips are excluded so a
+ * typo'd or abandoned trip doesn't pollute the quick-pick list.
+ *
+ * De-duplication is done in-application (by destination name, case-
+ * insensitive) rather than via a SQL DISTINCT ON, because `destination` is a
+ * jsonb column and a small per-user row scan (bounded by `scanLimit`) is
+ * simpler than a jsonb-expression index while trip volume per user stays low.
+ */
+export async function getRecentDestinations(
+  userId: string,
+  limit = 5,
+  scanLimit = 100
+): Promise<RecentDestination[]> {
+  const rows = await db.query.trips.findMany({
+    where: and(
+      eq(trips.userId, userId),
+      inArray(trips.status, ['active', 'delayed', 'emergency', 'escalated', 'completed'] as TripStatus[])
+    ),
+    orderBy: desc(trips.createdAt),
+    columns: { id: true, destination: true, createdAt: true },
+    limit: scanLimit,
+  });
+
+  const seen = new Set<string>();
+  const result: RecentDestination[] = [];
+
+  for (const row of rows) {
+    const dest = row.destination as Location;
+    const key = (dest.name ?? `${dest.latitude},${dest.longitude}`).trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    result.push({
+      destination: dest,
+      lastTripId: row.id,
+      lastTravelledAt: row.createdAt,
+    });
+
+    if (result.length >= limit) break;
+  }
+
+  return result;
+}
+
+/**
  * Row shape returned by getActiveTrips — includes an unreadCount field
  * representing messages sent by the traveller that the admin has not yet read.
  */
 export type ActiveTripRow = typeof trips.$inferSelect & { unreadCount: number };
 
 /**
- * List all active trips (for admin dashboards).
+ * All non-draft statuses admins should be able to see in Trip Management.
+ * 'draft' is excluded because a draft trip was never started and isn't
+ * meaningful to an admin monitoring/reviewing trips.
  *
- * Each trip is enriched with `unreadCount` — the number of messages on that
- * trip where senderRole = 'user' and isRead = false. This lets the admin list
- * surface which trips have pending messages without a separate query.
+ * IMPORTANT: cancelled/completed are included here — Trip Management must
+ * keep terminal trips visible (not just in-progress ones) so admins can
+ * review what happened after a trip ends. See ADMIN_LIST_STATUSES usage in
+ * getActiveTrips below.
  */
-export async function getActiveTrips(): Promise<ActiveTripRow[]> {
+const ADMIN_LIST_STATUSES: TripStatus[] = [
+  'active', 'delayed', 'emergency', 'escalated', 'completed', 'cancelled',
+];
+
+/**
+ * List trips for admin dashboards, enriched with `unreadCount` — the number
+ * of messages on that trip where senderRole = 'user' and isRead = false.
+ * This lets the admin list surface which trips have pending messages without
+ * a separate query.
+ *
+ * @param statuses - Which trip statuses to include. Defaults to
+ *   `ADMIN_LIST_STATUSES` (every non-draft status, including terminal
+ *   'completed'/'cancelled' trips) so Trip Management keeps trips visible
+ *   after their status changes instead of dropping them from view. Callers
+ *   that only care about in-progress trips (e.g. the GPS broadcast path in
+ *   websocket.service.ts) should pass `ACTIVE_STATUSES` explicitly.
+ */
+export async function getActiveTrips(
+  statuses: TripStatus[] = ADMIN_LIST_STATUSES
+): Promise<ActiveTripRow[]> {
   // Use a correlated subquery so the count is computed in a single round-trip.
   //
   // NOTE: ${trips.id} inside sql`` resolves to the Drizzle column descriptor
@@ -848,9 +986,11 @@ export async function getActiveTrips(): Promise<ActiveTripRow[]> {
       )`.as('unread_count'),
     })
     .from(trips)
-    .where(inArray(trips.status, ACTIVE_STATUSES))
+    .where(inArray(trips.status, statuses))
     .orderBy(desc(trips.createdAt))
     .limit(200);
 
   return rows.map((r) => ({ ...r.trip, unreadCount: r.unreadCount }));
 }
+
+export { ACTIVE_STATUSES, isActiveStatus };
