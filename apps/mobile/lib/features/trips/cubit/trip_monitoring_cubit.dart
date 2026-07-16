@@ -419,7 +419,10 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
       await _stopTracking();
       await ApiClient.instance.clearActiveTripId();
 
-      emit(state.copyWith(status: TripMonitorStatus.cancelled));
+      emit(state.copyWith(
+        status: TripMonitorStatus.cancelled,
+        trip: state.trip?.withStatus('cancelled'),
+      ));
     } on DioException catch (e) {
       emit(state.copyWith(
         status: TripMonitorStatus.error,

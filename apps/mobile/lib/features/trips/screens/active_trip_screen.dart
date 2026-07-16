@@ -56,6 +56,15 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   /// Whether the countdown overlay is currently visible.
   bool _emergencyPending = false;
 
+  /// Guards the terminal-state (completed/cancelled) snackbar + redirect so
+  /// it only fires once. Without this, any later state emission while the
+  /// cubit is still in a terminal status (e.g. a hazard-alert update ticking
+  /// through before the '/home' navigation actually unmounts this screen)
+  /// re-triggers the BlocConsumer listener, re-showing the snackbar and
+  /// re-navigating — which is what caused the wrong/stale message to
+  /// reappear "every time" the user landed back on this route.
+  bool _terminalHandled = false;
+
   @override
   void initState() {
     super.initState();
@@ -253,8 +262,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           _cancelEmergencyCountdown();
         }
 
-        if (state.status == TripMonitorStatus.completed ||
-            state.status == TripMonitorStatus.cancelled) {
+        if (!_terminalHandled &&
+            (state.status == TripMonitorStatus.completed ||
+                state.status == TripMonitorStatus.cancelled)) {
+          _terminalHandled = true;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
