@@ -12,6 +12,15 @@ import {
 import type { AuthProvider } from '@safepass/shared';
 import { createWallet } from './wallet.service';
 
+// Domain suffix for the placeholder email generated below for phone-auth
+// users (who have no real email). Not a real, deliverable domain -- exists
+// only to satisfy the users.email NOT NULL/unique-format constraints. Kept
+// exported so other services (e.g. payment.routes.ts) can recognize and
+// reject it as "not a real email" rather than treating it as usable, since
+// it's syntactically well-formed but Paystack refuses it ("Invalid Email
+// Address Passed") for having no real, resolvable domain.
+export const PLACEHOLDER_EMAIL_DOMAIN = '@user.safepass';
+
 export interface TokenExchangeResult {
   accessToken: string;
   refreshToken: string;
@@ -48,7 +57,7 @@ export async function exchangeFirebaseToken(
   // Social auth users get their email from the provider.
   const isPhoneAuth = provider === 'phone';
   const email =
-    decodedToken.email ?? (isPhoneAuth ? `phone_${authProviderId}@user.safepass` : null);
+    decodedToken.email ?? (isPhoneAuth ? `phone_${authProviderId}${PLACEHOLDER_EMAIL_DOMAIN}` : null);
 
   if (!email) {
     throw new Error('Firebase token missing email claim and is not a phone auth token');

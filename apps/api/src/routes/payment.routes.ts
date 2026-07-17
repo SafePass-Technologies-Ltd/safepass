@@ -13,10 +13,20 @@ import {
   verifyPayment,
   handlePaystackWebhook,
 } from '../services/payment.service';
+import { PLACEHOLDER_EMAIL_DOMAIN } from '../services/auth.service';
 
-/** Loose but sufficient check -- Paystack itself does the strict validation. */
+/**
+ * Loose but sufficient check -- Paystack itself does the strict validation.
+ * Also rejects auth.service.ts's generated phone-auth placeholder
+ * (`phone_<uid>@user.safepass`): it's syntactically well-formed so
+ * z.string().email() alone would accept it, but Paystack rejects it
+ * ("Invalid Email Address Passed") since `user.safepass` isn't a real,
+ * resolvable domain -- so it must be treated as "no usable email" here too.
+ */
 const isValidEmail = (value: string | undefined | null): value is string =>
-  !!value && z.string().email().safeParse(value).success;
+  !!value &&
+  z.string().email().safeParse(value).success &&
+  !value.endsWith(PLACEHOLDER_EMAIL_DOMAIN);
 
 const paymentRoutes = new Hono();
 
