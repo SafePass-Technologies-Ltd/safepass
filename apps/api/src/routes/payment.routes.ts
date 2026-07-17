@@ -7,11 +7,16 @@ import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth';
+import { env } from '../env';
 import {
   initializePayment,
   verifyPayment,
   handlePaystackWebhook,
 } from '../services/payment.service';
+
+/** Loose but sufficient check -- Paystack itself does the strict validation. */
+const isValidEmail = (value: string | undefined | null): value is string =>
+  !!value && z.string().email().safeParse(value).success;
 
 const paymentRoutes = new Hono();
 
@@ -35,11 +40,21 @@ paymentRoutes.post(
     const user = c.get('user') as { sub: string; email: string };
     const { amount, email, gateway } = c.req.valid('json');
 
+    // Phone-signup users have no email on file (user.email is empty/absent),
+    // and Paystack rejects transactions outright without one ("Invalid
+    // Email Address Passed"). Fall back to a placeholder address in that
+    // case -- see PAYSTACK_FALLBACK_EMAIL in env.ts for how to change it.
+    const paystackEmail = isValidEmail(email)
+      ? email
+      : isValidEmail(user.email)
+        ? user.email
+        : env.PAYSTACK_FALLBACK_EMAIL;
+
     try {
       const result = await initializePayment({
         userId: user.sub,
         amount,
-        email: email ?? user.email,
+        email: paystackEmail,
         gateway,
       });
 

@@ -257,6 +257,15 @@ const envSchema = z.object({
   // storage instead. Terraform passes this in production (see
   // terraform/environments/production/main.tf's `EVIDENCE_BUCKET_NAME`).
   EVIDENCE_BUCKET_NAME: z.string().optional(),
+  // Paystack requires an email address on every transaction, but users who
+  // sign up with a phone number (no email on file) don't have one --
+  // without a fallback, wallet top-up for those accounts fails outright
+  // with "Invalid Email Address Passed" (see payment.service.ts's
+  // paystackInitialize). This placeholder is submitted to Paystack in that
+  // case only; it never receives receipts (Paystack emails go to the
+  // dashboard, not this inbox) and is kept in env so it can be swapped
+  // without a code change/deploy of the fallback address itself.
+  PAYSTACK_FALLBACK_EMAIL: z.string().email().default('support@safepass-tech.com'),
 });
 
 const parsed = envSchema.safeParse(process.env);
