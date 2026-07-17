@@ -453,7 +453,7 @@ export async function startTrip(
         balanceBefore: wallet.balance,
         balanceAfter: newBalance,
         tripId: tripId,
-        description: `Trip charge: ₦${tripPrice}`,
+        description: `Journey charge: ₦${tripPrice}`,
         status: 'completed',
       });
 
