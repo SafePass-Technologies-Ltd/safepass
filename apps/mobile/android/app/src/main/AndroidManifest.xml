@@ -10,7 +10,7 @@
     <!-- Required by flutter_local_notifications for alert vibration -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <application
-        android:label="safepass_mobile"
+        android:label="SafePass Mobile"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

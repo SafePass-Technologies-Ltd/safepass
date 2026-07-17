@@ -32,3 +32,6 @@ lib/**.freezed.dart
 # Pub
 .pub-cache/
 .pub/
+.env.json
+.env.*.json
+!.env.example.json
