@@ -14,7 +14,6 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/theme.dart';
 import '../../../app/router.dart';
-import '../../../core/constants.dart';
 import '../../../core/services/location_helper.dart';
 import '../../trips/cubit/trip_monitoring_cubit.dart';
 
@@ -227,7 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ] else ...[
                           // No active trip.
                           Text(
-                            'Ready to travel?',
+                            'Every Journey Matters',
                             style:
                                 Theme.of(context).textTheme.titleMedium?.copyWith(
                                       fontWeight: FontWeight.w600,
@@ -243,7 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ? Padding(
                                     padding: const EdgeInsets.only(top: 4),
                                     child: Text(
-                                      'Start monitoring your journey from as little as ₦$kTripPriceNaira',
+                                      'SafePass keeps watch of your journey and stands ready to respond if you need help.',
                                       style: Theme.of(context)
                                           .textTheme
                                           .bodySmall

@@ -646,7 +646,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
               // mobile -- which collides with the real long-press action
               // (starts the 10s countdown) and so was effectively never
               // discoverable by touch. Two additions make it self-explanatory
-              // without depending on that: (1) a small permanent "Hold" label
+              // without depending on that: (1) a small permanent "Help" label
               // under the icon, matching the caption style already used by
               // the quick-action buttons elsewhere on this screen, and (2) a
               // single tap (which does nothing destructive on its own) shows
@@ -694,7 +694,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Hold',
+                            'Help',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
