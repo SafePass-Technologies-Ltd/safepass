@@ -20,6 +20,9 @@ importers:
 
   apps/admin-dashboard:
     dependencies:
+      '@googlemaps/polyline-codec':
+        specifier: ^1.0.28
+        version: 1.0.28
       '@vis.gl/react-google-maps':
         specifier: ^1.8.3
         version: 1.8.3(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -1594,6 +1597,9 @@ packages:
 
   '@googlemaps/js-api-loader@2.1.0':
     resolution: {integrity: sha512-aZii781WEfncmJAFk1UPv6bdwT1mgRZzY8IWmpmx9mGAMCt97JZrXpn95LTsYinj7E4tC+LJv3FE8k2xRAsYgg==}
+
+  '@googlemaps/polyline-codec@1.0.28':
+    resolution: {integrity: sha512-m7rh8sbxlrHvebXEweBHX8r1uPtToPRYxWDD6p6k2YG8hyhBe0Wi6xRUVFpxpEseMNgF+OBotFQC5senj8K7TQ==}
 
   '@grpc/grpc-js@1.14.4':
     resolution: {integrity: sha512-k9Dj3DV/itK9D06Y8f190Qgop7/Ui+D0njFV3LHMPwPT75DpXLQohE9Wmz0QElrJnzsjB7KPWiKJbOl7IPDArQ==}
@@ -6537,6 +6543,8 @@ snapshots:
   '@googlemaps/js-api-loader@2.1.0':
     dependencies:
       '@types/google.maps': 3.65.0
+
+  '@googlemaps/polyline-codec@1.0.28': {}
 
   '@grpc/grpc-js@1.14.4':
     dependencies:

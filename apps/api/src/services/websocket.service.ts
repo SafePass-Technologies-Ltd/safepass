@@ -45,7 +45,7 @@ const BROADCAST_CHANNEL = 'safepass:ws:broadcast';
  * function's parameters (positional, JSON-serializable only). */
 interface CrossInstanceMessage {
   originInstanceId: string;
-  kind: 'gpsUpdate' | 'tripStatus' | 'newMessage' | 'emergencyAlert' | 'toUser';
+  kind: 'gpsUpdate' | 'tripStatus' | 'newMessage' | 'emergencyAlert' | 'emergencyResolved' | 'toUser';
   args: unknown[];
 }
 
@@ -67,6 +67,7 @@ export interface WsServerMessage {
     | 'trip_status'
     | 'new_message'
     | 'emergency_alert'
+    | 'emergency_resolved'
     | 'subscribed'
     | 'error'
     | 'pong'
@@ -144,6 +145,12 @@ export function attachWebSocketServer(server: Server): WebSocketServer {
         break;
       case 'emergencyAlert':
         broadcastEmergencyAlertLocal(msg.args[0] as string);
+        break;
+      case 'emergencyResolved':
+        broadcastEmergencyResolvedLocal(
+          msg.args[0] as string,
+          msg.args[1] as Parameters<typeof broadcastEmergencyResolvedLocal>[1]
+        );
         break;
       case 'toUser':
         sendToUserLocal(msg.args[0] as string, msg.args[1] as WsServerMessage);
@@ -506,6 +513,38 @@ export function broadcastEmergencyAlert(tripId: string): void {
     originInstanceId: INSTANCE_ID,
     kind: 'emergencyAlert',
     args: [tripId],
+  } satisfies CrossInstanceMessage);
+}
+
+/**
+ * Tells the traveller's own device that a monitoring officer resolved their
+ * emergency remotely (see admin-emergency.routes.ts's PATCH /:id handler).
+ * Without this, the phone has no way to learn its emergency was resolved
+ * server-side -- it would keep silently chunk-recording/uploading audio
+ * indefinitely (see emergency_cubit.dart's WebSocket subscription, which
+ * listens for exactly this event to stop the recording loop cleanly).
+ */
+function broadcastEmergencyResolvedLocal(
+  tripId: string,
+  payload: { emergencyEventId: string; status: string }
+): void {
+  broadcastToTrip(tripId, {
+    type: 'emergency_resolved',
+    tripId,
+    payload,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export function broadcastEmergencyResolved(
+  tripId: string,
+  payload: { emergencyEventId: string; status: string }
+): void {
+  broadcastEmergencyResolvedLocal(tripId, payload);
+  void publish(BROADCAST_CHANNEL, {
+    originInstanceId: INSTANCE_ID,
+    kind: 'emergencyResolved',
+    args: [tripId, payload],
   } satisfies CrossInstanceMessage);
 }
 

@@ -32,6 +32,7 @@ import {
   incidents,
   messages,
 } from '../db/schema';
+import { haversineMeters } from '../utils/geo';
 
 // ────────────────────────────────────────────────────────────
 // Significant-change sampling thresholds
@@ -82,23 +83,6 @@ const pendingBuffer = new Map<string, BufferedPoint[]>();
 const lastSampledPoint = new Map<string, BufferedPoint>();
 
 let flushTimer: ReturnType<typeof setInterval> | null = null;
-
-/** Haversine great-circle distance between two points, in meters. */
-function haversineMeters(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number {
-  const R = 6_371_000; // Earth radius in meters
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
 
 /** Smallest angular difference between two headings (0-360deg), in degrees. */
 function headingDeltaDegrees(a: number, b: number): number {
@@ -416,6 +400,71 @@ export async function getTripLocationHistory(
     where: eq(tripLocationHistory.tripId, tripId),
     orderBy: asc(tripLocationHistory.recordedAt),
   });
+}
+
+/**
+ * Fetch the single most recent breadcrumb per trip, for the given trip IDs,
+ * in one batched query (`DISTINCT ON` + `ORDER BY trip_id, recorded_at DESC`
+ * -- a single index-friendly scan, not N+1 per-trip lookups).
+ *
+ * This backs the admin live map's fallback chain: GET /v1/admin/trips/active
+ * uses this whenever DynamoDB's live position for a trip is missing or has
+ * expired past its 60-second TTL (most commonly in the window right after a
+ * trip completes and the mobile app stops sending GPS pings). See
+ * architecture.md's Trip Data Persistence design notes for why this reads
+ * the existing batched Tier 3 table instead of adding a new synchronous
+ * per-ping write elsewhere.
+ *
+ * Same ADMIN-ONLY caveat as getTripLocationHistory above -- the route layer
+ * (already admin/monitoring_officer/super_admin-gated for /active) is
+ * responsible for access control, not this function.
+ */
+/** Row shape returned by getLatestTripLocations (see below). */
+export interface LatestTripLocationRow {
+  id: string;
+  tripId: string;
+  latitude: number;
+  longitude: number;
+  speed: number | null;
+  heading: number | null;
+  recordedAt: Date;
+  createdAt: Date;
+}
+
+export async function getLatestTripLocations(
+  tripIds: string[]
+): Promise<Map<string, LatestTripLocationRow>> {
+  const result = new Map<string, LatestTripLocationRow>();
+  if (tripIds.length === 0) return result;
+
+  // Postgres DISTINCT ON is the right tool here -- one index-friendly scan
+  // that returns exactly one (the newest) row per trip_id, rather than
+  // pulling every breadcrumb for every requested trip back to the app layer.
+  // Columns are aliased to camelCase explicitly since raw db.execute() rows
+  // come back with Postgres's native snake_case names, not drizzle's
+  // schema-mapped camelCase.
+  const queryResult = await db.execute(sql`
+    SELECT DISTINCT ON (trip_id)
+      id, trip_id AS "tripId", latitude, longitude, speed, heading,
+      recorded_at AS "recordedAt", created_at AS "createdAt"
+    FROM trip_location_history
+    WHERE trip_id IN ${tripIds}
+    ORDER BY trip_id, recorded_at DESC
+  `);
+  // Raw db.execute() rows bypass drizzle's schema-based column mapping, so
+  // timestamp columns come back as ISO strings, not Date instances (unlike
+  // db.query.*.findMany(), which does convert them). Coerce explicitly --
+  // callers (e.g. trip.routes.ts) rely on recordedAt.toISOString().
+  const rows = (queryResult as unknown as LatestTripLocationRow[]).map((row) => ({
+    ...row,
+    recordedAt: new Date(row.recordedAt),
+    createdAt: new Date(row.createdAt),
+  }));
+
+  for (const row of rows) {
+    result.set(row.tripId, row);
+  }
+  return result;
 }
 
 // ────────────────────────────────────────────────────────────

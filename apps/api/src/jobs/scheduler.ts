@@ -17,6 +17,7 @@
  */
 import cron from 'node-cron';
 import { runAccountDeletionSweep } from './account-deletion-sweep.job';
+import { runTripAutoCompleteSweep } from './trip-auto-complete-sweep.job';
 
 /**
  * Start all scheduled jobs. Safe to call once at boot. `unref: true`
@@ -34,5 +35,15 @@ export function startScheduledJobs(): void {
     void runAccountDeletionSweep();
   }, { name: 'account-deletion-sweep', unref: true });
 
-  console.log('[scheduler] scheduled jobs started (account-deletion-sweep: hourly)');
+  // Trip auto-complete: a trip's AUTO_COMPLETE_DELAY_MINUTES window is only
+  // 10 minutes (see trip.service.ts), so this needs sub-hour precision --
+  // every minute keeps a trip from sitting "arrived but not completed" for
+  // more than ~1 minute past its due time.
+  cron.schedule('* * * * *', () => {
+    void runTripAutoCompleteSweep();
+  }, { name: 'trip-auto-complete-sweep', unref: true });
+
+  console.log(
+    '[scheduler] scheduled jobs started (account-deletion-sweep: hourly, trip-auto-complete-sweep: every minute)'
+  );
 }

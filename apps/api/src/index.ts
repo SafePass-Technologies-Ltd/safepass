@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { serveStatic } from '@hono/node-server/serve-static';
 import { rateLimiter } from 'hono-rate-limiter';
 import { errorHandler } from './middleware/error';
 import { authRoutes } from './routes/auth.routes';
@@ -52,6 +53,59 @@ app.use(
 
 if (env.NODE_ENV === 'development') {
   app.use('*', logger());
+}
+
+// Local-disk emergency-audio fallback (development only -- see
+// emergency.routes.ts's AUDIO_UPLOAD_DIR doc comment: production always
+// uses S3 + presigned URLs via s3.service.ts's uploadEvidenceFile, and
+// never writes here). Without this, POST /v1/emergency/:id/audio's local
+// fallback silently "succeeds" (file written, DB row updated) but the
+// playback URL it hands back 404s -- there was previously no static route
+// serving this directory at all.
+//
+// root: './' (NOT './uploads') -- serveStatic joins `root` with the FULL
+// request path (e.g. /uploads/emergency-audio/x.m4a), so root: './uploads'
+// would resolve to ./uploads/uploads/emergency-audio/x.m4a. root is also
+// relative to the process's cwd (serveStatic doesn't support absolute
+// paths), which is apps/api when the dev server is started via
+// `npm run dev` from there -- matching AUDIO_UPLOAD_DIR's own
+// resolve(__dirname, '../../uploads/...').
+if (env.NODE_ENV !== 'production') {
+  app.use(
+    '/uploads/*',
+    serveStatic({
+      root: './',
+      // hono's built-in MIME table (hono/utils/mime.ts) has no `.m4a`
+      // entry -- getMimeType() returns undefined for these files, so
+      // serveStatic never sets a Content-Type header at all, and Hono's
+      // default response type is `text/plain`. Browsers refuse to play
+      // audio served as text/plain: the file transfers byte-for-byte
+      // correctly (confirmed via direct fetch -- valid MP4/M4A container),
+      // but AudioRecordingRow's <audio> element in the admin dashboard
+      // silently fails to play it. `audio/mp4` is what these recordings
+      // actually are (AAC audio in an MP4 container, per
+      // audio_recording_service.dart's RecordConfig) and is the most
+      // broadly browser-supported MIME type for that container.
+      //
+      // onFound runs before serveStatic's own (no-op, since getMimeType
+      // returns undefined for .m4a) Content-Type assignment, so setting it
+      // here isn't later overwritten.
+      onFound: (path, c) => {
+        if (path.endsWith('.m4a')) {
+          c.header('Content-Type', 'audio/mp4');
+        }
+        // serveStatic sets no cache headers of its own, which means the
+        // browser is free to reuse its own heuristic caching -- during
+        // testing, a browser tab that already fetched a given chunk's URL
+        // once (back when this route had no Content-Type fix, or before a
+        // corrected file existed) can keep replaying that stale
+        // response/failure indefinitely, masking a since-fixed server
+        // response entirely. Evidence audio isn't something that should
+        // ever be aggressively cached client-side anyway.
+        c.header('Cache-Control', 'no-store');
+      },
+    })
+  );
 }
 
 // Rate limiting — keyed by IP address from standard proxy headers or socket.

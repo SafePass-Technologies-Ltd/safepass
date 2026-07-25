@@ -24,6 +24,16 @@ export const trips = pgTable(
     startedAt: timestamp('started_at', { withTimezone: true }),
     estimatedArrival: timestamp('estimated_arrival', { withTimezone: true }),
     actualArrival: timestamp('actual_arrival', { withTimezone: true }),
+    // Set the first time a GPS ping lands within ARRIVAL_RADIUS_METERS of
+    // the destination (see trip.service.ts's updateGpsPosition) -- distinct
+    // from actualArrival above, which is set later, when the trip is
+    // actually marked 'completed' (manually or by the auto-complete sweep).
+    // arrivedAt is the "GPS thinks you're there" signal that triggers the
+    // arrival push notification and starts the auto-complete countdown; it
+    // is set exactly once (guarded by an `IS NULL` conditional update) and
+    // never cleared, so a trip that later drifts away from the destination
+    // doesn't re-trigger the notification or reset the countdown.
+    arrivedAt: timestamp('arrived_at', { withTimezone: true }),
     vehicleType: vehicleTypeEnum('vehicle_type'),
     vehiclePlateNumber: varchar('vehicle_plate_number', { length: 20 }),
     vehicleDescription: text('vehicle_description'),

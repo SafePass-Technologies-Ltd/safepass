@@ -16,6 +16,13 @@ apps/mobile/.env.json
 *.tsbuildinfo
 coverage/
 
+# apps/api: local-disk dev-only fallback for emergency audio uploads (used
+# when EVIDENCE_BUCKET_NAME/S3 isn't configured -- see emergency.routes.ts's
+# AUDIO_UPLOAD_DIR). Production always uses S3 and never writes here, but
+# local dev testing can accumulate real recorded audio files that must
+# never be committed.
+apps/api/uploads/
+
 # Turborepo
 .turbo/
 

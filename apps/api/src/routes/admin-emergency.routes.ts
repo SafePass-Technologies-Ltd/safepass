@@ -21,8 +21,9 @@ import {
 } from '../db/schema';
 import { sendMessage } from '../services/message.service';
 import { sendPushToUser } from '../services/push.service';
-import { broadcastTripStatus } from '../services/websocket.service';
+import { broadcastTripStatus, broadcastEmergencyResolved } from '../services/websocket.service';
 import { isS3EvidenceConfigured, getEvidencePlaybackUrl } from '../services/s3.service';
+import { adminUpdateTripStatus } from '../services/trip.service';
 
 // ────────────────────────────────────────────────────────────
 // Emergency Events
@@ -155,6 +156,36 @@ emergencyRoutes.patch('/:id', zValidator('json', EmergencyUpdateSchema), async (
     })
     .where(eq(emergencyEvents.id, id))
     .returning();
+
+  if (data.status === 'resolved_false_alarm' || data.status === 'resolved_incident') {
+    // This previously only updated the emergency_events row -- the trip
+    // itself stayed 'emergency' forever (only the user's own self-checkin,
+    // POST /v1/emergency/:tripId/check-in, actually restored trips.status).
+    // Mirror that here so resolving from the admin side has the same
+    // effect: the Trip Detail page's status badge, the mobile app's local
+    // state (which optimistically flips to 'active' on the
+    // emergency_resolved broadcast below, per trip_monitoring_cubit.dart's
+    // _handleEmergencyResolvedRemotely), and the actual database all agree
+    // -- without this, the mobile UI's optimistic update was cosmetic only
+    // and reverted to 'emergency' on the next fetch, since the server was
+    // never actually told the trip was safe again.
+    //
+    // Guarded to only fire while the trip is still actually in
+    // emergency/escalated -- avoids clobbering a trip that's since moved on
+    // (e.g. someone resolving a stale/duplicate emergency event after the
+    // trip already completed).
+    const trip = await db.query.trips.findFirst({ where: eq(trips.id, event.tripId) });
+    if (trip && (trip.status === 'emergency' || trip.status === 'escalated')) {
+      await adminUpdateTripStatus(event.tripId, 'active');
+    }
+
+    // Tell the traveller's own device this emergency is resolved -- without
+    // this, the phone has no way to learn an officer closed it out
+    // remotely, and (per trip_monitoring_cubit.dart) keeps silently
+    // chunk-recording/uploading audio indefinitely. See
+    // websocket.service.ts's broadcastEmergencyResolved.
+    broadcastEmergencyResolved(event.tripId, { emergencyEventId: id, status: data.status });
+  }
 
   return c.json(updated);
 });

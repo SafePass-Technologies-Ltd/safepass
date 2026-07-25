@@ -11,15 +11,19 @@
 library;
 
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'dart:convert';
+import 'dart:io' show File, Platform;
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:dio/dio.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import '../../../core/api/api_client.dart';
 import '../../../core/constants.dart';
+import '../../../core/services/audio_recording_service.dart';
 
 // ────────────────────────────────────────────────────────────
 // Models
@@ -32,6 +36,12 @@ class TripDetail extends Equatable {
   final Map<String, dynamic> origin;
   final Map<String, dynamic> destination;
   final Map<String, dynamic>? currentLocation;
+  /// Fixed, one-time-computed route (see the API's directions.service.ts) --
+  /// an encoded Google polyline string, or null if the Directions API was
+  /// unavailable at trip creation. Decoded once in ActiveTripScreen and
+  /// drawn as a Polyline; a null value falls back to a straight
+  /// origin-destination line there.
+  final String? routePolyline;
   final String? vehiclePlateNumber;
   final String? vehicleDescription;
   final String? transportCompany;
@@ -51,6 +61,7 @@ class TripDetail extends Equatable {
     required this.origin,
     required this.destination,
     this.currentLocation,
+    this.routePolyline,
     this.vehiclePlateNumber,
     this.vehicleDescription,
     this.transportCompany,
@@ -69,6 +80,7 @@ class TripDetail extends Equatable {
         origin: json['origin'] as Map<String, dynamic>,
         destination: json['destination'] as Map<String, dynamic>,
         currentLocation: json['currentLocation'] as Map<String, dynamic>?,
+        routePolyline: json['routePolyline'] as String?,
         vehiclePlateNumber: json['vehiclePlateNumber'] as String?,
         vehicleDescription: json['vehicleDescription'] as String?,
         transportCompany: json['transportCompany'] as String?,
@@ -90,6 +102,7 @@ class TripDetail extends Equatable {
         origin: origin,
         destination: destination,
         currentLocation: currentLocation,
+        routePolyline: routePolyline,
         vehiclePlateNumber: vehiclePlateNumber,
         vehicleDescription: vehicleDescription,
         transportCompany: transportCompany,
@@ -102,7 +115,7 @@ class TripDetail extends Equatable {
       );
 
   @override
-  List<Object?> get props => [id, status, origin, destination, currentLocation];
+  List<Object?> get props => [id, status, origin, destination, currentLocation, routePolyline];
 }
 
 class GpsPosition extends Equatable {
@@ -213,6 +226,19 @@ class TripMonitoringState extends Equatable {
   /// (M-08) doesn't satisfy that; the map needs the actual marker icons.
   final List<RouteHazard> nearbyMarkers;
 
+  /// Set once an emergency has been triggered on this trip -- needed to
+  /// upload audio chunks (POST /v1/emergency/:emergencyEventId/audio) and
+  /// to check in (which targets the trip, not the event, but the ID is
+  /// still needed to know an emergency is in fact active). Null whenever
+  /// there is no active emergency.
+  final String? emergencyEventId;
+
+  /// True after a monitoring officer resolves this emergency remotely (via
+  /// the admin dashboard's Resolve action) rather than the user checking in
+  /// themselves -- see _handleResolvedRemotely. The screen shows a distinct
+  /// message for this vs. the user's own check-in.
+  final bool emergencyResolvedRemotely;
+
   const TripMonitoringState({
     this.status = TripMonitorStatus.initial,
     this.trip,
@@ -221,6 +247,8 @@ class TripMonitoringState extends Equatable {
     this.gpsUpdateCount = 0,
     this.newHazardAlert,
     this.nearbyMarkers = const [],
+    this.emergencyEventId,
+    this.emergencyResolvedRemotely = false,
   });
 
   TripMonitoringState copyWith({
@@ -232,6 +260,9 @@ class TripMonitoringState extends Equatable {
     RouteHazard? newHazardAlert,
     bool clearHazardAlert = false,
     List<RouteHazard>? nearbyMarkers,
+    String? emergencyEventId,
+    bool clearEmergencyEventId = false,
+    bool? emergencyResolvedRemotely,
   }) {
     return TripMonitoringState(
       status: status ?? this.status,
@@ -241,6 +272,9 @@ class TripMonitoringState extends Equatable {
       gpsUpdateCount: gpsUpdateCount ?? this.gpsUpdateCount,
       newHazardAlert: clearHazardAlert ? null : (newHazardAlert ?? this.newHazardAlert),
       nearbyMarkers: nearbyMarkers ?? this.nearbyMarkers,
+      emergencyEventId:
+          clearEmergencyEventId ? null : (emergencyEventId ?? this.emergencyEventId),
+      emergencyResolvedRemotely: emergencyResolvedRemotely ?? this.emergencyResolvedRemotely,
     );
   }
 
@@ -253,6 +287,8 @@ class TripMonitoringState extends Equatable {
         gpsUpdateCount,
         newHazardAlert,
         nearbyMarkers,
+        emergencyEventId,
+        emergencyResolvedRemotely,
       ];
 }
 
@@ -261,10 +297,34 @@ class TripMonitoringState extends Equatable {
 // ────────────────────────────────────────────────────────────
 
 class TripMonitoringCubit extends Cubit<TripMonitoringState> {
-  TripMonitoringCubit() : super(const TripMonitoringState());
+  TripMonitoringCubit({AudioRecordingService? audioRecordingService})
+      : _audioRecordingService = audioRecordingService ?? AudioRecordingService(),
+        super(const TripMonitoringState());
 
   final _dio = ApiClient.instance.dio;
   StreamSubscription<Position>? _positionSubscription;
+
+  // ── Emergency audio recording (silent -- see AudioRecordingService's doc
+  // comment) ───────────────────────────────────────────────────────────────
+  //
+  // This used to live in a separate, disconnected EmergencyCubit that the
+  // real panic button (long-press below) never actually invoked -- moved
+  // here so it runs against the trigger path that's actually used. See
+  // audio_recording_service.dart for the chunking rationale.
+  final AudioRecordingService _audioRecordingService;
+
+  static const Duration _chunkInterval = Duration(seconds: 30);
+  static const Duration _maxRecordingDuration = Duration(minutes: 60);
+
+  Timer? _chunkTimer;
+  Timer? _maxDurationTimer;
+  final List<String> _pendingChunkPaths = [];
+
+  /// Per-trip WebSocket subscription used only to learn if a monitoring
+  /// officer resolves the emergency remotely (see _handleResolvedRemotely).
+  /// Opened on trigger, closed on check-in/resolution/cubit disposal.
+  WebSocketChannel? _emergencyChannel;
+  StreamSubscription<dynamic>? _emergencyWsSub;
 
   /// Hazard radius (M-08): markers within this distance of the user trigger
   /// an alert.
@@ -277,6 +337,20 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
   DateTime? _lastHazardCheckAt;
   final Set<String> _shownHazardIds = {};
   bool _hazardCheckInFlight = false;
+
+  /// Minimum time between GPS pings uploaded to the backend, while moving.
+  /// `distanceFilter` alone (see _startGpsTracking) only stops the OS from
+  /// delivering *stationary* updates -- it does nothing to cap frequency
+  /// while moving, since crossing 10m takes well under a second at highway
+  /// speed. This time floor is the "moving" half of the throttle: combined
+  /// with distanceFilter, a trip pings at most once per this interval while
+  /// moving and not at all while stationary. Kept in the cubit (not just
+  /// AndroidSettings.intervalDuration, which is Android-only) so the cap is
+  /// enforced identically on iOS, where geolocator has no native interval
+  /// setting. See architecture.md's Trip Data Persistence design notes.
+  static const Duration _gpsUploadInterval = Duration(seconds: 5);
+
+  DateTime? _lastGpsUploadAt;
 
   // ---------------------------------------------------------------------------
   // Public lifecycle methods
@@ -448,23 +522,239 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
     }
 
     try {
-      await _dio.post('/v1/emergency/trigger', data: {
+      final response = await _dio.post('/v1/emergency/trigger', data: {
         'tripId': trip.id,
         'latitude': position.latitude,
         'longitude': position.longitude,
         'speed': position.speed,
       });
+      final emergencyEventId = (response.data as Map?)?['id'] as String?;
 
       // Update local trip status to emergency immediately.
       emit(state.copyWith(
         trip: trip.withStatus('emergency'),
+        emergencyEventId: emergencyEventId,
+        emergencyResolvedRemotely: false,
       ));
+
+      // Start silent chunked audio recording -- deliberately no UI
+      // indication of this whatsoever (by design: it's a *silent*
+      // recording feature). Failures (denied mic permission, recorder
+      // errors) are logged to the console only, for debugging -- never
+      // surfaced to the user. See AudioRecordingService/​_checkAudioStart.
+      unawaited(_checkAudioStart());
+      _chunkTimer = Timer.periodic(_chunkInterval, (_) => unawaited(_rotateChunk()));
+      _maxDurationTimer = Timer(_maxRecordingDuration, () => unawaited(_stopRecordingOnly()));
+
+      if (emergencyEventId != null) {
+        unawaited(_connectEmergencyResolutionListener(trip.id));
+      }
     } on DioException catch (e) {
       emit(state.copyWith(
         errorMessage:
             e.response?.data?['error']?['message'] ?? 'Failed to trigger emergency',
       ));
     }
+  }
+
+  /// User confirms they are safe. Resolves the emergency server-side
+  /// (restores trip status to 'active'), stops the audio chunk loop, and
+  /// flushes the final chunk + any pending retries.
+  Future<void> checkInEmergency() async {
+    final trip = state.trip;
+    if (trip == null) return;
+
+    _cancelEmergencyTimers();
+
+    try {
+      await _dio.post('/v1/emergency/${trip.id}/check-in');
+      await _stopAndUploadFinalEmergencyChunk();
+      await _disconnectEmergencyResolutionListener();
+      emit(state.copyWith(
+        trip: trip.withStatus('active'),
+        clearEmergencyEventId: true,
+      ));
+    } on DioException catch (e) {
+      emit(state.copyWith(
+        errorMessage: e.response?.data?['error']?['message'] ?? 'Check-in failed',
+      ));
+    }
+  }
+
+  // ── Emergency audio: chunk rotation, upload, retry ─────────────────────
+
+  /// Starts (or re-attempts starting) the recorder. Logs the outcome either
+  /// way -- see AudioRecordingService.start's doc comment. Deliberately
+  /// does NOT touch TripMonitoringState: this is a silent feature, and
+  /// nothing about its success/failure should ever be user-visible.
+  Future<void> _checkAudioStart() async {
+    final ok = await _audioRecordingService.start();
+    if (!ok) {
+      debugPrint(
+        '[TripMonitoringCubit] Audio chunk recording unavailable for emergency '
+        '${state.emergencyEventId} -- see AudioRecordingService logs above '
+        'for why (permission vs. recorder failure).',
+      );
+    }
+  }
+
+  /// Rotates to a new recording chunk: stops the current one and starts the
+  /// next immediately (before awaiting the upload), to minimise the gap in
+  /// audio coverage between chunks. Also opportunistically retries any
+  /// earlier chunks that previously failed to upload.
+  Future<void> _rotateChunk() async {
+    final path = await _audioRecordingService.stop();
+    unawaited(_checkAudioStart());
+    if (path != null) {
+      unawaited(_uploadEmergencyChunk(path));
+    }
+    unawaited(_retryPendingEmergencyChunks());
+  }
+
+  /// Stops the current chunk (if any), uploads it, and makes a final
+  /// attempt to flush any still-pending failed chunks. Used by every "end
+  /// of session" path (check-in, remote resolution, cubit disposal).
+  Future<void> _stopAndUploadFinalEmergencyChunk() async {
+    final filePath = await _audioRecordingService.stop();
+    if (filePath != null) {
+      await _uploadEmergencyChunk(filePath);
+    }
+    await _retryPendingEmergencyChunks();
+  }
+
+  /// Stops recording without starting a new chunk -- used by the
+  /// max-duration safety cap (see _maxRecordingDuration).
+  Future<void> _stopRecordingOnly() async {
+    _chunkTimer?.cancel();
+    _chunkTimer = null;
+    final path = await _audioRecordingService.stop();
+    if (path != null) {
+      unawaited(_uploadEmergencyChunk(path));
+    }
+    unawaited(_retryPendingEmergencyChunks());
+  }
+
+  /// Uploads a single recorded chunk to the active emergency event. On
+  /// failure, queues the file path for retry on the next opportunity.
+  Future<void> _uploadEmergencyChunk(String filePath) async {
+    final emergencyEventId = state.emergencyEventId;
+    if (emergencyEventId == null) return;
+
+    final succeeded = await _attemptEmergencyChunkUpload(filePath, emergencyEventId);
+    if (!succeeded && !_pendingChunkPaths.contains(filePath)) {
+      _pendingChunkPaths.add(filePath);
+    }
+  }
+
+  /// Retries every chunk currently pending, oldest first, so evidence
+  /// uploads in chronological order once connectivity returns. No backoff/
+  /// attempt cap -- a chunk just keeps getting retried every ~30s until it
+  /// succeeds or the emergency ends (bounded by _maxRecordingDuration).
+  Future<void> _retryPendingEmergencyChunks() async {
+    final emergencyEventId = state.emergencyEventId;
+    if (emergencyEventId == null || _pendingChunkPaths.isEmpty) return;
+
+    final toRetry = List<String>.from(_pendingChunkPaths);
+    final stillPending = <String>[];
+    for (final path in toRetry) {
+      final succeeded = await _attemptEmergencyChunkUpload(path, emergencyEventId);
+      if (!succeeded) stillPending.add(path);
+    }
+
+    _pendingChunkPaths
+      ..clear()
+      ..addAll(stillPending);
+  }
+
+  /// Single upload attempt for one chunk file. The local file is only
+  /// deleted once the server confirms receipt.
+  Future<bool> _attemptEmergencyChunkUpload(String filePath, String emergencyEventId) async {
+    try {
+      final file = File(filePath);
+      if (!await file.exists()) return true; // Nothing to upload -- not a failure.
+
+      final formData = FormData.fromMap({
+        'file': await MultipartFile.fromFile(filePath, filename: file.uri.pathSegments.last),
+      });
+
+      await _dio.post('/v1/emergency/$emergencyEventId/audio', data: formData);
+
+      try {
+        await file.delete();
+      } catch (_) {
+        // Non-fatal -- a stray temp file is a minor cleanup issue.
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[TripMonitoringCubit] Emergency chunk upload failed, will retry: $e');
+      return false;
+    }
+  }
+
+  // ── Emergency remote-resolution listener ───────────────────────────────
+
+  /// Connects a lightweight WebSocket subscription purely to learn if a
+  /// monitoring officer resolves this emergency remotely (admin dashboard's
+  /// Resolve action). Non-fatal if it fails to connect -- the user can
+  /// still check in manually either way.
+  Future<void> _connectEmergencyResolutionListener(String tripId) async {
+    try {
+      const storage = FlutterSecureStorage();
+      final token = await storage.read(key: 'access_token');
+      if (token == null) return;
+
+      final wsUrl = Uri.parse('$kWsBaseUrl?token=${Uri.encodeComponent(token)}');
+      _emergencyChannel = WebSocketChannel.connect(wsUrl);
+      _emergencyChannel!.sink.add(jsonEncode({'type': 'subscribe', 'tripId': tripId}));
+
+      _emergencyWsSub = _emergencyChannel!.stream.listen(
+        (raw) {
+          try {
+            final envelope = jsonDecode(raw as String) as Map<String, dynamic>;
+            if (envelope['type'] == 'emergency_resolved' && envelope['tripId'] == tripId) {
+              unawaited(_handleEmergencyResolvedRemotely());
+            }
+          } catch (_) {
+            // Ignore malformed WS messages — they must not crash the app.
+          }
+        },
+        onError: (_) {},
+        cancelOnError: false,
+      );
+    } catch (_) {
+      // Non-fatal — see doc comment above.
+    }
+  }
+
+  Future<void> _disconnectEmergencyResolutionListener() async {
+    await _emergencyWsSub?.cancel();
+    _emergencyWsSub = null;
+    await _emergencyChannel?.sink.close();
+    _emergencyChannel = null;
+  }
+
+  /// A monitoring officer resolved this emergency from the admin dashboard.
+  Future<void> _handleEmergencyResolvedRemotely() async {
+    final trip = state.trip;
+    // Only react if there's still an active emergency locally -- if the
+    // user already checked in, this is a redundant/late event.
+    if (trip == null || state.emergencyEventId == null) return;
+
+    _cancelEmergencyTimers();
+    await _stopAndUploadFinalEmergencyChunk();
+    await _disconnectEmergencyResolutionListener();
+    emit(state.copyWith(
+      trip: trip.withStatus('active'),
+      clearEmergencyEventId: true,
+      emergencyResolvedRemotely: true,
+    ));
+  }
+
+  void _cancelEmergencyTimers() {
+    _chunkTimer?.cancel();
+    _chunkTimer = null;
+    _maxDurationTimer?.cancel();
+    _maxDurationTimer = null;
   }
 
   /// Clear the pending hazard alert after the UI has displayed it.
@@ -504,6 +794,15 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
 
     await FlutterForegroundTask.startService(
       serviceId: 1001,
+      // Must match AndroidManifest.xml's <service> foregroundServiceType
+      // ("location|microphone") -- Android 14+ enforces per-type access,
+      // so both need to be declared here for the emergency audio
+      // chunk-recording loop to keep running once the app is minimised/
+      // backgrounded during an active emergency, not just GPS uploads.
+      serviceTypes: const [
+        ForegroundServiceTypes.location,
+        ForegroundServiceTypes.microphone,
+      ],
       notificationTitle: 'SafePass Journey Active',
       notificationText: 'Monitoring your journey...',
       callback: tripBackgroundServiceEntryPoint,
@@ -545,11 +844,24 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
       }
     });
 
-    const locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.high,
-      distanceFilter: 10, // metres — only notify on significant movement
-      timeLimit: null,
-    );
+    // distanceFilter (10m) stops the OS from delivering updates at all while
+    // stationary. On Android, intervalDuration additionally caps delivery
+    // frequency while moving to once per _gpsUploadInterval -- both
+    // conditions must be satisfied before the OS emits a position. iOS has
+    // no equivalent native setting, so the same cap is enforced in the
+    // listener below via _lastGpsUploadAt instead, uniformly on both
+    // platforms.
+    final locationSettings = Platform.isAndroid
+        ? AndroidSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10, // metres — only notify on significant movement
+            intervalDuration: _gpsUploadInterval,
+          )
+        : const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 10, // metres — only notify on significant movement
+            timeLimit: null,
+          );
 
     _positionSubscription =
         Geolocator.getPositionStream(locationSettings: locationSettings)
@@ -562,11 +874,24 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
         accuracy: position.accuracy,
       );
 
-      // Emit local position update immediately for smooth map rendering.
+      // Emit local position update immediately for smooth map rendering --
+      // this is purely client-side state, so it isn't subject to the
+      // upload throttle below.
       emit(state.copyWith(
         lastPosition: gpsPos,
         gpsUpdateCount: state.gpsUpdateCount + 1,
       ));
+
+      // Throttle everything that actually pings the backend (GPS upload +
+      // hazard proximity check) to at most once per _gpsUploadInterval.
+      // distanceFilter already suppresses stationary updates; this is the
+      // "moving" half of the cap -- see _gpsUploadInterval doc comment.
+      final now = DateTime.now();
+      if (_lastGpsUploadAt != null &&
+          now.difference(_lastGpsUploadAt!) < _gpsUploadInterval) {
+        return;
+      }
+      _lastGpsUploadAt = now;
 
       // Upload position to backend (fire-and-forget).
       _uploadGpsPosition(tripId, position);
@@ -687,8 +1012,25 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
   }
 
   @override
-  Future<void> close() {
-    _stopTracking();
+  Future<void> close() async {
+    await _stopTracking();
+
+    // Emergency audio cleanup -- stop (not just dispose) so any in-progress
+    // chunk gets its container properly finalized, and best-effort upload
+    // it rather than discarding it (the screen being torn down mid-
+    // emergency, e.g. app backgrounded, shouldn't silently lose whatever
+    // was captured so far).
+    _cancelEmergencyTimers();
+    if (_audioRecordingService.isRecording) {
+      final path = await _audioRecordingService.stop();
+      if (path != null) {
+        unawaited(_uploadEmergencyChunk(path));
+      }
+    }
+    unawaited(_retryPendingEmergencyChunks());
+    await _disconnectEmergencyResolutionListener();
+    await _audioRecordingService.dispose();
+
     return super.close();
   }
 }
@@ -712,6 +1054,13 @@ class _TripBackgroundTaskHandler extends TaskHandler {
   StreamSubscription<Position>? _positionSub;
   String? _tripId;
 
+  /// Same upload throttle as TripMonitoringCubit's foreground stream (see
+  /// its _gpsUploadInterval doc comment) -- enforced manually here too since
+  /// AppleSettings has no interval equivalent, and this handler runs in a
+  /// separate isolate from the cubit so the two throttles can't share state.
+  static const Duration _gpsUploadInterval = Duration(seconds: 5);
+  DateTime? _lastUploadAt;
+
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     // Read the persisted trip ID from secure storage.
@@ -730,12 +1079,24 @@ class _TripBackgroundTaskHandler extends TaskHandler {
     _positionSub = Geolocator.getPositionStream(
       locationSettings: locationSettings,
     ).listen((position) {
-      // Forward position to the main isolate for UI map updates.
+      // Forward position to the main isolate for UI map updates -- not
+      // subject to the upload throttle below, purely local state.
       FlutterForegroundTask.sendDataToMain({
         'lat': position.latitude,
         'lng': position.longitude,
         'speed': position.speed,
       });
+
+      // Throttle backend uploads to at most once per _gpsUploadInterval
+      // while moving (distanceFilter below already suppresses updates
+      // while stationary). See TripMonitoringCubit's matching throttle for
+      // the full rationale.
+      final now = DateTime.now();
+      if (_lastUploadAt != null &&
+          now.difference(_lastUploadAt!) < _gpsUploadInterval) {
+        return;
+      }
+      _lastUploadAt = now;
 
       // Upload to backend from the background isolate.
       _uploadPosition(_tripId!, position);
@@ -746,10 +1107,12 @@ class _TripBackgroundTaskHandler extends TaskHandler {
   ///
   /// On iOS, [AppleSettings] disables automatic pause and sets the activity
   /// type to automotive navigation so Core Location maintains accuracy during
-  /// long road trips.
+  /// long road trips. iOS has no native minimum-interval setting, so the
+  /// upload-frequency cap while moving is enforced manually above instead.
   ///
-  /// On Android, standard [LocationSettings] is used — the foreground service
-  /// itself keeps the process alive and the location stream active.
+  /// On Android, [AndroidSettings.intervalDuration] additionally caps the
+  /// OS's delivery frequency to once per _gpsUploadInterval while moving --
+  /// the foreground service keeps the process (and stream) alive regardless.
   LocationSettings _buildLocationSettings() {
     if (Platform.isIOS) {
       return AppleSettings(
@@ -761,9 +1124,10 @@ class _TripBackgroundTaskHandler extends TaskHandler {
         showBackgroundLocationIndicator: true,
       );
     }
-    return const LocationSettings(
+    return AndroidSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 10,
+      intervalDuration: _gpsUploadInterval,
     );
   }
 

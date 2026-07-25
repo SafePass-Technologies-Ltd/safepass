@@ -12,14 +12,20 @@ import {
   Car,
   Send,
   PhoneCall,
+  Phone,
+  Mail,
+  Users,
   AlertTriangle,
   ChevronDown,
   ChevronUp,
   Siren,
   Play,
   Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import { apiClient, API_BASE_URL } from '@/lib/api-client';
+import TripRouteMap from '@/components/map/trip-route-map';
+import type { TripLocation } from '@/hooks/useTripLiveLocation';
 
 // =============================================================================
 // Types
@@ -40,10 +46,24 @@ interface StatusHistoryEntry {
   note?: string;
 }
 
+interface EmergencyContact {
+  name: string;
+  relationship?: string;
+  phone: string;
+  phoneWhatsappEnabled?: boolean;
+  email?: string;
+}
+
+interface TripUser {
+  fullName: string;
+  phone: string | null;
+  email: string | null;
+  emergencyContacts: EmergencyContact[];
+}
+
 interface TripDetail {
   id: string;
   userId: string;
-  tripMode: 'driver' | 'passenger';
   origin: { name?: string; latitude: number; longitude: number };
   destination: { name?: string; latitude: number; longitude: number };
   status: TripStatus;
@@ -56,6 +76,18 @@ interface TripDetail {
   statusHistory?: StatusHistoryEntry[];
   createdAt: string;
   updatedAt: string;
+  /** Fixed, one-time-computed route (see directions.service.ts) -- null if
+   * Directions was unavailable at trip creation, or this trip predates the
+   * feature. The route map falls back to a straight line in that case. */
+  routePolyline?: string | null;
+  /** Resolved server-side by GET /v1/admin/trips/:tripId: DynamoDB live
+   * position -> trip_location_history breadcrumb fallback -> null. Seeds
+   * the route map's live position marker. */
+  currentLocation?: TripLocation | null;
+  /** The traveller's account info (screens.md A-04 "User info"/"Emergency
+   * Contacts"). Null if the lookup failed or the user's account has since
+   * been anonymized (M-38 Account Deletion). */
+  user?: TripUser | null;
 }
 
 interface Message {
@@ -398,7 +430,15 @@ function MessagesSection({ tripId, tripEnded }: { tripId: string; tripEnded: boo
 // Check-Ins section
 // =============================================================================
 
-function CheckInsSection({ tripId, tripEnded }: { tripId: string; tripEnded: boolean }) {
+function CheckInsSection({
+  tripId,
+  tripEnded,
+  refreshSignal,
+}: {
+  tripId: string;
+  tripEnded: boolean;
+  refreshSignal?: number;
+}) {
   const [checkIns, setCheckIns] = useState<CheckIn[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -428,6 +468,15 @@ function CheckInsSection({ tripId, tripEnded }: { tripId: string; tripEnded: boo
   useEffect(() => {
     fetchCheckIns();
   }, [fetchCheckIns]);
+
+  const isFirstRefresh = useRef(true);
+  useEffect(() => {
+    if (isFirstRefresh.current) {
+      isFirstRefresh.current = false;
+      return;
+    }
+    fetchCheckIns();
+  }, [refreshSignal, fetchCheckIns]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -636,10 +685,32 @@ function AudioRecordingRow({ eventId, recordingKey, index }: { eventId: string; 
   );
 }
 
-function EmergencyEventsSection({ tripId }: { tripId: string }) {
+/** Emergency event statuses that are already terminal -- no Resolve action
+ * shown for these (matches EmergencyEventStatus's two "resolved_*" values). */
+function isTerminalEmergencyStatus(status: EmergencyEventStatus): boolean {
+  return status === 'resolved_false_alarm' || status === 'resolved_incident';
+}
+
+function EmergencyEventsSection({
+  tripId,
+  refreshSignal,
+}: {
+  tripId: string;
+  /** Bumped by the page-level WebSocket subscription / polling fallback --
+   * triggers a background refetch so a new panic trigger, resolution, or
+   * audio chunk from elsewhere shows up without a manual page refresh. */
+  refreshSignal?: number;
+}) {
   const [events, setEvents] = useState<EmergencyEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Resolve form state -- keyed by event id so multiple events (rare, but
+  // possible if a trip had more than one panic trigger) don't share state.
+  const [resolvingEventId, setResolvingEventId] = useState<string | null>(null);
+  const [resolutionNotes, setResolutionNotes] = useState('');
+  const [submittingStatus, setSubmittingStatus] = useState<EmergencyEventStatus | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -658,6 +729,45 @@ function EmergencyEventsSection({ tripId }: { tripId: string }) {
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
+
+  // Refetch on every real-time signal (new WS event or the page-level
+  // polling fallback) -- reuses fetchEvents as-is, so this briefly shows
+  // the loading spinner just like the existing manual-refresh path does.
+  const isFirstRefresh = useRef(true);
+  useEffect(() => {
+    if (isFirstRefresh.current) {
+      isFirstRefresh.current = false;
+      return;
+    }
+    fetchEvents();
+  }, [refreshSignal, fetchEvents]);
+
+  // Resolving an emergency (PATCH /v1/admin/emergencies/:id) is what
+  // actually tells the traveller's phone to stop recording -- it broadcasts
+  // a WebSocket `emergency_resolved` event the mobile app listens for (see
+  // emergency_cubit.dart). This was previously unreachable from the UI
+  // entirely: the endpoint and broadcast existed server-side, but nothing
+  // in the dashboard called it. Note this is a DIFFERENT action from
+  // logging a Check-In below -- a check-in (even "Confirmed Safe") is a
+  // separate contact-attempt log and never touches the emergency event or
+  // notifies the phone.
+  const handleResolve = async (eventId: string, status: EmergencyEventStatus) => {
+    setSubmittingStatus(status);
+    setResolveError(null);
+    try {
+      await apiClient(`/v1/admin/emergencies/${eventId}`, {
+        method: 'PATCH',
+        body: { status, resolutionNotes: resolutionNotes.trim() || undefined },
+      });
+      setResolvingEventId(null);
+      setResolutionNotes('');
+      await fetchEvents();
+    } catch {
+      setResolveError('Failed to resolve emergency. Please try again.');
+    } finally {
+      setSubmittingStatus(null);
+    }
+  };
 
   // Nothing to show for trips that never had a panic-button trigger --
   // avoid an empty card cluttering the (common) non-emergency trip detail
@@ -680,19 +790,39 @@ function EmergencyEventsSection({ tripId }: { tripId: string }) {
         <p className="px-6 py-4 text-sm text-red-500">{error}</p>
       ) : (
         <ul className="divide-y divide-slate-100">
-          {events.map((event) => {
+          {events.map((event, i) => {
             const statusStyle = EMERGENCY_STATUS_STYLE[event.status];
+            const isTerminal = isTerminalEmergencyStatus(event.status);
+            const isResolving = resolvingEventId === event.id;
+            // events is ordered newest-first (API: desc(createdAt)) -- flip
+            // the index so "Attempt 1" is chronologically first, matching
+            // how an officer would talk about it ("this was the second
+            // time they triggered panic on this trip"), not API order.
+            const attemptNumber = events.length - i;
             return (
               <li key={event.id} className="space-y-3 px-6 py-4">
+                {/* Attempt numbering + prominent timestamp -- multiple
+                    emergency events on the same trip (re-triggered panic)
+                    render as separate cards here, which was previously easy
+                    to misread as one confusing/contradictory state (e.g. a
+                    "no audio" card sitting next to a "6 recordings" card)
+                    rather than two distinct events at different times. */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Badge {...statusStyle} />
-                    <span className="text-xs capitalize text-slate-500">
-                      {event.triggerType.replace(/_/g, ' ')}
-                    </span>
-                  </div>
-                  <span className="text-xs text-slate-400 shrink-0">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Attempt {attemptNumber} of {events.length}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span className="text-sm font-semibold text-slate-700">
                     {new Date(event.createdAt).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge {...statusStyle} />
+                  <span className="text-xs capitalize text-slate-500">
+                    {event.triggerType.replace(/_/g, ' ')}
                   </span>
                 </div>
 
@@ -706,10 +836,18 @@ function EmergencyEventsSection({ tripId }: { tripId: string }) {
                   <p className="text-xs text-slate-500">Resolution: {event.resolutionNotes}</p>
                 )}
 
+                {event.resolvedAt && (
+                  <p className="text-xs text-slate-400">
+                    Resolved {new Date(event.resolvedAt).toLocaleString()}
+                  </p>
+                )}
+
                 {/* Audio evidence -- the whole point of this section. Every
-                    recording uploaded during this emergency session (panic
-                    press to check-in) shows up here for playback. */}
-                {event.audioRecordingUrls.length > 0 && (
+                    recording uploaded during this emergency session shows
+                    up here for playback, in ~30s chunks uploaded
+                    progressively as the emergency happens (not just at the
+                    end) -- see emergency_cubit.dart. */}
+                {event.audioRecordingUrls.length > 0 ? (
                   <div className="space-y-2">
                     <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
                       Audio Evidence ({event.audioRecordingUrls.length})
@@ -717,6 +855,76 @@ function EmergencyEventsSection({ tripId }: { tripId: string }) {
                     {event.audioRecordingUrls.map((key, i) => (
                       <AudioRecordingRow key={key} eventId={event.id} recordingKey={key} index={i} />
                     ))}
+                  </div>
+                ) : (
+                  // Previously this rendered nothing at all for a
+                  // zero-recordings event, indistinguishable from "still
+                  // loading" or "feature not working." Explicit here since
+                  // the most common real cause is a denied/never-granted
+                  // microphone permission on the traveller's device (see
+                  // AudioRecordingService.lastStartFailed) -- chunks upload
+                  // roughly every 30s while active, so a non-terminal event
+                  // older than that with nothing yet is worth flagging.
+                  <p className="text-xs text-slate-400">
+                    {isTerminal
+                      ? 'No audio was recorded during this emergency (traveller’s device may have denied microphone permission, or the session ended before the first ~30s chunk).'
+                      : 'No audio chunks received yet — uploads roughly every 30s while active. If none arrive, the traveller’s device may have denied microphone permission.'}
+                  </p>
+                )}
+
+                {/* Resolve action -- only for a non-terminal event. */}
+                {!isTerminal && (
+                  <div className="pt-1">
+                    {!isResolving ? (
+                      <button
+                        onClick={() => { setResolvingEventId(event.id); setResolutionNotes(''); setResolveError(null); }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 transition-colors hover:bg-green-100"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Resolve
+                      </button>
+                    ) : (
+                      <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <label className="block text-xs font-medium text-slate-600">
+                          Resolution notes (optional)
+                        </label>
+                        <textarea
+                          value={resolutionNotes}
+                          onChange={(e) => setResolutionNotes(e.target.value)}
+                          rows={2}
+                          placeholder="What happened? Any relevant context…"
+                          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                        />
+                        {resolveError && <p className="text-xs text-red-500">{resolveError}</p>}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            onClick={() => handleResolve(event.id, 'resolved_false_alarm')}
+                            disabled={submittingStatus !== null}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-40"
+                          >
+                            {submittingStatus === 'resolved_false_alarm' ? 'Marking…' : 'Mark False Alarm'}
+                          </button>
+                          <button
+                            onClick={() => handleResolve(event.id, 'resolved_incident')}
+                            disabled={submittingStatus !== null}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                          >
+                            {submittingStatus === 'resolved_incident' ? 'Marking…' : 'Mark Resolved — Incident'}
+                          </button>
+                          <button
+                            onClick={() => { setResolvingEventId(null); setResolveError(null); }}
+                            disabled={submittingStatus !== null}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          Resolving notifies the traveller&apos;s phone in real time and stops the
+                          background audio recording.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </li>
@@ -732,7 +940,15 @@ function EmergencyEventsSection({ tripId }: { tripId: string }) {
 // Escalations section
 // =============================================================================
 
-function EscalationsSection({ tripId, tripEnded }: { tripId: string; tripEnded: boolean }) {
+function EscalationsSection({
+  tripId,
+  tripEnded,
+  refreshSignal,
+}: {
+  tripId: string;
+  tripEnded: boolean;
+  refreshSignal?: number;
+}) {
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -761,6 +977,19 @@ function EscalationsSection({ tripId, tripEnded }: { tripId: string; tripEnded: 
   useEffect(() => {
     fetchEscalations();
   }, [fetchEscalations]);
+
+  // No server-side broadcast exists yet for escalation create/update, so
+  // this section relies entirely on the page-level 60s polling fallback
+  // (not WS) to pick up changes made elsewhere -- still real-time-ish, just
+  // coarser than the WS-driven sections above.
+  const isFirstRefresh = useRef(true);
+  useEffect(() => {
+    if (isFirstRefresh.current) {
+      isFirstRefresh.current = false;
+      return;
+    }
+    fetchEscalations();
+  }, [refreshSignal, fetchEscalations]);
 
   // Determine if there is an active (non-terminal) escalation.
   const activeEscalation = escalations.find(
@@ -907,6 +1136,106 @@ function EscalationsSection({ tripId, tripEnded }: { tripId: string; tripEnded: 
 }
 
 // =============================================================================
+// Traveller section (screens.md A-04 "User info" / "Emergency Contacts")
+// =============================================================================
+
+function TravellerSection({ user }: { user: TripUser | null | undefined }) {
+  if (!user) {
+    return (
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-100 px-6 py-4">
+          <h2 className="text-sm font-semibold text-slate-700">Traveller</h2>
+        </div>
+        <p className="px-6 py-6 text-center text-sm text-slate-400">
+          User details unavailable.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="border-b border-slate-100 px-6 py-4">
+        <h2 className="text-sm font-semibold text-slate-700">Traveller</h2>
+      </div>
+      <div className="grid grid-cols-1 divide-y divide-slate-100 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+        {/* Left: traveller's own contact info */}
+        <div className="space-y-4 p-6">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Name</p>
+            <div className="mt-1 flex items-center gap-2">
+              <User className="h-4 w-4 text-slate-400" />
+              <p className="text-sm font-medium text-slate-700">{user.fullName}</p>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Phone</p>
+            <div className="mt-1 flex items-center gap-2">
+              <Phone className="h-4 w-4 text-slate-400" />
+              {user.phone ? (
+                <a href={`tel:${user.phone}`} className="text-sm text-primary hover:underline">
+                  {user.phone}
+                </a>
+              ) : (
+                <p className="text-sm text-slate-400">—</p>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Email</p>
+            <div className="mt-1 flex items-center gap-2">
+              <Mail className="h-4 w-4 text-slate-400" />
+              {user.email ? (
+                <a href={`mailto:${user.email}`} className="text-sm text-primary hover:underline">
+                  {user.email}
+                </a>
+              ) : (
+                <p className="text-sm text-slate-400">—</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Right: emergency contacts, with quick-call per screens.md A-04
+            ("Emergency Contacts... quick-call button"). */}
+        <div className="p-6">
+          <div className="mb-2 flex items-center gap-2">
+            <Users className="h-4 w-4 text-slate-400" />
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
+              Emergency Contacts
+            </p>
+          </div>
+          {user.emergencyContacts.length === 0 ? (
+            <p className="text-sm text-slate-400">No emergency contacts on file.</p>
+          ) : (
+            <ul className="space-y-3">
+              {user.emergencyContacts.map((contact, i) => (
+                <li key={i} className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-700">{contact.name}</p>
+                    <p className="truncate text-xs text-slate-500">
+                      {contact.relationship ? `${contact.relationship} · ` : ''}
+                      {contact.phone}
+                    </p>
+                  </div>
+                  <a
+                    href={`tel:${contact.phone}`}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                  >
+                    <PhoneCall className="h-3.5 w-3.5" />
+                    Call
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================================
 // Main Trip Detail Page
 // =============================================================================
 
@@ -917,6 +1246,24 @@ export default function TripDetailPage() {
   const [trip, setTrip] = useState<TripDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Current caller's role, resolved client-side purely to decide whether to
+  // *show* the Complete Trip button -- the actual restriction is enforced
+  // server-side (PATCH /v1/admin/trips/:tripId/status rejects a 'completed'
+  // request from anyone but admin/super_admin with a 403), so this is a UX
+  // convenience, not the security boundary.
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
+
+  // Bumped on every real-time signal (WebSocket event or the polling
+  // fallback below) that something on this page might be stale. Passed
+  // down to EmergencyEventsSection/CheckInsSection/EscalationsSection so
+  // they refetch too, not just the top-level trip object -- e.g. an
+  // officer on another tab resolving an emergency should update this page
+  // without a manual refresh.
+  const [refreshSignal, setRefreshSignal] = useState(0);
 
   const fetchTrip = useCallback(async () => {
     setLoading(true);
@@ -935,6 +1282,89 @@ export default function TripDetailPage() {
   useEffect(() => {
     fetchTrip();
   }, [fetchTrip]);
+
+  // Re-fetch (without the full-page loading spinner) whenever refreshSignal
+  // ticks, but skip the very first render -- fetchTrip() above already
+  // covers the initial load, and re-running it here too would just be a
+  // redundant duplicate request on mount.
+  const isFirstRefresh = useRef(true);
+  useEffect(() => {
+    if (isFirstRefresh.current) {
+      isFirstRefresh.current = false;
+      return;
+    }
+    apiClient<TripDetail>(`/v1/admin/trips/${id}`)
+      .then(setTrip)
+      .catch(() => {}); // Background refresh -- a transient failure here isn't worth surfacing.
+  }, [refreshSignal, id]);
+
+  useEffect(() => {
+    apiClient<{ role: string }>('/v1/users/me')
+      .then((data) => setCurrentUserRole(data.role))
+      .catch(() => setCurrentUserRole(null));
+  }, []);
+
+  // Real-time updates -- WebSocket first, with a 60s polling fallback as a
+  // safety net (per-trip escalation creation doesn't broadcast anything
+  // server-side yet, and a dropped/reconnecting WS shouldn't leave this
+  // page stale indefinitely). Mirrors MessagesSection's per-trip WS
+  // subscription pattern elsewhere on this page.
+  useEffect(() => {
+    const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:3000/v1/ws';
+    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+
+    let ws: WebSocket | null = null;
+    if (token) {
+      ws = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
+      ws.onopen = () => ws?.send(JSON.stringify({ type: 'subscribe', tripId: id }));
+      ws.onmessage = (event) => {
+        try {
+          const envelope = JSON.parse(event.data as string) as { type: string; tripId?: string };
+          if (
+            envelope.tripId === id &&
+            ['trip_status', 'emergency_alert', 'emergency_resolved'].includes(envelope.type)
+          ) {
+            setRefreshSignal((n) => n + 1);
+          }
+        } catch {
+          // Ignore malformed WS messages.
+        }
+      };
+      // No reconnect-on-close here (unlike useTripWebSocket) -- the 60s
+      // poll below already covers the "WS dropped and didn't come back"
+      // case for the lifetime of this page view.
+    }
+
+    const pollId = setInterval(() => setRefreshSignal((n) => n + 1), 60_000);
+
+    return () => {
+      ws?.close();
+      clearInterval(pollId);
+    };
+  }, [id]);
+
+  const handleCompleteTrip = async () => {
+    if (!trip) return;
+    setCompleting(true);
+    setCompleteError(null);
+    try {
+      // PATCH /status returns the raw trip row only, not the enriched shape
+      // (currentLocation/user/routePolyline) GET /:tripId provides -- refetch
+      // via fetchTrip() rather than setTrip()-ing the PATCH response
+      // directly, so the route map / traveller section don't lose their data.
+      await apiClient(`/v1/admin/trips/${trip.id}/status`, {
+        method: 'PATCH',
+        body: { status: 'completed' },
+      });
+      await fetchTrip();
+      setCompleteConfirmOpen(false);
+    } catch (err) {
+      setCompleteError('Failed to complete trip. It may no longer be completable from its current status.');
+      console.error(err);
+    } finally {
+      setCompleting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -968,6 +1398,10 @@ export default function TripDetailPage() {
   // still being monitored — mirrors the backend guards in message.service.ts
   // and admin-emergency.routes.ts.
   const tripEnded = trip.status === 'completed' || trip.status === 'cancelled';
+  // Complete Trip: admin-only (server-enforced, see PATCH /status's doc
+  // comment), and only meaningful for a trip that isn't already terminal.
+  const canComplete =
+    !tripEnded && (currentUserRole === 'admin' || currentUserRole === 'super_admin');
 
   return (
     <div className="space-y-6">
@@ -985,14 +1419,53 @@ export default function TripDetailPage() {
             <h1 className="text-2xl font-bold text-slate-dark">Trip Detail</h1>
             <p className="mt-0.5 text-xs text-slate-400 font-mono">{trip.id}</p>
           </div>
-          <button
-            onClick={fetchTrip}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
-          >
-            <RotateCcw className="h-4 w-4" />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            {canComplete && (
+              <button
+                onClick={() => { setCompleteConfirmOpen(true); setCompleteError(null); }}
+                className="inline-flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 transition-colors hover:bg-green-100"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Complete Trip
+              </button>
+            )}
+            <button
+              onClick={fetchTrip}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Refresh
+            </button>
+          </div>
         </div>
+
+        {/* Complete confirmation -- an explicit second step rather than an
+            immediate PATCH on click, since this ends monitoring outright. */}
+        {completeConfirmOpen && (
+          <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-4">
+            <p className="text-sm font-medium text-green-800">
+              Mark this trip as completed? This cannot be undone — the
+              traveller and any tagged staff will stop being monitored.
+            </p>
+            {completeError && <p className="mt-2 text-xs text-red-600">{completeError}</p>}
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                onClick={handleCompleteTrip}
+                disabled={completing}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {completing ? 'Completing…' : 'Confirm Complete'}
+              </button>
+              <button
+                onClick={() => { setCompleteConfirmOpen(false); setCompleteError(null); }}
+                disabled={completing}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-40"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main details card */}
@@ -1020,10 +1493,6 @@ export default function TripDetailPage() {
                   {statusStyle.label}
                 </span>
               </div>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Mode</p>
-              <p className="mt-1 text-sm capitalize text-slate-700">{trip.tripMode}</p>
             </div>
           </div>
 
@@ -1067,6 +1536,27 @@ export default function TripDetailPage() {
         </div>
       </div>
 
+      {/* Traveller info + emergency contacts (screens.md A-04). */}
+      <TravellerSection user={trip.user} />
+
+      {/* Route map: fixed planned route + ~2km safe-zone corridor +
+          real-time/last-known position. See screens.md A-04's "Location
+          Timeline" section -- this is that map. */}
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-100 px-6 py-4">
+          <h2 className="text-sm font-semibold text-slate-700">Route Map</h2>
+        </div>
+        <div className="p-4">
+          <TripRouteMap
+            tripId={trip.id}
+            origin={trip.origin}
+            destination={trip.destination}
+            routePolyline={trip.routePolyline}
+            initialLocation={trip.currentLocation ?? null}
+          />
+        </div>
+      </div>
+
       {/* Status history */}
       {trip.statusHistory && trip.statusHistory.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -1094,13 +1584,13 @@ export default function TripDetailPage() {
 
       {/* ── New sections ─────────────────────────────────────── */}
 
-      <EmergencyEventsSection tripId={trip.id} />
+      <EmergencyEventsSection tripId={trip.id} refreshSignal={refreshSignal} />
 
       <MessagesSection tripId={trip.id} tripEnded={tripEnded} />
 
-      <CheckInsSection tripId={trip.id} tripEnded={tripEnded} />
+      <CheckInsSection tripId={trip.id} tripEnded={tripEnded} refreshSignal={refreshSignal} />
 
-      <EscalationsSection tripId={trip.id} tripEnded={tripEnded} />
+      <EscalationsSection tripId={trip.id} tripEnded={tripEnded} refreshSignal={refreshSignal} />
     </div>
   );
 }

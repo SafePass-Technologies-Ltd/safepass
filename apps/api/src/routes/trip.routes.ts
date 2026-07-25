@@ -28,7 +28,12 @@ import {
   type ActiveTripRow,
 } from '../services/trip.service';
 import { getUserById } from '../services/user.service';
-import { getTripSummary, getTripLocationHistory } from '../services/trip-archive.service';
+import {
+  getTripSummary,
+  getTripLocationHistory,
+  getLatestTripLocations,
+  type LatestTripLocationRow,
+} from '../services/trip-archive.service';
 
 // ────────────────────────────────────────────────────────────
 // User-facing trip routes
@@ -399,6 +404,72 @@ function parseAdminStatusQuery(value: string | undefined): AdminTripStatusQuery 
   return undefined;
 }
 
+/** Shape returned as `currentLocation` on enriched admin trip responses. */
+interface CurrentLocation {
+  latitude: number;
+  longitude: number;
+  speed: number | null;
+  heading: number | null;
+  timestamp: string;
+}
+
+/**
+ * Resolve `currentLocation` for a batch of trips using the same fallback
+ * chain used everywhere the admin dashboard needs a trip's position:
+ * DynamoDB (live, 60s TTL) -> most recent `trip_location_history` breadcrumb
+ * (Tier 3, no TTL) -> null (caller falls back to `trip.origin` as an
+ * absolute last resort, only for trips with no GPS fix at all). See the
+ * `/active` route's doc comment below for the full rationale -- this is
+ * shared by both `/active` (bulk) and `/:tripId` (single trip, e.g. for the
+ * Trip Detail route map) so the two views can never disagree about where a
+ * trip's marker belongs.
+ */
+async function resolveCurrentLocations(
+  tripIds: string[]
+): Promise<Map<string, CurrentLocation>> {
+  const result = new Map<string, CurrentLocation>();
+  if (tripIds.length === 0) return result;
+
+  const timeout = new Promise<Map<string, TripLocationRecord>>((resolve) =>
+    setTimeout(() => resolve(new Map()), 3_000)
+  );
+  const [locationMap, breadcrumbMap] = await Promise.all([
+    Promise.race([
+      getAllTripLocations(tripIds).catch(() => new Map<string, TripLocationRecord>()),
+      timeout,
+    ]),
+    // Only trips DynamoDB doesn't already cover are worth querying here, but
+    // we don't know that set until the race above settles for each trip --
+    // querying for all requested trips up front is one cheap batched query
+    // either way (see getLatestTripLocations), so there's no need to
+    // sequence these two lookups.
+    getLatestTripLocations(tripIds).catch(() => new Map<string, LatestTripLocationRow>()),
+  ]);
+
+  for (const tripId of tripIds) {
+    const loc = locationMap.get(tripId);
+    const breadcrumb = breadcrumbMap.get(tripId);
+    if (loc) {
+      result.set(tripId, {
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        speed: loc.speed ?? null,
+        heading: loc.heading ?? null,
+        timestamp: loc.timestamp,
+      });
+    } else if (breadcrumb) {
+      result.set(tripId, {
+        latitude: breadcrumb.latitude,
+        longitude: breadcrumb.longitude,
+        speed: breadcrumb.speed ?? null,
+        heading: breadcrumb.heading ?? null,
+        timestamp: breadcrumb.recordedAt.toISOString(),
+      });
+    }
+  }
+  return result;
+}
+
 /**
  * GET /v1/admin/trips/active
  * List trips across all users for the admin Trip Management view, enriched
@@ -411,9 +482,19 @@ function parseAdminStatusQuery(value: string | undefined): AdminTripStatusQuery 
  * to be dropped entirely because this endpoint only queried in-progress
  * statuses). Pass `?status=` to narrow to a single status.
  *
- * DynamoDB is the source of truth for current GPS positions (24-hour TTL).
- * A 3-second Promise.race timeout prevents a DynamoDB hang from blocking
- * the response — trips will simply show currentLocation: null in that case.
+ * DynamoDB is the source of truth for current GPS positions (60-second TTL,
+ * see dynamo.service.ts). A 3-second Promise.race timeout prevents a
+ * DynamoDB hang from blocking the response.
+ *
+ * DynamoDB's row is routinely gone by the time a completed/cancelled trip is
+ * fetched here (the mobile app stops pinging once the trip ends, and the row
+ * expires ~60s later). Rather than leave currentLocation null in that case
+ * -- which would make the frontend's `currentLocation ?? origin` fallback
+ * snap the marker back to the trip's starting point -- this falls back to
+ * the most recent row in the existing `trip_location_history` breadcrumb
+ * table (Tier 3, batched/queued writes, no TTL, worst case one point every
+ * 60s even when stationary -- see trip-archive.service.ts). `trip.origin`
+ * remains the last-resort fallback only for trips with no GPS fix at all.
  */
 adminTripRoutes.get('/active', async (c) => {
   const statusParam = parseAdminStatusQuery(c.req.query('status'));
@@ -421,36 +502,30 @@ adminTripRoutes.get('/active', async (c) => {
     statusParam ? [statusParam] : undefined
   );
 
-  const timeout = new Promise<Map<string, TripLocationRecord>>((resolve) =>
-    setTimeout(() => resolve(new Map()), 3_000)
-  );
-  const locationMap = await Promise.race([
-    getAllTripLocations(activeTrips.map((t) => t.id)).catch(() => new Map<string, TripLocationRecord>()),
-    timeout,
-  ]);
+  const locationMap = await resolveCurrentLocations(activeTrips.map((t) => t.id));
 
-  const trips = activeTrips.map((trip) => {
-    const loc = locationMap.get(trip.id);
-    return {
-      ...trip,
-      currentLocation: loc
-        ? {
-            latitude: loc.latitude,
-            longitude: loc.longitude,
-            speed: loc.speed ?? null,
-            heading: loc.heading ?? null,
-            timestamp: loc.timestamp,
-          }
-        : null,
-    };
-  });
+  const trips = activeTrips.map((trip) => ({
+    ...trip,
+    currentLocation: locationMap.get(trip.id) ?? null,
+  }));
 
   return c.json({ trips }, 200);
 });
 
 /**
  * GET /v1/admin/trips/:tripId
- * Get any trip by ID (admin override — no ownership check).
+ * Get any trip by ID (admin override — no ownership check). Enriched with:
+ *  - `currentLocation` (same fallback chain as `/active`, see
+ *    resolveCurrentLocations above) -- powers the Trip Detail route map's
+ *    live/last-known position marker, alongside the existing
+ *    `routePolyline` field (fixed, one-time-computed route) and the
+ *    safe-zone corridor the frontend derives from origin/destination.
+ *  - `user` (screens.md A-04 "User info"/"Emergency Contacts" sections) --
+ *    the traveller's name, phone, email, and emergency contacts, resolved
+ *    via getUserById. Best-effort: a lookup failure (or the trip's user
+ *    having since been anonymized by account deletion -- see M-38) yields
+ *    `user: null` rather than failing the whole trip-detail response, since
+ *    everything else on this page still needs to render regardless.
  */
 adminTripRoutes.get('/:tripId', async (c) => {
   const tripId = c.req.param('tripId');
@@ -458,7 +533,25 @@ adminTripRoutes.get('/:tripId', async (c) => {
   if (!trip) {
     return c.json({ error: { code: 404, message: 'Trip not found' } }, 404);
   }
-  return c.json(trip, 200);
+  const [locationMap, user] = await Promise.all([
+    resolveCurrentLocations([tripId]),
+    getUserById(trip.userId).catch(() => null),
+  ]);
+  return c.json(
+    {
+      ...trip,
+      currentLocation: locationMap.get(tripId) ?? null,
+      user: user
+        ? {
+            fullName: user.fullName,
+            phone: user.phone ?? null,
+            email: user.email ?? null,
+            emergencyContacts: user.emergencyContacts ?? [],
+          }
+        : null,
+    },
+    200
+  );
 });
 
 /**
@@ -493,6 +586,17 @@ adminTripRoutes.get(
 /**
  * PATCH /v1/admin/trips/:tripId/status
  * Admin override: force a trip status change (for emergency/escalation).
+ *
+ * Manually marking a trip 'completed' is restricted to admin/super_admin --
+ * monitoring_officer can use this endpoint for every other status
+ * transition (the adminTripRoutes group above already gates the route to
+ * admin/monitoring_officer/super_admin), but per product decision, ending a
+ * trip's monitoring outright is an admin-only action, not a day-to-day
+ * monitoring action. Checked here rather than with a second requireRole()'d
+ * route because the status value itself determines the required role, not
+ * the endpoint as a whole. (Note: a trip can also reach 'completed'
+ * automatically -- see trip-auto-complete-sweep.job.ts -- which bypasses
+ * this endpoint/role-check entirely, since that path isn't caller-driven.)
  */
 adminTripRoutes.patch(
   '/:tripId/status',
@@ -508,6 +612,14 @@ adminTripRoutes.patch(
   async (c) => {
     const tripId = c.req.param('tripId');
     const { status } = c.req.valid('json');
+    const user = c.get('user') as { role: string };
+
+    if (status === 'completed' && !['admin', 'super_admin'].includes(user.role)) {
+      return c.json(
+        { error: { code: 403, message: 'Only admin or super_admin can complete a trip' } },
+        403
+      );
+    }
 
     try {
       const trip = await adminUpdateTripStatus(tripId, status);

@@ -110,7 +110,31 @@ class AuthInterceptor extends Interceptor {
           await secureStorage.write(key: 'access_token', value: newAccessToken);
           await secureStorage.write(key: 'refresh_token', value: newRefreshToken);
 
-          // Retry the original request with the new token
+          // Multipart/form-data bodies (e.g. emergency audio chunk uploads
+          // via MultipartFile.fromFile -- see trip_monitoring_cubit.dart)
+          // wrap a ONE-SHOT byte stream that's fully consumed by the first
+          // send attempt. Blindly replaying `err.requestOptions` here would
+          // transmit that already-drained stream -- the server still
+          // returns 200/201 (nothing validates the received byte count
+          // against what was intended), so the request *looks* successful,
+          // but the file that actually lands on disk is silently
+          // truncated/corrupted. This was traced directly to unplayable
+          // emergency audio chunks: real 201 responses, real files on disk,
+          // but empty/near-empty payloads.
+          //
+          // Skip the transparent retry for these -- the token is still
+          // refreshed above, so it's available for the next attempt. The
+          // caller is responsible for its own retry with a FRESH request
+          // body in that case (emergency chunk uploads already do this:
+          // failed chunks stay in _pendingChunkPaths and are retried by
+          // re-reading the file from disk, which is only deleted on
+          // confirmed success -- see _attemptEmergencyChunkUpload).
+          if (err.requestOptions.data is FormData) {
+            return handler.next(err);
+          }
+
+          // Retry the original request with the new token (safe for
+          // non-streaming/JSON bodies, which CAN be replayed as-is).
           err.requestOptions.headers['Authorization'] = 'Bearer $newAccessToken';
           final retryResponse = await dio.fetch(err.requestOptions);
           return handler.resolve(retryResponse);

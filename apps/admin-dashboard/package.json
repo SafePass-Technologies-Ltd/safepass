@@ -12,6 +12,7 @@
     "clean": "rm -rf .next"
   },
   "dependencies": {
+    "@googlemaps/polyline-codec": "^1.0.28",
     "@vis.gl/react-google-maps": "^1.8.3",
     "clsx": "2.1.1",
     "firebase": "11.5.0",

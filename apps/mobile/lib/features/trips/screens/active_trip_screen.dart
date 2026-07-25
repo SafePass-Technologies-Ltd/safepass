@@ -15,6 +15,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_polyline_algorithm/google_polyline_algorithm.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/router.dart' show AppRoutes;
 import '../../../app/theme.dart';
@@ -41,6 +42,18 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   GoogleMapController? _mapController;
   final Set<Marker> _markers = {};
 
+  /// The trip's fixed, one-time-computed route (see TripDetail.routePolyline
+  /// doc comment) -- rebuilt only when the polyline string itself changes,
+  /// not on every GPS tick, since it's static for the trip's lifetime.
+  final Set<Polyline> _polylines = {};
+  String? _decodedPolylineSource;
+
+  /// Same route colour as the admin-dashboard's Trip Detail route map
+  /// (trip-route-map.tsx) -- kept identical across platforms deliberately,
+  /// so an officer cross-referencing the two doesn't see a different route
+  /// colour and wonder if it's a different route.
+  static const _routeColor = Color(0xFF1D4ED8);
+
   /// Drives the pulsing "you are here" ring on the map overlay.
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
@@ -65,6 +78,22 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
   /// reappear "every time" the user landed back on this route.
   bool _terminalHandled = false;
 
+  /// Guards the "officer resolved this remotely" snackbar so it only fires
+  /// once per resolution (mirrors _terminalHandled's reasoning) -- reset
+  /// whenever a new emergency is triggered.
+  bool _emergencyResolvedRemotelyHandled = false;
+
+  /// Local UI-only loading flag for the "Check In (I'm Safe)" button
+  /// (see _EmergencyActiveBanner) -- mirrors how _emergencyPending etc. are
+  /// screen-local state rather than cubit state.
+  bool _checkingInEmergency = false;
+
+  Future<void> _confirmCheckInEmergency() async {
+    setState(() => _checkingInEmergency = true);
+    await context.read<TripMonitoringCubit>().checkInEmergency();
+    if (mounted) setState(() => _checkingInEmergency = false);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +107,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       // Already active (app restart resume) — seed markers immediately from
       // the current cubit state so origin/destination show before next GPS tick.
       _updateMarkers(cubit.state);
+      _updatePolylines(cubit.state);
     }
 
     _pulseController = AnimationController(
@@ -257,12 +287,62 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     });
   }
 
+  /// Decode and draw the trip's fixed route (see TripDetail.routePolyline).
+  /// No safe-zone corridor here -- that's an admin-dashboard-only overlay
+  /// (monitoring-officer context); the traveller's own map only needs the
+  /// route line itself.
+  void _updatePolylines(TripMonitoringState state) {
+    final trip = state.trip;
+    if (trip == null) return;
+
+    // Skip re-decoding on every rebuild (e.g. GPS ticks) -- the route is
+    // fixed for the trip's lifetime, so only rebuild when the source string
+    // actually changes (including the initial null -> value transition).
+    if (_decodedPolylineSource == trip.routePolyline && _polylines.isNotEmpty) {
+      return;
+    }
+    _decodedPolylineSource = trip.routePolyline;
+
+    List<LatLng> points;
+    if (trip.routePolyline != null && trip.routePolyline!.isNotEmpty) {
+      points = decodePolyline(trip.routePolyline!)
+          .map((p) => LatLng(p[0].toDouble(), p[1].toDouble()))
+          .toList();
+    } else {
+      // Straight-line fallback -- matches trip-route-map.tsx's fallback for
+      // trips with no computed route (Directions API was unavailable at
+      // creation, or the trip predates this feature).
+      final origin = _extractLatLng(trip.origin);
+      final destination = _extractLatLng(trip.destination);
+      points = [
+        if (origin != null) origin,
+        if (destination != null) destination,
+      ];
+    }
+
+    if (points.length < 2) return;
+
+    setState(() {
+      _polylines
+        ..clear()
+        ..add(
+          Polyline(
+            polylineId: const PolylineId('trip_route'),
+            points: points,
+            color: _routeColor,
+            width: 4,
+          ),
+        );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<TripMonitoringCubit, TripMonitoringState>(
       listener: (context, state) {
         if (state.trip != null) {
           _updateMarkers(state);
+          _updatePolylines(state);
         }
 
         // Auto-navigate camera to follow user position.
@@ -280,6 +360,24 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                 state.trip?.status == 'escalated') &&
             _emergencyPending) {
           _cancelEmergencyCountdown();
+        }
+
+        // A monitoring officer resolved the emergency remotely (admin
+        // dashboard) rather than the user checking in themselves.
+        if (state.emergencyResolvedRemotely && !_emergencyResolvedRemotelyHandled) {
+          _emergencyResolvedRemotelyHandled = true;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('A monitoring officer has marked this emergency resolved.'),
+              backgroundColor: AppColors.safetyGreen,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        // Reset the guard once a new emergency starts so a later resolution
+        // can show the snackbar again.
+        if (state.trip?.status == 'emergency' && _emergencyResolvedRemotelyHandled) {
+          _emergencyResolvedRemotelyHandled = false;
         }
 
         if (!_terminalHandled &&
@@ -372,6 +470,25 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
                     onCancel: _cancelEmergencyCountdown,
                   ),
                 ),
+
+              // ── Active emergency overlay ──
+              // Replaces the bottom panel while the trip is in emergency/
+              // escalated status: the only action that makes sense here is
+              // checking in safe (or waiting for an officer to resolve it
+              // remotely) -- not the normal Safe Arrival / Message / panic
+              // button row underneath. Deliberately says nothing about audio
+              // recording (silent by design -- see triggerEmergency's doc
+              // comment); debug visibility is console-only.
+              if (state.trip?.status == 'emergency' || state.trip?.status == 'escalated')
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: _EmergencyActiveBanner(
+                    checkingIn: _checkingInEmergency,
+                    onCheckIn: _confirmCheckInEmergency,
+                  ),
+                ),
             ],
           ),
         );
@@ -411,6 +528,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
     return GoogleMap(
       initialCameraPosition: CameraPosition(target: center, zoom: 14),
       markers: _markers,
+      polylines: _polylines,
       myLocationEnabled: true,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
@@ -1070,6 +1188,86 @@ class _EmergencyCountdownBanner extends StatelessWidget {
                 ),
               ),
               child: const Text('Cancel'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown while a trip is in 'emergency'/'escalated' status. The only
+/// action offered is checking in safe -- resolution otherwise happens
+/// remotely via a monitoring officer (see TripMonitoringCubit's
+/// _handleEmergencyResolvedRemotely, surfaced as a snackbar elsewhere on
+/// this screen). Deliberately makes no mention of audio recording --
+/// silent by design.
+class _EmergencyActiveBanner extends StatelessWidget {
+  final bool checkingIn;
+  final VoidCallback onCheckIn;
+
+  const _EmergencyActiveBanner({
+    required this.checkingIn,
+    required this.onCheckIn,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(
+        20,
+        16,
+        20,
+        16 + MediaQuery.of(context).padding.bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: AppColors.emergencyRed,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 16,
+            offset: Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.emergency, color: Colors.white),
+              SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  'Emergency Active — Help is on the way',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: checkingIn ? null : onCheckIn,
+              icon: checkingIn
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.check_circle_outline),
+              label: Text(checkingIn ? 'Checking in…' : "Check In (I'm Safe)"),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.safetyGreen,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
             ),
           ),
         ],

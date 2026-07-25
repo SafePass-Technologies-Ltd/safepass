@@ -71,10 +71,20 @@
         <meta-data
             android:name="com.dexterous.flutterlocalnotifications.default_notification_channel_id"
             android:value="safepass_emergency" />
-        <!-- flutter_foreground_task background GPS service -->
+        <!-- flutter_foreground_task background GPS + emergency-audio service.
+             foregroundServiceType must declare EVERY type of work this
+             service actually does -- Android 14+ (API 34+) strictly
+             enforces this per-type and will restrict/kill access for any
+             undeclared type once the app leaves the foreground. This was
+             previously "location" only, so the mic could be restricted as
+             soon as an emergency's silent audio recording ran while the
+             app was backgrounded (untested until then, since dev testing
+             stayed foregrounded) -- "microphone" added so the emergency
+             chunk-recording loop (trip_monitoring_cubit.dart) keeps working
+             after the user minimises the app or switches apps. -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundTaskService"
-            android:foregroundServiceType="location"
+            android:foregroundServiceType="location|microphone"
             android:stopWithTask="false" />
         <!-- Google Maps API key (required by google_maps_flutter) -->
         <meta-data

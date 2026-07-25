@@ -6,7 +6,7 @@
  * route handlers (auth context already resolved).
  */
 import { v4 as uuidv4 } from 'uuid';
-import { eq, and, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, desc, inArray, isNull, isNotNull, lte, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { trips, wallets, walletTransactions, users, organizations, tripTagInvites, messages } from '../db/schema';
 import { env } from '../env';
@@ -18,6 +18,9 @@ import {
 import { saveTripLocation } from './dynamo.service';
 import { createWallet } from './wallet.service';
 import { sampleGpsPoint, computeAndWriteTripSummary } from './trip-archive.service';
+import { computeFixedRoutePolyline } from './directions.service';
+import { sendPushToUser } from './push.service';
+import { haversineMeters } from '../utils/geo';
 
 // ────────────────────────────────────────────────────────────
 // Enum column types (for Drizzle strict enum comparisons)
@@ -69,6 +72,32 @@ export interface TripFilter {
   limit?: number;
   offset?: number;
 }
+
+// ────────────────────────────────────────────────────────────
+// Destination arrival / auto-complete
+//
+// So staff/admins aren't left tracking trips nobody's actually still on:
+// once a GPS ping lands within ARRIVAL_RADIUS_METERS of the destination,
+// the traveller gets a push notification, and if the trip isn't manually
+// completed within AUTO_COMPLETE_DELAY_MINUTES, the auto-complete sweep
+// (see jobs/trip-auto-complete-sweep.job.ts) marks it 'completed' itself.
+// ────────────────────────────────────────────────────────────
+
+/** "At the destination" radius, in meters. Deliberately tighter than the
+ * 200m "significant change" sampling threshold in trip-archive.service.ts
+ * -- this drives a user-facing notification and an eventual auto-complete,
+ * so it should only fire once someone is genuinely there, not just nearby. */
+const ARRIVAL_RADIUS_METERS = 150;
+
+/** Minutes after arrival-detection before the sweep auto-completes the trip
+ * if nobody has manually completed it first. */
+const AUTO_COMPLETE_DELAY_MINUTES = 10;
+
+/** Only these statuses can trigger arrival detection/auto-complete --
+ * deliberately excludes 'emergency'/'escalated': a trip in either of those
+ * states needs explicit staff resolution, not a silent GPS-driven
+ * auto-complete just because the phone happens to be near the destination. */
+const ARRIVAL_ELIGIBLE_STATUSES: TripStatus[] = ['active', 'delayed'];
 
 // ────────────────────────────────────────────────────────────
 // Status transition rules
@@ -138,6 +167,14 @@ function asVehicleType(v: string | undefined | null): VehicleType | null {
  * For Transport Partner org members, transport_company is auto-populated from
  * the linked organization's name — the caller's input value is ignored for
  * that field so it cannot be spoofed client-side.
+ *
+ * routePolyline: if the caller didn't supply one, this computes it once via
+ * a single Google Directions call (see directions.service.ts's doc comment
+ * for why this must happen exactly once, here, rather than being
+ * recalculated later) and persists the result. Best-effort -- a failed/
+ * unavailable Directions call leaves routePolyline null and trip creation
+ * proceeds regardless; the Trip Detail route map falls back to a straight
+ * origin-destination line in that case.
  */
 export async function createTrip(
   input: TripCreateInput
@@ -153,6 +190,9 @@ export async function createTrip(
       resolvedTransportCompany = org.name;
     }
   }
+
+  const resolvedRoutePolyline =
+    input.routePolyline ?? (await computeFixedRoutePolyline(input.origin, input.destination));
 
   const [trip] = await db
     .insert(trips)
@@ -171,7 +211,7 @@ export async function createTrip(
       transportCompany: resolvedTransportCompany,
       driverName: input.driverName ?? null,
       driverPhone: input.driverPhone ?? null,
-      routePolyline: input.routePolyline ?? null,
+      routePolyline: resolvedRoutePolyline,
       paymentIds: [],
     })
     .returning();
@@ -558,6 +598,91 @@ export async function updateGpsPosition(
     speed: data.speed,
     heading: data.heading,
   });
+
+  // Destination-arrival detection -- fire-and-forget, same as the DynamoDB
+  // write above: a failure here must never block the GPS ingestion path.
+  // Only meaningful once per trip (markTripArrived no-ops if arrivedAt is
+  // already set) and only for statuses where an auto-complete makes sense
+  // (see ARRIVAL_ELIGIBLE_STATUSES).
+  if (
+    !trip.arrivedAt &&
+    ARRIVAL_ELIGIBLE_STATUSES.includes(trip.status as TripStatus)
+  ) {
+    const distanceToDestination = haversineMeters(
+      data.latitude,
+      data.longitude,
+      trip.destination.latitude,
+      trip.destination.longitude
+    );
+    if (distanceToDestination <= ARRIVAL_RADIUS_METERS) {
+      markTripArrived(tripId).catch((err: unknown) => {
+        console.warn('[trip] markTripArrived failed for trip', tripId, (err as Error)?.message);
+      });
+    }
+  }
+}
+
+/**
+ * Record that a trip's GPS has reached its destination, and notify the
+ * traveller. Idempotent: the `IS NULL` guard on the conditional UPDATE
+ * means only the first caller to win the race actually sets arrivedAt and
+ * sends the notification -- a later concurrent/duplicate GPS ping that also
+ * happens to be in-radius is a safe no-op (rowCount 0 from the UPDATE).
+ */
+async function markTripArrived(tripId: string): Promise<void> {
+  const [updated] = await db
+    .update(trips)
+    .set({ arrivedAt: new Date() })
+    .where(and(eq(trips.id, tripId), isNull(trips.arrivedAt)))
+    .returning({ userId: trips.userId });
+
+  if (!updated) return; // Already marked arrived by a prior/concurrent call.
+
+  await sendPushToUser(
+    updated.userId,
+    "You've arrived!",
+    `Looks like you've reached your destination. This trip will automatically be marked complete in ${AUTO_COMPLETE_DELAY_MINUTES} minutes unless you complete it now.`,
+    { tripId, type: 'trip_arrived' }
+  );
+}
+
+/**
+ * Auto-complete sweep (called by jobs/trip-auto-complete-sweep.job.ts):
+ * marks 'completed' every trip whose arrivedAt is more than
+ * AUTO_COMPLETE_DELAY_MINUTES in the past and that's still in an
+ * arrival-eligible status (i.e. nobody manually completed/cancelled it, and
+ * it hasn't since escalated into 'emergency'/'escalated').
+ *
+ * Reuses adminUpdateTripStatus (not completeTrip, which requires a userId
+ * for its ownership check -- this is a system-driven transition, not a
+ * caller-driven one) so the TripSummary write and WebSocket broadcast stay
+ * identical to every other completion path.
+ *
+ * Returns the number of trips auto-completed, for the job's log line.
+ */
+export async function autoCompleteArrivedTrips(): Promise<number> {
+  const cutoff = new Date(Date.now() - AUTO_COMPLETE_DELAY_MINUTES * 60_000);
+
+  const dueTrips = await db.query.trips.findMany({
+    where: and(
+      isNotNull(trips.arrivedAt),
+      lte(trips.arrivedAt, cutoff),
+      inArray(trips.status, ARRIVAL_ELIGIBLE_STATUSES)
+    ),
+    columns: { id: true },
+  });
+
+  for (const trip of dueTrips) {
+    try {
+      await adminUpdateTripStatus(trip.id, 'completed');
+    } catch (err: unknown) {
+      // One trip failing to auto-complete must not stop the rest of the
+      // sweep from processing -- it'll simply be retried on the next tick.
+      console.warn('[trip] autoCompleteArrivedTrips failed for trip', trip.id, (err as Error)?.message);
+    }
+  }
+
+  return dueTrips.length;
 }
 
 // ────────────────────────────────────────────────────────────

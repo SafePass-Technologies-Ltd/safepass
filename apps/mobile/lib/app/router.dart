@@ -29,7 +29,6 @@ import '../features/trips/cubit/trip_registration_cubit.dart' show PlaceLocation
 import '../features/trips/cubit/trip_monitoring_cubit.dart';
 import '../features/trips/screens/active_trip_screen.dart';
 import '../features/wallet/screens/wallet_screen.dart';
-import '../features/emergency/screens/emergency_screen.dart';
 import '../features/incidents/screens/incident_report_screen.dart';
 import '../features/messaging/screens/conversations_screen.dart';
 import '../features/messaging/screens/message_thread_screen.dart';
@@ -63,7 +62,6 @@ class AppRoutes {
   static const String joinOrg = '/org/join';
 
   // Week 3
-  static const String emergency = '/emergency/:tripId';
   static const String incidentReport = '/incidents/report';
   static const String messages = '/messages';
   static const String messageThread = '/messages/:conversationId';
@@ -244,14 +242,6 @@ GoRouter createRouter(
             path: AppRoutes.addVehicle,
             name: 'addVehicle',
             builder: (context, state) => const AddVehicleScreen(),
-          ),
-          GoRoute(
-            path: '/emergency/:tripId',
-            name: 'emergency',
-            builder: (context, state) {
-              final tripId = state.pathParameters['tripId']!;
-              return EmergencyScreen(tripId: tripId);
-            },
           ),
           GoRoute(
             path: AppRoutes.incidentReport,
