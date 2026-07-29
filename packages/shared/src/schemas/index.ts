@@ -16,3 +16,8 @@ export * from './driver.schema';
 export * from './document.schema';
 export * from './org-membership.schema';
 export * from './account-deletion.schema';
+
+// SafePassLanding (marketing site) contracts — not persisted by that site;
+// see docs/SafePassLanding/schema.md.
+export * from './lead.schema';
+export * from './safety-data-stat.schema';
