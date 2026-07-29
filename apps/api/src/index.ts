@@ -28,6 +28,7 @@ import { orgSubscriptionRoutes, adminSubscriptionRoutes } from './routes/subscri
 import { joinRoutes } from './routes/join.routes';
 import { verifyRoutes } from './routes/verify.routes';
 import { wellKnownRoutes } from './routes/well-known.routes';
+import { leadRoutes, adminLeadRoutes } from './routes/lead.routes';
 import { env } from './env';
 
 const app = new Hono();
@@ -42,7 +43,12 @@ app.use(
     // other two dashboards in production.
     origin:
       env.NODE_ENV === 'production'
-        ? [env.ADMIN_DASHBOARD_URL, env.CORPORATE_DASHBOARD_URL, env.TRANSPORT_DASHBOARD_URL]
+        ? [
+            env.ADMIN_DASHBOARD_URL,
+            env.CORPORATE_DASHBOARD_URL,
+            env.TRANSPORT_DASHBOARD_URL,
+            env.LANDING_SITE_URL,
+          ]
         : '*',
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
@@ -220,6 +226,10 @@ v1.route('/documents', documentRoutes);
 // Emergency trigger (user-facing panic button)
 v1.route('/emergency', emergencyTriggerRoutes);
 
+// Marketing lead intake from SafePassLanding (FEAT-012). Service-key auth,
+// not user auth — the submitting visitor is anonymous by definition.
+v1.route('/leads', leadRoutes);
+
 // Self-service admin/staff access requests (any authenticated user) —
 // separate from the admin-only /v1/admin/role-upgrades review queue below.
 v1.route('/role-upgrades', selfServiceRoleUpgradeRoutes);
@@ -242,6 +252,7 @@ adminV1.route('/messages', adminMessageRoutes);
 adminV1.route('/role-upgrades', roleUpgradeRoutes);
 adminV1.route('/subscriptions', adminSubscriptionRoutes);
 adminV1.route('/account-deletions', adminAccountDeletionRoutes);
+adminV1.route('/leads', adminLeadRoutes);
 
 v1.route('/admin', adminV1);
 

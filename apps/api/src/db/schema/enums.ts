@@ -246,3 +246,21 @@ export const documentTypeEnum = pgEnum('document_type', [
   'company_cac_registration',
   'other',
 ]);
+
+// --- Marketing leads (SafePassLanding) ---
+
+// Lead categories captured by the marketing site's three lead-capture forms.
+// Mirrors docs/SafePassLanding/schema.md's LeadSubmission.leadType enum and
+// @safepass/shared's LeadTypeEnum -- the CRM routes on this value.
+export const leadTypeEnum = pgEnum('lead_type', ['waitlist', 'demo_request', 'partner_inquiry']);
+
+// Triage state for a captured lead. Not defined in SafePassLanding's docs
+// (that site never sees a lead again after forwarding) -- this is the
+// API-side follow-up lifecycle for whoever works the lead.
+export const leadStatusEnum = pgEnum('lead_status', [
+  'new',
+  'contacted',
+  'qualified',
+  'converted',
+  'rejected',
+]);
