@@ -57,6 +57,8 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
-# Docs should not be pushed because it contains business strategy.
-docs/SafePass
+# Docs should not be pushed because they contain business strategy.
+# The whole directory, not `docs/SafePass` -- that pattern matched only the
+# core product's folder and silently let `docs/SafePassLanding` through.
+docs/
 .claude
