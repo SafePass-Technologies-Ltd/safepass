@@ -63,6 +63,98 @@ function group(secret: Record<string, unknown>, key: string): Record<string, str
   return (secret[key] as Record<string, string> | undefined) ?? {};
 }
 
+// ─────────────────────────────────────────────
+// Rotating DB credentials
+//
+// RDS owns and ROTATES the master password natively (terraform/modules/rds's
+// manage_master_user_password, every 7 days). The password this process read
+// at startup therefore has a shelf life, and PostgreSQL authenticates per
+// CONNECTION -- so after a rotation, already-open pooled connections keep
+// working while every NEW connection fails with 28P01
+// "password authentication failed for user safepass_admin".
+//
+// That is not hypothetical: it took production down on 2026-07-22 and again
+// on 2026-07-29, both times ~7 days apart, and both times a task restart
+// "fixed" it by incidentally re-reading the secret. Sign-in was the visible
+// symptom because token-exchange queries `users` on every login.
+//
+// getDatabasePassword is handed to postgres.js as its `password` option (see
+// db/index.ts), which invokes it for every new connection. A short TTL keeps
+// that from calling Secrets Manager on every connect while bounding how long
+// a stale password can persist, so a rotation now self-heals within the TTL
+// instead of requiring a human to notice and redeploy.
+const DB_PASSWORD_TTL_MS = 5 * 60 * 1000;
+
+let cachedDbPassword: { value: string; fetchedAt: number } | null = null;
+let inFlightDbPassword: Promise<string> | null = null;
+
+/**
+ * Current master password for the RDS instance.
+ *
+ * Falls back to the one embedded in DATABASE_URL when DB_SECRET_ARN is unset
+ * (local dev, CI, and anything using a plain connection string), so this is
+ * safe to call unconditionally.
+ */
+export async function getDatabasePassword(): Promise<string> {
+  const arn = process.env.DB_SECRET_ARN;
+
+  if (!arn) {
+    // Local/CI: the password is whatever DATABASE_URL carries.
+    const url = process.env.DATABASE_URL;
+    if (!url) throw new Error('Neither DB_SECRET_ARN nor DATABASE_URL is set');
+    return decodeURIComponent(new URL(url).password);
+  }
+
+  const fresh = cachedDbPassword && Date.now() - cachedDbPassword.fetchedAt < DB_PASSWORD_TTL_MS;
+  if (fresh) return cachedDbPassword!.value;
+
+  // Collapse concurrent refreshes: a pool opening several connections at once
+  // must not fire several GetSecretValue calls for the same rotation.
+  if (!inFlightDbPassword) {
+    inFlightDbPassword = loadJsonSecret(arn)
+      .then((secret) => {
+        const { password } = secret as { password: string };
+        cachedDbPassword = { value: password, fetchedAt: Date.now() };
+        return password;
+      })
+      .catch((error) => {
+        // Serving a known-good password beats failing the connection outright
+        // if Secrets Manager is briefly unreachable; it only actually fails
+        // once the password has also rotated.
+        if (cachedDbPassword) {
+          console.error('[db] could not refresh the DB password, reusing cached:', error);
+          return cachedDbPassword.value;
+        }
+        throw error;
+      })
+      .finally(() => {
+        inFlightDbPassword = null;
+      });
+  }
+
+  return inFlightDbPassword;
+}
+
+/** Discrete connection parameters, for callers that build their own client. */
+export function getDatabaseConnection(): {
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+} | null {
+  if (!process.env.DB_SECRET_ARN || !process.env.DB_HOST) return null;
+
+  return {
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT ?? 5432),
+    database: process.env.DB_NAME ?? 'safepass',
+    username: dbUsername ?? 'safepass_admin',
+  };
+}
+
+/** Captured during resolveDatabaseUrl so the pool doesn't re-read the secret for it. */
+let dbUsername: string | null = null;
+
 async function resolveDatabaseUrl(): Promise<void> {
   if (process.env.DATABASE_URL || !process.env.DB_SECRET_ARN) return;
 
@@ -74,6 +166,12 @@ async function resolveDatabaseUrl(): Promise<void> {
     username: string;
     password: string;
   };
+
+  // Seed the rotation-aware cache from this same fetch, and remember the
+  // username, so the runtime pool needs neither a second GetSecretValue at
+  // startup nor a hardcoded user.
+  cachedDbPassword = { value: password, fetchedAt: Date.now() };
+  dbUsername = username;
   const host = process.env.DB_HOST;
   const port = process.env.DB_PORT ?? '5432';
   const dbName = process.env.DB_NAME ?? 'safepass';
