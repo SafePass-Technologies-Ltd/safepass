@@ -1,6 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { env, getDatabaseConnection, getDatabasePassword } from '../env';
+import { env } from '../env';
+import { getDatabaseConnection, getDatabasePassword } from './credentials';
 import * as schema from './schema/index';
 
 /**
@@ -24,8 +25,8 @@ import * as schema from './schema/index';
  * postgres.js accepts `password` as a function and calls it for EVERY new
  * connection, so handing it the rotation-aware resolver makes a rotation
  * self-healing: the next connection simply picks up the new password. See
- * getDatabasePassword in ../env.ts for the caching that keeps this from
- * hitting Secrets Manager on every connect.
+ * ./credentials.ts for the caching that keeps this from hitting Secrets
+ * Manager on every connect.
  */
 
 const connection = getDatabaseConnection();
