@@ -1,6 +1,24 @@
-import '@testing-library/jest-dom/vitest';
+import * as matchers from '@testing-library/jest-dom/matchers';
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach, expect, vi } from 'vitest';
+
+/**
+ * Registers jest-dom's matchers against THIS project's `expect`.
+ *
+ * Deliberately not the `@testing-library/jest-dom/vitest` entry point, which
+ * is the documented one-liner. That entry does `import { expect } from
+ * 'vitest'` internally, but jest-dom does not declare `vitest` as a peer
+ * dependency — so under pnpm's strict node_modules layout it cannot resolve
+ * one from its own location, the matchers register against nothing, and every
+ * assertion fails with "Invalid Chai property: toBeInTheDocument".
+ *
+ * That failure is install-shaped, not code-shaped: an incremental
+ * `pnpm install` can leave a reachable hoisted copy and everything passes,
+ * while CI's `pnpm install --frozen-lockfile` produces the strict layout and
+ * 15 test files fail at once. Importing the pure `./matchers` export and
+ * extending our own `expect` removes the resolution entirely.
+ */
+expect.extend(matchers);
 
 afterEach(() => {
   cleanup();
