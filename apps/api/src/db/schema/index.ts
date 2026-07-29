@@ -68,3 +68,7 @@ export { tripSummaryFinalStatusEnum } from './enums';
 export { accountDeletionRequests } from './account-deletion-requests';
 export type { DeletionPreFlightChecks } from './account-deletion-requests';
 export { accountDeletionStatusEnum } from './enums';
+
+// Marketing leads from SafePassLanding (docs/SafePassLanding/)
+export { leads } from './leads';
+export { leadTypeEnum, leadStatusEnum } from './enums';

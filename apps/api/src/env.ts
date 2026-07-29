@@ -206,6 +206,16 @@ const envSchema = z.object({
   // just be CORS-rejected until its URL is configured.
   CORPORATE_DASHBOARD_URL: z.string().url().default('http://localhost:3002'),
   TRANSPORT_DASHBOARD_URL: z.string().url().default('http://localhost:3003'),
+  // Public marketing site (apps/landing, docs/SafePassLanding/). Only its
+  // *server* calls this API (POST /v1/leads is invoked from that app's route
+  // handler, never the browser), so it does not strictly need a CORS entry --
+  // included for parity and for any future client-side call.
+  LANDING_SITE_URL: z.string().url().default('http://localhost:3004'),
+  // Shared secret guarding POST /v1/leads (FEAT-012). Optional so local dev
+  // and existing deploys start without it; when unset, lead.routes.ts fails
+  // CLOSED in production (503) and open in development -- it never silently
+  // accepts unauthenticated production traffic.
+  LEAD_INTAKE_API_KEY: z.string().optional(),
   // Base URL for org invite deep links (C-02: "invite link, deep link
   // (safepass.ng/join/TOKEN)") -- was hardcoded to the wrong/unowned
   // "safepass.ng" domain in both this API (bulk CSV export) and the
