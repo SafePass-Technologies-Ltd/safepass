@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
+import { seedDatabaseCredentials } from './db/credentials';
 
 // Load .env from the monorepo root (three levels up from src/env.ts).
 // path: apps/api/src/env.ts → ../../../ → project root
@@ -74,6 +75,11 @@ async function resolveDatabaseUrl(): Promise<void> {
     username: string;
     password: string;
   };
+
+  // Seed the rotation-aware cache (see db/credentials.ts) from this same
+  // fetch, so the runtime pool needs neither a second GetSecretValue at
+  // startup nor a hardcoded username.
+  seedDatabaseCredentials(username, password);
   const host = process.env.DB_HOST;
   const port = process.env.DB_PORT ?? '5432';
   const dbName = process.env.DB_NAME ?? 'safepass';
