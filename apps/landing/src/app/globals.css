@@ -1,0 +1,385 @@
+@import 'tailwindcss';
+
+/* =============================================================================
+   SafePassLanding — Design Tokens
+
+   Single source of truth for styling, implementing docs/SafePassLanding/branding.md
+   Section 3 (Design System) and Section 6 (Motion Design). There is no
+   tailwind.config.ts and no second token file anywhere in this app.
+
+   LIGHT/DARK MECHANISM
+   Tailwind v4's @theme has no native light/dark pairing, so tokens use a
+   two-level indirection: raw values live in :root and .dark as --sp-*
+   custom properties, and @theme inline maps the Tailwind namespace onto them.
+   Because @theme is `inline`, utilities resolve var(--sp-*) at use time rather
+   than baking in the :root value — which is what makes `bg-surface` correct in
+   BOTH modes with no `dark:` variant at any call site.
+
+   Dark mode toggles via next-themes' `class` strategy on <html>.
+
+   RULE: never write a raw hex, easing curve, or duration at a call site.
+   If a token seems missing, add it here and record it in IMPLEMENTATION.md's
+   Theme & Token Map.
+   ============================================================================= */
+
+:root {
+  /* --- Primary (branding.md 3.1) --- */
+  --sp-primary: #0ea5e9;
+  --sp-primary-hover: #0c87bd;
+  --sp-primary-light: #e0f4fd;
+
+  /* --- Neutral --- */
+  --sp-surface: #ffffff;
+  --sp-surface-secondary: #f8fafc;
+  --sp-surface-elevated: #ffffff;
+  --sp-text-primary: #1e293b;
+  --sp-text-secondary: #54647a;
+  --sp-border: #e2e8f0;
+
+  /* --- Semantic --- */
+  --sp-success: #0d904f;
+  --sp-warning: #f5a623;
+  --sp-error: #d93025;
+  --sp-info: #0ea5e9; /* aliases primary, per branding.md */
+
+  /**
+   * Accent colour for TEXT, distinct from `primary`.
+   *
+   * `primary` (#0EA5E9) is only 2.77:1 on white — it cannot carry text at AA on
+   * a light surface, and `primary-hover` reaches just 4.03:1, so no existing
+   * token rescued it. This darker blue is 5.93:1 on `surface`, 5.67:1 on
+   * `surface-secondary` and 5.24:1 on `primary-light`.
+   *
+   * Use it for eyebrows, inline links and stat readouts. `primary` remains the
+   * FILL/interactive colour (buttons, borders, focus rings, decorative icons),
+   * where the contrast requirement is 3:1 for UI components rather than 4.5:1
+   * for text.
+   */
+  --sp-accent-text: #0369a1;
+
+  /* --- Night-navy anchor: the logo's own background tone --- */
+  --sp-ink: #1e293b;
+
+  /* --- Shadows (3.4). Light mode leans on soft slate shadows. --- */
+  --sp-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --sp-shadow-md: 0 6px 16px rgba(15, 23, 42, 0.08);
+  --sp-shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.12);
+  --sp-shadow-glow-primary: 0 0 24px rgba(14, 165, 233, 0.25);
+
+  /* --- Gradient stop that has no standalone token of its own --- */
+  --sp-gradient-mid: #0b3a52;
+}
+
+.dark {
+  --sp-primary: #38bdf8;
+  --sp-primary-hover: #7dd3fc;
+  --sp-primary-light: #0b3a52;
+
+  --sp-surface: #0b1220;
+  --sp-surface-secondary: #151e2e;
+  --sp-surface-elevated: #1e293b;
+  --sp-text-primary: #f8fafc;
+  --sp-text-secondary: #9aa9bf;
+  --sp-border: #2a3547;
+
+  --sp-success: #3fcb84;
+  --sp-warning: #fbc85b;
+  --sp-error: #f26b60;
+  --sp-info: #38bdf8;
+  /* Dark mode: `primary` already reaches 8.74:1 on `surface`, so accent text
+     aliases it rather than introducing a second blue. */
+  --sp-accent-text: #38bdf8;
+
+  --sp-ink: #0b1220;
+
+  /* Dark shadows lean on deeper opacity rather than a border: the ink
+     background is already dark enough that a light border reads as a harsh
+     outline rather than elevation (branding.md 3.4). */
+  --sp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --sp-shadow-md: 0 6px 20px rgba(0, 0, 0, 0.6);
+  --sp-shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.75);
+  --sp-shadow-glow-primary: 0 0 32px rgba(56, 189, 248, 0.45);
+
+  --sp-gradient-mid: #0b3a52;
+}
+
+@theme inline {
+  /* ---------------------------------------------------------------------
+     Colors — all 15 tokens from branding.md 3.1, both modes
+     --------------------------------------------------------------------- */
+  --color-primary: var(--sp-primary);
+  --color-primary-hover: var(--sp-primary-hover);
+  --color-primary-light: var(--sp-primary-light);
+
+  --color-surface: var(--sp-surface);
+  --color-surface-secondary: var(--sp-surface-secondary);
+  --color-surface-elevated: var(--sp-surface-elevated);
+  --color-text-primary: var(--sp-text-primary);
+  --color-text-secondary: var(--sp-text-secondary);
+  --color-border: var(--sp-border);
+
+  --color-success: var(--sp-success);
+  --color-warning: var(--sp-warning);
+  --color-error: var(--sp-error);
+  --color-info: var(--sp-info);
+  --color-accent-text: var(--sp-accent-text);
+
+  --color-ink: var(--sp-ink);
+
+  /* ---------------------------------------------------------------------
+     Typography — branding.md 3.2
+     Inter (variable) for display+body, JetBrains Mono for stat/data readouts.
+     Weight axis 400-700 is used for the scroll-driven "focus pulling into
+     view" headline reveal, which is why the variable font matters.
+     --------------------------------------------------------------------- */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --text-display: 3.5rem; /* 56px */
+  --text-display--line-height: 1.1;
+  --text-display--font-weight: 700;
+
+  --text-h1: 2.5rem; /* 40px */
+  --text-h1--line-height: 1.2;
+  --text-h1--font-weight: 700;
+
+  --text-h2: 1.75rem; /* 28px */
+  --text-h2--line-height: 1.3;
+  --text-h2--font-weight: 600;
+
+  --text-h3: 1.375rem; /* 22px */
+  --text-h3--line-height: 1.4;
+  --text-h3--font-weight: 600;
+
+  --text-body-large: 1.1875rem; /* 19px */
+  --text-body-large--line-height: 1.6;
+  --text-body-large--font-weight: 400;
+
+  --text-body: 1rem; /* 16px */
+  --text-body--line-height: 1.6;
+  --text-body--font-weight: 400;
+
+  --text-body-small: 0.875rem; /* 14px */
+  --text-body-small--line-height: 1.5;
+  --text-body-small--font-weight: 400;
+
+  --text-caption: 0.75rem; /* 12px */
+  --text-caption--line-height: 1.4;
+  --text-caption--font-weight: 500;
+
+  --text-stat: 3rem; /* 48px */
+  --text-stat--line-height: 1.1;
+  --text-stat--font-weight: 600;
+
+  /* ---------------------------------------------------------------------
+     Spacing — 4px base grid, branding.md 3.3
+     --------------------------------------------------------------------- */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 48px;
+  --spacing-3xl: 64px;
+  --spacing-4xl: 96px;
+
+  /* --- Radii --- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+
+  /* --- Sizing: CTAs sit above the 44px a11y floor because app download and
+         request-demo are this site's entire purpose (branding.md 3.3). --- */
+  --size-button-height: 48px;
+  --size-input-height: 48px;
+  /* Height of the persistent header. A token rather than a literal because two
+     places must agree exactly: the header itself, and the hero's negative
+     offset that pulls it up under the header so its pin can start at scroll 0
+     (see hero-stage.tsx). If these drift, the hero lurches before pinning. */
+  --size-header: 64px;
+  --size-icon-sm: 16px;
+  --size-icon-md: 24px;
+  --size-icon-lg: 40px;
+
+  /* --- Container max-width (branding.md 8, Perspective & Scale) --- */
+  --container-content: 1200px;
+  --container-prose: 800px;
+
+  /* ---------------------------------------------------------------------
+     Shadows — branding.md 3.4
+     --------------------------------------------------------------------- */
+  --shadow-none: none;
+  --shadow-sm: var(--sp-shadow-sm);
+  --shadow-md: var(--sp-shadow-md);
+  --shadow-lg: var(--sp-shadow-lg);
+  /* The logo's signature glowing edge. Primary CTA and the radar graphic
+     ONLY — never applied broadly. */
+  --shadow-glow-primary: var(--sp-shadow-glow-primary);
+
+  /* ---------------------------------------------------------------------
+     Easing — branding.md 6. Never inline a cubic-bezier at a call site;
+     GSAP reads these through lib/motion/constants.ts.
+     --------------------------------------------------------------------- */
+  --ease-out-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-spring: cubic-bezier(0.34, 1.2, 0.64, 1);
+  --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+  --ease-in-out-smooth: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-in-power: cubic-bezier(0.7, 0, 0.84, 0);
+
+  /* ---------------------------------------------------------------------
+     Durations — branding.md 6's Timing Scale.
+     EXTENDED token: Tailwind v4 has no --duration-* theme namespace, so these
+     are consumed as duration-[--duration-normal] in markup and read by GSAP
+     via lib/motion/constants.ts. Recorded in IMPLEMENTATION.md 3a.
+     --------------------------------------------------------------------- */
+  --duration-instant: 100ms;
+  --duration-fast: 200ms;
+  --duration-normal: 400ms;
+  --duration-slow: 600ms;
+  --duration-cinematic: 1000ms;
+  --duration-ambient: 4500ms; /* mid-point of the 3000-6000ms ambient band */
+}
+
+/* =============================================================================
+   Gradients (branding.md 3.1, Creative Color)
+   EXTENDED: gradients have no native Tailwind theme slot, so they're exposed as
+   utility classes rather than as raw values copied into components.
+   ============================================================================= */
+
+/**
+ * Hero scroll track — the CSS replacement for GSAP's `pin: true`.
+ *
+ * The track is taller than the viewport; the hero inside it is `sticky top-0`,
+ * so it holds still while the track scrolls past, then releases. Visually this
+ * is identical to a ScrollTrigger pin.
+ *
+ * It exists because ScrollTrigger's pin WRAPS the pinned element in a
+ * `.pin-spacer` div, re-parenting a node React owns. On client-side navigation
+ * React then calls `removeChild` on a node whose parent it no longer is, throws
+ * "The node to be removed is not a child of this node", and the page dies into
+ * the error boundary. Sticky positioning never restructures the DOM, so that
+ * entire class of failure disappears.
+ *
+ * `--hero-pin-vh` is the single source of truth for the pin length, in
+ * viewport heights. Track height = 1 viewport (the hero itself) + the pin.
+ */
+@theme {
+  --hero-pin-vh: 0.75;
+}
+
+.hero-track {
+  /* Mobile and reduced-motion default: no pin at all, per branding.md §8's
+     Adaptation Strategy ("hero pin sequence is removed entirely" on mobile). */
+  height: 100svh;
+}
+
+@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
+  .hero-track {
+    height: calc(100svh * (1 + var(--hero-pin-vh)));
+  }
+}
+
+@utility gradient-hero {
+  /* Reads as a night sky brightening toward a horizon — not decoration. */
+  background-image: linear-gradient(
+    160deg,
+    var(--sp-ink) 0%,
+    var(--sp-gradient-mid) 60%,
+    color-mix(in srgb, var(--sp-primary) 4%, transparent) 100%
+  );
+}
+
+@utility gradient-route-line {
+  background-image: linear-gradient(90deg, var(--sp-primary) 0%, var(--sp-success) 100%);
+}
+
+@utility gradient-scrim {
+  /* Legibility scrim over photography/video so overlaid text always clears
+     the contrast target. Not optional where text sits on an image. */
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--sp-ink) 0%, transparent) 0%,
+    color-mix(in srgb, var(--sp-ink) 85%, transparent) 100%
+  );
+}
+
+/* =============================================================================
+   Base layer
+
+   Accessibility lives here, not in individual sections, so every feature slice
+   inherits it (branding.md Section 4).
+   ============================================================================= */
+
+@layer base {
+  html {
+    /* Lenis drives smooth scrolling; native smooth-scroll would fight it. */
+    scroll-behavior: auto;
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 2px primary outline at 2px offset on EVERY interactive element.
+     branding.md Section 4: "never removed for aesthetic reasons even during
+     motion sequences." */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Lenis requirement: the html element must not have its own scroll
+     behaviour while Lenis owns the scroll position. */
+  html.lenis,
+  html.lenis body {
+    height: auto;
+  }
+
+  .lenis.lenis-smooth {
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer utilities {
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
+
+/* =============================================================================
+   Reduced motion — branding.md Section 8: a HARD requirement, not a nicety.
+
+   "for a product whose credibility depends on the content being trustworthy
+   independent of the spectacle."
+
+   This is the global backstop. Motion components additionally check
+   prefers-reduced-motion in JS (see lib/motion/use-reduced-motion.ts) so they
+   render their static composed state rather than merely having their
+   transitions zeroed out here.
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
