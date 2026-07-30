@@ -179,6 +179,19 @@ const v1 = new Hono();
 // Auth (unauthenticated)
 v1.route('/auth', authRoutes);
 
+// Marketing lead intake from SafePassLanding (FEAT-012). Service-key auth,
+// NOT user auth -- the submitting visitor is anonymous by definition.
+//
+// REGISTERED HERE, BEFORE messageRoutes, AND THAT IS LOAD-BEARING.
+// messageRoutes is mounted at v1's ROOT (`v1.route('/', messageRoutes)`) and
+// declares `use('*', authMiddleware)`, so every route registered after it
+// inherits user auth. Mounted below that line, this endpoint returned
+// "Missing or invalid Authorization header" instead of running its own
+// service-key check, which made lead capture impossible for the marketing
+// site. `/auth` sits above it for exactly the same reason -- that is what
+// keeps login public.
+v1.route('/leads', leadRoutes);
+
 // User profiles + vehicles
 v1.route('/users', userRoutes);
 
@@ -225,10 +238,6 @@ v1.route('/documents', documentRoutes);
 
 // Emergency trigger (user-facing panic button)
 v1.route('/emergency', emergencyTriggerRoutes);
-
-// Marketing lead intake from SafePassLanding (FEAT-012). Service-key auth,
-// not user auth — the submitting visitor is anonymous by definition.
-v1.route('/leads', leadRoutes);
 
 // Self-service admin/staff access requests (any authenticated user) —
 // separate from the admin-only /v1/admin/role-upgrades review queue below.
