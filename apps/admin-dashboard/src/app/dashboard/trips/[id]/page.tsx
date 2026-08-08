@@ -1539,9 +1539,8 @@ export default function TripDetailPage() {
       {/* Traveller info + emergency contacts (screens.md A-04). */}
       <TravellerSection user={trip.user} />
 
-      {/* Route map: fixed planned route + ~2km safe-zone corridor +
-          real-time/last-known position. See screens.md A-04's "Location
-          Timeline" section -- this is that map. */}
+      {/* Route map: fixed planned route + real-time/last-known position.
+          See screens.md A-04's "Location Timeline" section -- this is that map. */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="border-b border-slate-100 px-6 py-4">
           <h2 className="text-sm font-semibold text-slate-700">Route Map</h2>

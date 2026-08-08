@@ -41,6 +41,15 @@ export default function DashboardPage() {
     };
   });
 
+  // The live trip map is for trips currently being monitored. Completed and
+  // cancelled trips are history -- they stay reachable from Trip Management
+  // (/dashboard/trips), which lists every non-draft trip including terminal
+  // ones (see trips/page.tsx). Filtering here (not in the API) keeps that
+  // list intact while keeping the map focused on live trips.
+  const liveMapTrips = tripsWithLivePosition.filter(
+    (t) => t.status !== 'completed' && t.status !== 'cancelled'
+  );
+
   // Poll unread message count every 60s for the badge stat card.
   useEffect(() => {
     let cancelled = false;
@@ -139,7 +148,7 @@ export default function DashboardPage() {
 
       {/* Live trip map — receives merged trip data with real-time GPS positions */}
       <LiveTripMap
-        trips={tripsWithLivePosition}
+        trips={liveMapTrips}
         isLoading={isLoading && trips.length === 0}
         selectedTripId={selectedTripId}
         onTripClick={handleTripClick}
