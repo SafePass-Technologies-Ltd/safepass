@@ -92,27 +92,21 @@ describe('FEAT-003 acceptance criteria', () => {
     );
   });
 
-  it('drives the desktop sequence from a scrubbed trigger that never pins', () => {
+  it('never pins the hero at any breakpoint', () => {
     /**
-     * Two requirements at once.
-     *
-     * The scroll-INDEXED one (branding.md §6): the sequence is scrubbed, so
-     * scrubbing back up reverses it exactly. `scrub` being replaced by a plain
-     * trigger is one regression this guards.
-     *
-     * The other is that NO trigger pins. GSAP's pin wraps the hero in a
-     * `.pin-spacer` div it owns, re-parenting a node React created — and React
-     * then cannot remove it, which crashed every client-side navigation with
-     * "The node to be removed is not a child of this node". The hold is CSS
-     * `position: sticky` now (`.hero-track` in globals.css); a returning
-     * `pin: true` would bring the crash back with it.
+     * GSAP's pin wraps the hero in a `.pin-spacer` div it owns, re-parenting a
+     * node React created — and React then cannot remove it, which crashed every
+     * client-side navigation with "The node to be removed is not a child of
+     * this node". The hero no longer holds at all (client feedback: a held hero
+     * "waits until the route line is fully drawn", making scroll feel broken),
+     * so no trigger may pin AND none may scrub an oversized track.
      */
     setMotionProfile({ mobile: false });
 
     const { unmount } = render(<HeroSection />);
 
     const scrubbed = ScrollTrigger.getAll().filter((trigger) => trigger.vars.scrub);
-    expect(scrubbed.length).toBeGreaterThan(0);
+    expect(scrubbed).toHaveLength(0);
 
     const pinned = ScrollTrigger.getAll().filter((trigger) => trigger.vars.pin);
     expect(pinned).toHaveLength(0);

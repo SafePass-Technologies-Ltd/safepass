@@ -76,7 +76,7 @@ export function AudienceEntryCards({ className }: { className?: string }) {
                       'group flex w-full flex-col gap-md rounded-lg border border-border bg-surface-secondary p-lg',
                       // The restrained, low-overshoot settle the screen doc calls
                       // for on hover/focus lift. Token-driven, never a literal.
-                      'transition-[transform,box-shadow,border-color] duration-[--duration-fast] ease-in-out-spring',
+                      'transition-[transform,box-shadow,border-color] duration-[var(--duration-fast)] ease-in-out-spring',
                       'hover:-translate-y-1 hover:border-primary hover:shadow-md',
                       // focus-visible lift matches hover: the base theme supplies
                       // the focus ring itself, which must never be removed.
@@ -100,7 +100,7 @@ export function AudienceEntryCards({ className }: { className?: string }) {
                       {ctaLabel}
                       <ArrowRight
                         aria-hidden="true"
-                        className="size-(--size-icon-sm) transition-transform duration-[--duration-instant] ease-out-smooth group-hover:translate-x-1"
+                        className="size-(--size-icon-sm) transition-transform duration-[var(--duration-instant)] ease-out-smooth group-hover:translate-x-1"
                       />
                     </span>
                   </Link>

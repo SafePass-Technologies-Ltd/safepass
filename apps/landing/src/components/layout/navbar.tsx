@@ -50,6 +50,10 @@ export function Navbar({ showAudienceSelector = true }: { showAudienceSelector?:
   const overHero = pathname === '/';
 
   const [scrolled, setScrolled] = useState(false);
+  // While the mobile nav drawer is open, the header must sit on the frosted
+  // (non-floating) material so it reads as anchoring the menu, not as a
+  // transparent bar floating over the page behind it.
+  const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!overHero) return;
@@ -86,14 +90,17 @@ export function Navbar({ showAudienceSelector = true }: { showAudienceSelector?:
    * Text switches to white while floating: over the always-dark hero,
    * `text-text-primary` would be dark slate in light mode — invisible.
    */
-  const floating = overHero && !scrolled;
+  const floating = overHero && !scrolled && !menuOpen;
 
   return (
     <header
       className={cn(
-        'sticky top-0 z-50 w-full border-b transition-colors duration-[--duration-normal] ease-out-smooth',
+        'sticky top-0 z-50 w-full border-b transition-all duration-[var(--duration-normal)] ease-out-smooth',
+        // `none` (not a missing class) on the floating side so box-shadow and
+        // backdrop-filter actually INTERPOLATE to their solid values instead of
+        // popping — `none` is a discrete value and cannot be tweened.
         floating
-          ? 'border-transparent bg-transparent'
+          ? 'border-transparent bg-transparent shadow-none backdrop-blur-none'
           : // Translucent so the content behind reads through, without letting
             // it compromise the header's own legibility.
             'border-border bg-surface/85 shadow-md backdrop-blur-md'
@@ -118,7 +125,7 @@ export function Navbar({ showAudienceSelector = true }: { showAudienceSelector?:
                 key={link.href}
                 href={link.href}
                 className={cn(
-                  'text-body-small font-semibold transition-colors duration-[--duration-instant] ease-out-smooth',
+                  'text-body-small font-semibold transition-colors duration-[var(--duration-normal)] ease-out-smooth',
                   floating
                     ? 'text-white/80 hover:text-white'
                     : 'text-text-secondary hover:text-text-primary'
@@ -132,7 +139,11 @@ export function Navbar({ showAudienceSelector = true }: { showAudienceSelector?:
           <ButtonLink href={cta.href}>{cta.ctaLabel}</ButtonLink>
         </div>
 
-        <MobileNavDrawer showAudienceSelector={showAudienceSelector} onDark={floating} />
+        <MobileNavDrawer
+          showAudienceSelector={showAudienceSelector}
+          onDark={floating}
+          onOpenChange={setMenuOpen}
+        />
       </Container>
     </header>
   );

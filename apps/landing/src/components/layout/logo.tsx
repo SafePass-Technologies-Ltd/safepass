@@ -92,7 +92,10 @@ export function Logo({
     <>
       <LogoMark size={size} priority={priority} />
       <span
-        className={cn('text-h3 font-bold', tone === 'onDark' ? 'text-white' : 'text-text-primary')}
+        className={cn(
+          'text-h3 font-bold transition-colors duration-[var(--duration-normal)] ease-out-smooth',
+          tone === 'onDark' ? 'text-white' : 'text-text-primary'
+        )}
       >
         SafePass
       </span>

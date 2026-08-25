@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import { Reveal } from '@/components/motion/reveal';
 import { Container, Section } from '@/components/ui/container';
 import { DemoRequestForm } from '@/components/forms/demo-request-form';
 import { CredibilityPreview } from '@/sections/credibility';
 import { OverviewDownload } from '@/sections/corporate/overview-download';
 import {
-  AssetPlaceholder,
   ContentCardGrid,
   ContentSection,
   SectionHeading,
@@ -56,11 +56,21 @@ export default function BusinessPage() {
         lead={CORPORATE_CONTENT.dashboard.lead}
       >
         <ContentCardGrid cards={CORPORATE_CONTENT.dashboard.capabilities} columns={3} />
-        {/* screens/03's Asset Plan is explicit that dashboard imagery must come
-            from the real product once it exists, never AI-generated or invented,
-            with a labelled placeholder until then. */}
+        {/* A4 from manifest.md — an illustrative corporate-dashboard preview.
+            Per client override of screens/03's "real product screenshots only"
+            guardrail, this is a clearly illustrative mockup (no real figures) to
+            be replaced by actual SafePass product screenshots before launch. */}
         <Reveal>
-          <AssetPlaceholder label="Dashboard preview coming soon" />
+          <div className="relative overflow-hidden rounded-lg border border-border bg-surface-secondary">
+            <Image
+              src="/images/business-dashboard-preview.webp"
+              alt="Preview of the SafePass corporate monitoring dashboard"
+              width={2400}
+              height={1500}
+              sizes="(min-width: 1280px) 1200px, 100vw"
+              className="h-auto w-full object-cover"
+            />
+          </div>
         </Reveal>
       </ContentSection>
 

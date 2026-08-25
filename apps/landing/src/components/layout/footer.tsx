@@ -44,7 +44,7 @@ export function Footer() {
             <p className="text-body-small text-text-secondary">{BRAND_TAGLINE}</p>
             <a
               href={`mailto:${CONTACT_EMAIL}`}
-              className="inline-flex items-center gap-sm text-body-small text-text-secondary transition-colors duration-[--duration-instant] ease-out-smooth hover:text-text-primary"
+              className="inline-flex items-center gap-sm text-body-small text-text-secondary transition-colors duration-[var(--duration-instant)] ease-out-smooth hover:text-text-primary"
             >
               <Mail aria-hidden="true" className="size-(--size-icon-sm)" />
               {CONTACT_EMAIL}
@@ -57,7 +57,7 @@ export function Footer() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="text-body-small text-text-secondary transition-colors duration-[--duration-instant] ease-out-smooth hover:text-text-primary"
+                className="text-body-small text-text-secondary transition-colors duration-[var(--duration-instant)] ease-out-smooth hover:text-text-primary"
               >
                 {link.label}
               </Link>
@@ -70,7 +70,7 @@ export function Footer() {
               <Link
                 key={link.href}
                 href={link.href}
-                className="text-body-small text-text-secondary transition-colors duration-[--duration-instant] ease-out-smooth hover:text-text-primary"
+                className="text-body-small text-text-secondary transition-colors duration-[var(--duration-instant)] ease-out-smooth hover:text-text-primary"
               >
                 {link.label}
               </Link>

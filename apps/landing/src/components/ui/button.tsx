@@ -50,7 +50,7 @@ const BASE_CLASSES = cn(
   // are the site's entire purpose (branding.md 3.3).
   'h-(--size-button-height) px-[28px] py-md',
   'rounded-md text-body font-semibold',
-  'transition-colors duration-[--duration-instant] ease-out-smooth',
+  'transition-colors duration-[var(--duration-instant)] ease-out-smooth',
   'disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none',
   'whitespace-nowrap'
 );

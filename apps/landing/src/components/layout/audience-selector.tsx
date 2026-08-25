@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAudience } from '@/lib/audience/audience-context';
 import { AUDIENCE_NAV } from '@/lib/content/navigation';
 import { cn } from '@/lib/utils';
@@ -37,7 +38,7 @@ const OPTION_BASE = cn(
   // floor and keeps the options optically aligned with the header CTA beside
   // them. Token, not a literal.
   'min-h-(--size-button-height) text-body-small font-semibold',
-  'border transition-colors duration-[--duration-fast] ease-in-out-spring'
+  'border transition-colors duration-[var(--duration-fast)] ease-in-out-spring'
 );
 
 const INACTIVE =
@@ -51,6 +52,14 @@ const ACTIVE = 'bg-primary-light text-text-primary border-primary';
 
 export function AudienceSelector({ className }: { className?: string }) {
   const { audience, setAudience } = useAudience();
+  const pathname = usePathname();
+
+  // The homepage is the neutral hub — no audience is pre-selected there, whether
+  // by the default (Individual) or by a persisted session selection. Each
+  // audience page highlights its own option instead. The audience context still
+  // carries a value so the header CTA resolves, but the selector stays neutral
+  // on the entry page.
+  const isHome = pathname === '/';
 
   return (
     <nav
@@ -58,7 +67,7 @@ export function AudienceSelector({ className }: { className?: string }) {
       className={cn('flex items-center gap-xs rounded-md p-xs shadow-md', className)}
     >
       {AUDIENCE_NAV.map((option) => {
-        const isActive = option.audience === audience;
+        const isActive = !isHome && option.audience === audience;
 
         return (
           <Link

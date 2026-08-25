@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import { Check, ChevronRight, Menu, X } from 'lucide-react';
 import { ButtonLink } from '@/components/ui/button';
 import { AUDIENCE_CONFIG, AUDIENCE_LIST, useAudience } from '@/lib/audience/audience-context';
+import { durationMs } from '@/lib/motion/constants';
 import { PRIMARY_NAV, STATIC_NAV } from '@/lib/content/navigation';
 import { cn } from '@/lib/utils';
 
@@ -44,11 +45,21 @@ export function MobileNavDrawer({
    * vanish against the hero.
    */
   onDark = false,
+  /**
+   * Fired whenever the drawer opens or closes, so the header can take its
+   * frosted (non-floating) material while the menu is open.
+   */
+  onOpenChange,
 }: {
   showAudienceSelector: boolean;
   onDark?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const pathname = usePathname();
+
+  // The homepage is the neutral hub — see audience-selector.tsx: no audience is
+  // shown as selected there, only on that audience's own page.
+  const isHome = pathname === '/';
 
   /**
    * Open state is stored as "the route the drawer was opened on", so that
@@ -69,9 +80,44 @@ export function MobileNavDrawer({
 
   const close = useCallback(() => setOpenedOnPath(null), []);
 
-  // Focus management + Escape + focus trap, all scoped to the open state.
+  /**
+   * Presence state for the open/close TRANSITION.
+   *
+   * `open` is the intent (the drawer should be up); `mounted` is whether the
+   * portal is actually in the DOM; `shown` is whether it sits at its final,
+   * visible position. Keeping the portal mounted through the exit lets the
+   * panel fade/slide OUT instead of vanishing the moment it closes.
+   */
+  const [mounted, setMounted] = useState(false);
+  const [shown, setShown] = useState(false);
+
   useEffect(() => {
-    if (!open) return;
+    if (open) {
+      setMounted(true);
+      // Defer the reveal to the next tick so the hidden state paints first and
+      // the enter transition actually runs (a same-tick class swap is a jump).
+      const timer = window.setTimeout(() => setShown(true), 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    setShown(false);
+    // The window matches the CSS transition (duration-normal) so the portal
+    // unmounts only after the exit animation has finished.
+    const timer = window.setTimeout(() => setMounted(false), durationMs('normal'));
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  // Keep the header informed of the open state so it can switch to the frosted
+  // material for the duration of the overlay (see navbar.tsx). Fired on every
+  // open/close, including the close-by-navigation path.
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
+
+  // Focus management + Escape + focus trap, scoped to the MOUNTED lifecycle so
+  // it stays in force through the exit animation (the panel is still on screen).
+  useEffect(() => {
+    if (!mounted) return;
 
     const panel = panelRef.current;
     const trigger = triggerRef.current;
@@ -120,7 +166,7 @@ export function MobileNavDrawer({
       // header rather than dumping them at the top of the document.
       trigger?.focus();
     };
-  }, [open, close]);
+  }, [mounted, close]);
 
   return (
     <div className="md:hidden">
@@ -133,9 +179,9 @@ export function MobileNavDrawer({
         aria-label={open ? 'Close menu' : 'Open menu'}
         // Sized to `button-height` rather than the bare 44px a11y floor: it is
         // the only tap target in the mobile header, and it is a token.
-        className={cn(
+          className={cn(
           'inline-flex size-(--size-button-height) items-center justify-center rounded-md',
-          'transition-colors duration-[--duration-instant] ease-out-smooth',
+          'transition-colors duration-[var(--duration-normal)] ease-out-smooth',
           // While open the panel covers the hero, so the icon sits on the solid
           // panel surface and must use the normal token even when floating.
           onDark && !open
@@ -166,15 +212,20 @@ export function MobileNavDrawer({
         means fixed to the viewport again. Do not inline this back into the
         header.
       */}
-      {open &&
+      {mounted &&
         createPortal(
           <>
             {/* Scrim. Decorative and pointer-only — Escape and the close button
-                are the keyboard paths out, so it carries no role. */}
+                are the keyboard paths out, so it carries no role. Fades in/out
+                with the panel. */}
             <div
               aria-hidden="true"
               onClick={close}
-              className="fixed inset-x-0 bottom-0 top-(--size-header) z-40 bg-ink/60"
+              className={cn(
+                'fixed inset-x-0 bottom-0 top-(--size-header) z-40 bg-ink/60',
+                'transition-opacity duration-[var(--duration-normal)] ease-out-smooth',
+                shown ? 'opacity-100' : 'pointer-events-none opacity-0'
+              )}
             />
 
             <div
@@ -187,8 +238,14 @@ export function MobileNavDrawer({
                 // Bounded by the viewport below the header so a short landscape
                 // screen scrolls the panel rather than clipping the CTA off it.
                 'fixed inset-x-0 bottom-0 top-(--size-header) z-50 h-fit max-h-[calc(100svh-var(--size-header))] overflow-y-auto',
-                'border-b border-border bg-surface shadow-lg',
-                'flex flex-col gap-lg p-lg'
+                'border-b border-border bg-surface/85 shadow-lg backdrop-blur-md',
+                'flex flex-col gap-lg p-lg',
+                // Enter/exit: fade + a gentle slide in from above, on the
+                // duration-normal / ease-out-smooth tokens (branding §6).
+                'transition-all duration-[var(--duration-normal)] ease-out-smooth',
+                shown
+                  ? 'translate-y-0 opacity-100'
+                  : 'pointer-events-none -translate-y-2 opacity-0'
               )}
             >
               {/*
@@ -210,7 +267,7 @@ export function MobileNavDrawer({
                   </h2>
 
                   {AUDIENCE_LIST.map((option) => {
-                    const isActive = option.audience === audience;
+                    const isActive = !isHome && option.audience === audience;
 
                     return (
                       <Link
@@ -223,7 +280,7 @@ export function MobileNavDrawer({
                         aria-current={isActive ? 'page' : undefined}
                         className={cn(
                           'flex min-h-(--size-button-height) items-center justify-between gap-md rounded-md border px-md',
-                          'transition-colors duration-[--duration-fast] ease-in-out-spring',
+                          'transition-colors duration-[var(--duration-fast)] ease-in-out-spring',
                           // See audience-selector.tsx: blue on `primary-light`
                           // is 2.45:1 in light mode, so the selected row uses
                           // `text-text-primary` and lets the border/fill carry
@@ -282,7 +339,7 @@ export function MobileNavDrawer({
                     key={link.href}
                     href={link.href}
                     onClick={close}
-                    className="flex min-h-(--size-button-height) items-center justify-between gap-md rounded-md px-md text-body font-semibold text-text-primary transition-colors duration-[--duration-instant] ease-out-smooth active:bg-surface-secondary"
+                    className="flex min-h-(--size-button-height) items-center justify-between gap-md rounded-md px-md text-body font-semibold text-text-primary transition-colors duration-[var(--duration-instant)] ease-out-smooth active:bg-surface-secondary"
                   >
                     {link.label}
                     <ChevronRight

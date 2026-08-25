@@ -78,9 +78,13 @@ describe('Corporate Audience Page (FEAT-009)', () => {
     expect(html).toContain('id="demo"');
   });
 
-  it('labels missing dashboard imagery rather than fabricating a screenshot', () => {
-    // screens/03's Asset Plan forbids AI-generated or invented product imagery.
-    expect(html).toMatch(/dashboard preview coming soon/i);
+  it('renders a dashboard preview image (client override of screens/03)', () => {
+    // screens/03's Asset Plan asks for real product screenshots, never AI. The
+    // client overrode that for a fill-in, so this asserts the illustrative
+    // preview renders — and records the override in the comment for whoever
+    // swaps in real screenshots.
+    expect(html).toContain('business-dashboard-preview');
+    expect(html).toMatch(/preview of the safepass corporate monitoring dashboard/i);
   });
 
   it('embeds the shared credibility module rather than restating its claims', () => {
@@ -127,8 +131,13 @@ describe('Transport Partner Page (FEAT-011)', () => {
     expect(html).toContain('id="inquiry"');
   });
 
-  it('labels missing fleet imagery rather than fabricating a photo', () => {
-    expect(html).toMatch(/partner fleet imagery coming soon/i);
+  it('renders fleet imagery (client override of screens/04)', () => {
+    // screens/04's Asset Plan asks for real partnered-vehicle photography, never
+    // AI. The client overrode that for a fill-in, so this asserts the
+    // representative image renders — and records the override for whoever swaps
+    // in real photos.
+    expect(html).toContain('transport-fleet');
+    expect(html).toMatch(/safepass-partnered passenger bus fleet at dusk/i);
   });
 });
 

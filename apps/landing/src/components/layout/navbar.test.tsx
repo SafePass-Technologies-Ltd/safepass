@@ -65,7 +65,20 @@ describe('Navbar — audience-selecting variant', () => {
     );
   });
 
-  it('marks the active audience with aria-current, not colour alone', () => {
+  it('shows no audience pre-selected on the homepage', () => {
+    // The homepage is the neutral entry point (client feedback): it must not
+    // render "Individual" as selected by default, nor carry a stale session
+    // selection back onto it. Each audience page highlights its own option.
+    renderNavbar();
+    const selector = screen.getByRole('navigation', { name: /choose your audience/i });
+
+    within(selector)
+      .getAllByRole('link')
+      .forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
+  });
+
+  it('marks the active audience with aria-current on its own page, not colour alone', () => {
+    mockPathname.value = '/individual';
     renderNavbar();
     const selector = screen.getByRole('navigation', { name: /choose your audience/i });
 

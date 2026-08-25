@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { CircleCheck, Eye, Route, ShieldAlert, Wallet, type LucideIcon } from 'lucide-react';
 import { Container, Section } from '@/components/ui/container';
 import { Reveal } from '@/components/motion/reveal';
@@ -34,15 +35,37 @@ const ICONS: Record<HowItWorksIcon, LucideIcon> = {
 
 export function HowItWorksSection() {
   return (
-    <Section id="how-it-works" className="bg-surface">
+    <Section id="how-it-works" className="relative isolate scroll-mt-(--size-header) bg-surface">
       <Container>
-        <Reveal>
-          <p className="text-caption font-medium tracking-widest text-accent-text uppercase">
-            {HOW_IT_WORKS.eyebrow}
-          </p>
-          <h2 className="mt-md text-h2 text-text-primary">{HOW_IT_WORKS.heading}</h2>
-          <p className="mt-sm text-body-large text-text-secondary">{HOW_IT_WORKS.intro}</p>
-        </Reveal>
+        {/*
+          Two-column header on large screens: the explanation on the left, the A3
+          diagram on the right. This keeps the diagram a reasonable size (a
+          column, not a 1200px banner) and reads as a feature split rather than a
+          giant full-bleed image. Stacks on mobile, where the diagram sits below
+          the intro.
+        */}
+        <div className="grid gap-lg lg:grid-cols-2 lg:items-center">
+          <Reveal>
+            <p className="text-caption font-medium tracking-widest text-accent-text uppercase">
+              {HOW_IT_WORKS.eyebrow}
+            </p>
+            <h2 className="mt-md text-h2 text-text-primary">{HOW_IT_WORKS.heading}</h2>
+            <p className="mt-sm text-body-large text-text-secondary">{HOW_IT_WORKS.intro}</p>
+          </Reveal>
+
+          <Reveal>
+            <div className="overflow-hidden rounded-lg border border-border bg-surface-secondary p-md">
+              <Image
+                src="/images/monitoring-route-diagram.webp"
+                alt="Illustration of a monitored journey: a route traced between checkpoints with a live verification scan"
+                width={1600}
+                height={1000}
+                sizes="(min-width: 1280px) 600px, (min-width: 768px) 50vw, 100vw"
+                className="h-auto w-full object-contain"
+              />
+            </div>
+          </Reveal>
+        </div>
 
         {/*
           An ordered list, because the order is load-bearing — the steps are a

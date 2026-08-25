@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import { Reveal } from '@/components/motion/reveal';
 import { AppStoreCta } from '@/components/ui/app-store-cta';
 import { Container, Section } from '@/components/ui/container';
@@ -53,9 +54,36 @@ export default function IndividualPage() {
 
       <PricingBlock />
 
-      <ContentSection heading="When people use SafePass" lead="The two journeys it was built for.">
-        <ContentCardGrid cards={INDIVIDUAL_CONTENT.useCases} />
-      </ContentSection>
+      {/*
+        Two-column header: the use-case framing on the left, the A2 road-corridor
+        plate on the right — keeps the photo a column (not a full-bleed 1200px
+        banner) and reads as a feature split. Cards below; stacks on mobile.
+      */}
+      <Section>
+        <Container className="flex flex-col gap-xl">
+          <div className="grid gap-lg lg:grid-cols-2 lg:items-center">
+            <Reveal className="flex flex-col gap-sm">
+              <h2 className="text-h2 text-text-primary">When people use SafePass</h2>
+              <p className="text-body-large text-text-secondary">
+                The two journeys it was built for.
+              </p>
+            </Reveal>
+            <Reveal>
+              <div className="relative overflow-hidden rounded-lg border border-border bg-surface-secondary">
+                <Image
+                  src="/images/individual-road-corridor.webp"
+                  alt="A Nigerian inter-city road corridor at dusk, seen from inside a SafePass-monitored vehicle"
+                  width={2400}
+                  height={1350}
+                  sizes="(min-width: 1280px) 600px, (min-width: 768px) 50vw, 100vw"
+                  className="h-auto w-full object-cover"
+                />
+              </div>
+            </Reveal>
+          </div>
+          <ContentCardGrid cards={INDIVIDUAL_CONTENT.useCases} />
+        </Container>
+      </Section>
 
       {/* Terminal CTA, repeated deliberately: the visitor who read the whole
           page is the likeliest to act, and sending them back up to the top to

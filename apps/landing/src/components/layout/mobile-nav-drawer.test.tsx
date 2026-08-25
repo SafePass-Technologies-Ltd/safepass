@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MobileNavDrawer } from './mobile-nav-drawer';
 import { AudienceProvider } from '@/lib/audience/audience-context';
@@ -89,8 +89,13 @@ describe('MobileNavDrawer', () => {
 
     await user.keyboard('{Escape}');
 
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: /open menu/i }));
+    // The drawer animates out over `duration-normal` before unmounting; wait for
+    // it to leave the DOM, then confirm focus returned to the trigger (it lands
+    // in the effect cleanup, which runs just after the portal is removed).
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: /open menu/i }))
+    );
   });
 
   it('closes on Escape', async () => {
@@ -101,7 +106,8 @@ describe('MobileNavDrawer', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // Exit is animated, so the dialog unmounts after the transition.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('traps Tab focus inside the panel while open', async () => {

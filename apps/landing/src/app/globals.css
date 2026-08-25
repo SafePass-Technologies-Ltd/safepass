@@ -248,36 +248,20 @@
    ============================================================================= */
 
 /**
- * Hero scroll track — the CSS replacement for GSAP's `pin: true`.
+ * Hero scroll track.
  *
- * The track is taller than the viewport; the hero inside it is `sticky top-0`,
- * so it holds still while the track scrolls past, then releases. Visually this
- * is identical to a ScrollTrigger pin.
- *
- * It exists because ScrollTrigger's pin WRAPS the pinned element in a
- * `.pin-spacer` div, re-parenting a node React owns. On client-side navigation
- * React then calls `removeChild` on a node whose parent it no longer is, throws
- * "The node to be removed is not a child of this node", and the page dies into
- * the error boundary. Sticky positioning never restructures the DOM, so that
- * entire class of failure disappears.
- *
- * `--hero-pin-vh` is the single source of truth for the pin length, in
- * viewport heights. Track height = 1 viewport (the hero itself) + the pin.
+ * The hero does NOT pin. It previously held via CSS sticky + an oversized
+ * `.hero-track`, which is what let the route line be scroll-scrubbed across a
+ * pinned hero. Client feedback: the hero "waits until the line is fully drawn",
+ * making scroll feel broken. The pin hold — and the scroll-gated line it
+ * enabled — is removed. The hero scrolls away naturally and the route line
+ * animates once on load (see hero-stage.tsx). The track is exactly one viewport
+ * tall.
  */
-@theme {
-  --hero-pin-vh: 0.75;
-}
-
 .hero-track {
-  /* Mobile and reduced-motion default: no pin at all, per branding.md §8's
-     Adaptation Strategy ("hero pin sequence is removed entirely" on mobile). */
-  height: 100svh;
-}
-
-@media (min-width: 768px) and (prefers-reduced-motion: no-preference) {
-  .hero-track {
-    height: calc(100svh * (1 + var(--hero-pin-vh)));
-  }
+  /* Exactly one viewport, no oversized track and no hold — the hero scrolls
+     away like any other section. */
+  min-height: 100svh;
 }
 
 @utility gradient-hero {

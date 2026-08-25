@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils';
 const FIELD_BASE = cn(
   'w-full rounded-md border bg-surface-secondary px-md text-body text-text-primary',
   'placeholder:text-text-secondary/70',
-  'transition-colors duration-[--duration-instant]',
+  'transition-colors duration-[var(--duration-instant)]',
   'disabled:opacity-50 disabled:cursor-not-allowed'
 );
 

@@ -92,7 +92,7 @@ export function HeroSection() {
           <a
             data-hero-supporting
             href="#how-it-works"
-            className="mt-2xl inline-flex items-center gap-sm text-body-small text-white/70 transition-colors duration-[--duration-instant] ease-out-smooth hover:text-white"
+            className="mt-2xl inline-flex items-center gap-sm text-body-small text-white/70 transition-colors duration-[var(--duration-instant)] ease-out-smooth hover:text-white"
           >
             <ArrowDown aria-hidden="true" className="size-(--size-icon-sm)" strokeWidth={2} />
             {HERO.scrollCue}

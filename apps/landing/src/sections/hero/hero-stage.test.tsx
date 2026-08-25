@@ -47,7 +47,7 @@ afterEach(() => {
  * jsdom cannot pin anything.
  */
 describe('HeroStage', () => {
-  it('offsets itself by exactly the header height so its pin starts at scroll 0', () => {
+  it('offsets itself by exactly the header height so the hero starts at scroll 0', () => {
     render(
       <HeroStage>
         <h1>Every Journey Matters.</h1>
@@ -58,20 +58,16 @@ describe('HeroStage', () => {
     expect(track.className).toContain('-mt-(--size-header)');
     // Padding must put back exactly what the negative margin removed, or the
     // headline slides under the header.
-    expect(track.querySelector('.sticky')?.className).toContain('pt-(--size-header)');
+    expect(track.querySelector('.gradient-hero')?.className).toContain('pt-(--size-header)');
   });
 
-  it('holds the hero with CSS sticky, never a ScrollTrigger pin', () => {
+  it('does not pin or hold the hero — it scrolls away in normal flow', () => {
     /**
-     * `pin: true` wraps the pinned element in a `.pin-spacer` div, re-parenting
-     * a node React owns. On client-side navigation React then calls
-     * `removeChild` on a node whose parent it no longer is and throws "The node
-     * to be removed is not a child of this node" — every page transition died
-     * into the error boundary.
-     *
-     * The hold is therefore CSS: a `.hero-track` taller than the viewport with
-     * a `sticky` stage inside. Restoring the GSAP pin would reintroduce the
-     * navigation crash.
+     * Client feedback: a held hero (whether ScrollTrigger `pin` or a CSS sticky
+     * stage) made scroll feel broken — it "waits until the route line is fully
+     * drawn". The pin hold is removed entirely. This guards against a
+     * regression restoring either mechanism: no `.sticky` stage and no oversized
+     * track (see globals.css `.hero-track`).
      */
     render(
       <HeroStage>
@@ -81,7 +77,8 @@ describe('HeroStage', () => {
 
     const track = screen.getByTestId('hero-stage');
     expect(track.className).toContain('hero-track');
-    expect(track.querySelector('.sticky')).not.toBeNull();
+    // The hero itself must not be sticky — sticky is what produced a hold.
+    expect(track.querySelector('.sticky')).toBeNull();
   });
 
   it('drives the route line by timeline on mobile, where there is no scroll range', () => {

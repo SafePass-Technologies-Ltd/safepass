@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import { Reveal } from '@/components/motion/reveal';
+import { Container, Section } from '@/components/ui/container';
 import { CredibilityPreview } from '@/sections/credibility';
 import { PartnerInquirySection } from '@/sections/transport/partner-inquiry';
 import {
-  AssetPlaceholder,
   ContentCardGrid,
   ContentSection,
 } from '@/sections/shared/content-blocks';
@@ -44,16 +45,34 @@ export default function TransportPartnersPage() {
         headingLevel="h1"
       />
 
-      <ContentSection heading={TRANSPORT_CONTENT.fleet.heading} lead={TRANSPORT_CONTENT.fleet.lead}>
-        <ContentCardGrid cards={TRANSPORT_CONTENT.fleet.capabilities} columns={3} />
-        {/* screens/04's Asset Plan is explicit: fleet photography must be real
-            once available, never AI-generated, because "a fabricated fleet photo
-            undermines exactly the operational credibility Chidinma is
-            evaluating". Labelled placeholder until then. */}
-        <Reveal>
-          <AssetPlaceholder label="Partner fleet imagery coming soon" />
-        </Reveal>
-      </ContentSection>
+      {/*
+        Two-column header: the fleet framing on the left, the A5 fleet imagery on
+        the right — keeps the photo a column (not a full-bleed 1200px banner),
+        with the capability cards below. Stacks on mobile.
+      */}
+      <Section>
+        <Container className="flex flex-col gap-xl">
+          <div className="grid gap-lg lg:grid-cols-2 lg:items-center">
+            <Reveal className="flex flex-col gap-sm">
+              <h2 className="text-h2 text-text-primary">{TRANSPORT_CONTENT.fleet.heading}</h2>
+              <p className="text-body-large text-text-secondary">{TRANSPORT_CONTENT.fleet.lead}</p>
+            </Reveal>
+            <Reveal>
+              <div className="relative overflow-hidden rounded-lg border border-border bg-surface-secondary">
+                <Image
+                  src="/images/transport-fleet.webp"
+                  alt="A SafePass-partnered passenger bus fleet at dusk"
+                  width={2400}
+                  height={1350}
+                  sizes="(min-width: 1280px) 600px, (min-width: 768px) 50vw, 100vw"
+                  className="h-auto w-full object-cover"
+                />
+              </div>
+            </Reveal>
+          </div>
+          <ContentCardGrid cards={TRANSPORT_CONTENT.fleet.capabilities} columns={3} />
+        </Container>
+      </Section>
 
       <ContentSection
         heading={TRANSPORT_CONTENT.differentiator.heading}
