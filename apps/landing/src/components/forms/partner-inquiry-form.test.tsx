@@ -55,6 +55,10 @@ describe('PartnerInquiryForm — Default state', () => {
       // a number input, whose `value` reads back as null when empty.
       expect(screen.getByLabelText(label)).toHaveDisplayValue('');
     }
+    // The client-requested "current challenges" select is present and unticked.
+    expect(screen.getByLabelText(/what challenges are you facing/i)).toHaveDisplayValue(
+      /choose one/i
+    );
     expect(submitButton()).toBeEnabled();
   });
 
@@ -120,6 +124,21 @@ describe('PartnerInquiryForm — Validation Error state', () => {
     });
 
     expect(result.ok).toBe(true);
+  });
+
+  it('passes a selected current challenge through to the payload', () => {
+    const result = validatePartnerInquiry({
+      companyName: 'Chidi Transit Ltd',
+      fleetSize: '24',
+      contactName: 'Chidinma Eze',
+      contactEmail: 'chidinma@chiditransit.ng',
+      contactPhone: '',
+      currentChallenges: 'brand_differentiation',
+      message: '',
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.input.currentChallenges).toBe('brand_differentiation');
   });
 
   it('flags a negative fleet size but accepts zero (screens/04 edge case)', () => {

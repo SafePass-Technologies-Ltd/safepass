@@ -97,6 +97,25 @@ describe('PartnerInquiryInputSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('accepts a current-challenge value the operator can select', () => {
+    const result = PartnerInquiryInputSchema.safeParse({
+      ...base,
+      contactPhone: '+2348012345678',
+      currentChallenges: 'incident_management',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.currentChallenges).toBe('incident_management');
+  });
+
+  it('rejects a challenge outside the documented taxonomy', () => {
+    const result = PartnerInquiryInputSchema.safeParse({
+      ...base,
+      contactPhone: '+2348012345678',
+      currentChallenges: 'cost_reduction',
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('LeadPayloadSchema', () => {
@@ -130,5 +149,22 @@ describe('LeadPayloadSchema', () => {
   it('rejects an unknown lead type', () => {
     const result = LeadPayloadSchema.safeParse({ ...envelope, leadType: 'newsletter', email: 'a@b.com' });
     expect(result.success).toBe(false);
+  });
+
+  it('carries a partner current-challenge through the full payload', () => {
+    // The value must survive from the form, through the Lead Intake Service
+    // envelope, to the backend — this is the contract the leads admin view
+    // relies on to display it.
+    const result = LeadPayloadSchema.safeParse({
+      ...envelope,
+      leadType: 'partner_inquiry',
+      companyName: 'Example Transport Ltd',
+      fleetSize: 40,
+      contactName: 'Chidinma Eze',
+      contactPhone: '+2348012345678',
+      currentChallenges: 'brand_differentiation',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.currentChallenges).toBe('brand_differentiation');
   });
 });

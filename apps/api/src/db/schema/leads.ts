@@ -58,6 +58,8 @@ export const leads = pgTable(
     teamSize: text('team_size'),
     /** Partner inquiry only — approximate vehicle count. */
     fleetSize: integer('fleet_size'),
+    /** Partner inquiry only — the operator's self-selected primary challenge. */
+    currentChallenges: text('current_challenges'),
     /** Demo request's needsDescription / partner inquiry's message. */
     message: text('message'),
 

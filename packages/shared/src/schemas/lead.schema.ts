@@ -94,6 +94,22 @@ export const DemoRequestSchema = LeadSubmissionBaseSchema.extend({
  * Zod can, so it's enforced here via `.refine` rather than left to each
  * caller to remember.
  */
+/**
+ * Operator challenges a partner can self-identify with, so the sales/partnerships
+ * team can frame the first call around what the operator already knows is a
+ * problem. `other` lets an operator escape the preset list without inventing a
+ * category on their own.
+ */
+export const PartnerChallengeEnum = z.enum([
+  'passenger_safety',
+  'brand_differentiation',
+  'incident_management',
+  'compliance',
+  'journey_visibility',
+  'driver_accountability',
+  'other',
+]);
+
 export const PartnerInquiryInputSchema = z
   .object({
     companyName: z.string().min(1, 'Company name is required'),
@@ -104,6 +120,7 @@ export const PartnerInquiryInputSchema = z
     contactName: z.string().min(1, 'Contact name is required'),
     contactEmail: z.string().email('Enter a valid email address').optional().or(z.literal('')),
     contactPhone: z.string().optional(),
+    currentChallenges: PartnerChallengeEnum.optional(),
     message: z.string().optional(),
   })
   .refine((data) => Boolean(data.contactEmail) || Boolean(data.contactPhone), {
@@ -159,5 +176,6 @@ export type DemoRequest = z.infer<typeof DemoRequestSchema>;
 
 export type PartnerInquiryInput = z.infer<typeof PartnerInquiryInputSchema>;
 export type PartnerInquiry = z.infer<typeof PartnerInquirySchema>;
+export type PartnerChallenge = z.infer<typeof PartnerChallengeEnum>;
 
 export type LeadPayload = z.infer<typeof LeadPayloadSchema>;

@@ -1,7 +1,12 @@
 'use client';
 
-import { PartnerInquiryInputSchema, type PartnerInquiryInput } from '@safepass/shared';
-import { Input, Textarea } from '@/components/ui/input';
+import {
+  PartnerChallengeEnum,
+  PartnerInquiryInputSchema,
+  type PartnerChallenge,
+  type PartnerInquiryInput,
+} from '@safepass/shared';
+import { Input, Select, Textarea } from '@/components/ui/input';
 import { LeadForm, type LeadFormErrors, type LeadFormValues, type LeadValidationResult } from './lead-form';
 
 /**
@@ -20,7 +25,19 @@ const INITIAL_VALUES: LeadFormValues = {
   contactName: '',
   contactEmail: '',
   contactPhone: '',
+  currentChallenges: '',
   message: '',
+};
+
+/** Human-readable labels for the partner challenge enum, shown in the Select. */
+const CHALLENGE_LABELS: Record<PartnerChallenge, string> = {
+  passenger_safety: 'Passenger safety',
+  brand_differentiation: 'Brand differentiation',
+  incident_management: 'Incident management',
+  compliance: 'Compliance',
+  journey_visibility: 'Journey visibility',
+  driver_accountability: 'Driver accountability',
+  other: 'Other',
 };
 
 /**
@@ -49,6 +66,7 @@ export function validatePartnerInquiry(
     // Empty optionals are dropped rather than forwarded as '' — the CRM should
     // see an absent field, not a blank one.
     contactPhone: trimmed('contactPhone') || undefined,
+    currentChallenges: (values.currentChallenges as PartnerChallenge | '') || undefined,
     message: trimmed('message') || undefined,
   });
 
@@ -80,7 +98,7 @@ export function PartnerInquiryForm({ sourcePage = '/transport-partners' }: { sou
       submitLabel="Talk to Us"
       ariaLabel="Partner inquiry"
       confirmation={{
-        heading: 'Thanks — your inquiry is with our partnerships team',
+        heading: 'Thanks, your inquiry is with our partnerships team',
         body: [
           'Someone from SafePass will get in touch using the contact details you gave us to talk through fleet onboarding, costs, and what monitoring would look like for your vehicles.',
           'If you need to reach us before then, reply to any SafePass email or use the contact details on this site.',
@@ -108,7 +126,7 @@ export function PartnerInquiryForm({ sourcePage = '/transport-partners' }: { sou
             value={values.fleetSize}
             onChange={(event) => setValue('fleetSize', event.target.value)}
             error={error('fleetSize')}
-            hint="A rough number is fine — we only use it to size the conversation."
+            hint="A rough number is fine. We only use it to size the conversation."
             disabled={disabled}
           />
 
@@ -129,7 +147,7 @@ export function PartnerInquiryForm({ sourcePage = '/transport-partners' }: { sou
             value={values.contactEmail}
             onChange={(event) => setValue('contactEmail', event.target.value)}
             error={error('contactEmail')}
-            hint="Give us an email or a phone number — whichever you'd rather we used."
+            hint="Give us an email or a phone number, whichever you'd rather we used."
             disabled={disabled}
             autoComplete="email"
           />
@@ -145,6 +163,24 @@ export function PartnerInquiryForm({ sourcePage = '/transport-partners' }: { sou
             disabled={disabled}
             autoComplete="tel"
           />
+
+          <Select
+            label="What challenges are you facing?"
+            name="currentChallenges"
+            optional
+            value={values.currentChallenges}
+            onChange={(event) => setValue('currentChallenges', event.target.value)}
+            error={error('currentChallenges')}
+            hint="This helps our partnerships team frame the first conversation around what you already know."
+            disabled={disabled}
+          >
+            <option value="">Choose one (optional)</option>
+            {PartnerChallengeEnum.options.map((challenge) => (
+              <option key={challenge} value={challenge}>
+                {CHALLENGE_LABELS[challenge]}
+              </option>
+            ))}
+          </Select>
 
           <Textarea
             label="Anything you'd like us to know"

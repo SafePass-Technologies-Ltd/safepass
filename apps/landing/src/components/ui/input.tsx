@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, type InputHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { useId, type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -113,6 +113,62 @@ export function Textarea({
         aria-describedby={error ? errorId : hint ? hintId : undefined}
         {...props}
       />
+
+      {error ? (
+        <p id={errorId} role="alert" className="text-body-small text-error">
+          {error}
+        </p>
+      ) : hint ? (
+        <p id={hintId} className="text-body-small text-text-secondary">
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Select — a labelled native `<select>` with the same field styling as Input
+ * and Textarea. Native (not a custom combobox) so keyboard and screen-reader
+ * behaviour is free and the field is reachable in the same markup every other
+ * form field is.
+ */
+export function Select({
+  label,
+  error,
+  hint,
+  optional = false,
+  className,
+  id: providedId,
+  children,
+  ...props
+}: FieldProps & SelectHTMLAttributes<HTMLSelectElement>) {
+  const generatedId = useId();
+  const id = providedId ?? generatedId;
+  const errorId = `${id}-error`;
+  const hintId = `${id}-hint`;
+
+  return (
+    <div className="flex flex-col gap-xs">
+      <label htmlFor={id} className="text-body font-medium text-text-primary">
+        {label}
+        {optional && <span className="ml-xs text-text-secondary font-normal">(optional)</span>}
+      </label>
+
+      <select
+        id={id}
+        className={cn(
+          FIELD_BASE,
+          'h-(--size-input-height) appearance-none',
+          error ? FIELD_STATE.error : FIELD_STATE.default,
+          className
+        )}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : hint ? hintId : undefined}
+        {...props}
+      >
+        {children}
+      </select>
 
       {error ? (
         <p id={errorId} role="alert" className="text-body-small text-error">

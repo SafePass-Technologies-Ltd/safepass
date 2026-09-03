@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   CreditCard,
   UserMinus,
+  Inbox,
 } from 'lucide-react';
 import { useActiveTrips } from '@/hooks/useActiveTrips';
 import { DashboardWsProvider } from '@/hooks/useDashboardWebSocket';
@@ -88,6 +89,12 @@ const navigation = [
     href: '/dashboard/role-upgrades',
     icon: ShieldCheck,
     description: 'Approve corporate, transport, and admin access requests',
+  },
+  {
+    name: 'Leads',
+    href: '/dashboard/leads',
+    icon: Inbox,
+    description: 'Read and triage landing-site marketing leads',
   },
   {
     name: 'Subscriptions',

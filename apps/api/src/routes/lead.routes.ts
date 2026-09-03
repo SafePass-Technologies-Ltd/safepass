@@ -114,6 +114,7 @@ leadRoutes.post(
               phone: payload.contactPhone ?? null,
               companyName: payload.companyName,
               fleetSize: payload.fleetSize,
+              currentChallenges: payload.currentChallenges ?? null,
               message: payload.message ?? null,
             }),
     };

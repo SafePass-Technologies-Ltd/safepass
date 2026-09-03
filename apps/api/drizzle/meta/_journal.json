@@ -134,6 +134,13 @@
       "when": 1785196800000,
       "tag": "0018_landing_leads",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788366508213,
+      "tag": "0019_partner_challenges",
+      "breakpoints": true
     }
   ]
 }
