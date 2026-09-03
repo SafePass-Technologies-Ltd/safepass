@@ -43,9 +43,9 @@ const AUDIENCE_BLURBS: Record<Audience, string> = {
   individual:
     'Travelling inter-city or through a high-risk corridor. Real officers watch your journey and act if something goes wrong.',
   business:
-    'Responsible for staff who travel. Monitor journeys, reduce organisational risk, and get reporting your leadership can act on.',
+    'Protect employees travelling for work, monitor journeys in real time, and receive actionable reporting for your organisation.',
   transport:
-    'Running a fleet. Offer monitored trips as a passenger-safety differentiator, with vehicle and driver verification built in.',
+    'Running a fleet. Differentiate your transport business by offering monitored passenger journeys, with vehicle and driver verification built in.',
 };
 
 export function AudienceEntryCards({ className }: { className?: string }) {
@@ -53,7 +53,7 @@ export function AudienceEntryCards({ className }: { className?: string }) {
     <Section className={className}>
       <Container className="flex flex-col gap-xl">
         <div className="flex flex-col gap-sm">
-          <h2 className="text-h2 text-text-primary">Find your path</h2>
+          <h2 className="text-h2 text-text-primary">Choose how you use SafePass</h2>
           <p className="text-body-large text-text-secondary">
             SafePass works differently depending on who you are. Pick the one that fits.
           </p>

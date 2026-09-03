@@ -19,7 +19,7 @@ import { clientEnv } from '@/lib/env';
  */
 
 export const metadata: Metadata = {
-  title: 'SafePass — corporate overview',
+  title: 'SafePass corporate overview',
   description: 'One-page overview of SafePass monitored road travel for organisations.',
   robots: { index: false, follow: false },
 };
@@ -50,7 +50,7 @@ export default function BusinessOverviewPage() {
         <ul className="flex flex-col gap-sm">
           {CORPORATE_CONTENT.dashboard.capabilities.map((capability) => (
             <li key={capability.title} className="text-body text-text-secondary">
-              <span className="font-semibold text-text-primary">{capability.title}</span> —{' '}
+              <span className="font-semibold text-text-primary">{capability.title}</span>:{' '}
               {capability.body}
             </li>
           ))}
@@ -62,7 +62,7 @@ export default function BusinessOverviewPage() {
         <ul className="flex flex-col gap-sm">
           {CORPORATE_CONTENT.dataPosture.points.map((point) => (
             <li key={point.title} className="text-body text-text-secondary">
-              <span className="font-semibold text-text-primary">{point.title}</span> — {point.body}
+              <span className="font-semibold text-text-primary">{point.title}</span>: {point.body}
             </li>
           ))}
         </ul>
@@ -76,7 +76,7 @@ export default function BusinessOverviewPage() {
         <p className="text-body text-text-secondary">
           Individual monitored journeys are {INDIVIDUAL_CONTENT.pricing.items[0].value} each,
           deducted from a funded wallet. Organisation-level plans are quoted against how many people
-          travel and how often — request a demo and we will be specific.
+          travel and how often. Request a demo and we will be specific.
         </p>
       </section>
 
@@ -87,7 +87,7 @@ export default function BusinessOverviewPage() {
           {clientEnv.fallbackContactEmail}.
         </p>
         <p className="text-body-small text-text-secondary">
-          SafePass — {`Every Journey Matters.`}
+          SafePass. {`Every Journey Matters.`}
         </p>
       </footer>
     </Container>

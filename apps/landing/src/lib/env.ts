@@ -36,13 +36,15 @@ const clientEnvSchema = z.object({
     .optional()
     .transform((value) => value !== 'false'),
   /**
-   * Fallback contact shown in the form Submission Error state.
+   * Fallback contact shown in the form Submission Error state, and the public
+   * support address rendered in the footer and legal pages.
    *
    * Required by user_flow.md's Global Flow on error recovery: a dropped lead
    * is direct revenue loss (R-004), so the visitor is never left with no path
-   * forward when automated delivery fails.
+   * forward when automated delivery fails. The client-supplied support address
+   * is the source of truth for the public contact.
    */
-  fallbackContactEmail: z.string().email().default('hello@safepass-tech.com'),
+  fallbackContactEmail: z.string().email().default('support@safepass-tech.com'),
 });
 
 export const clientEnv = clientEnvSchema.parse({

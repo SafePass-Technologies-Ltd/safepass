@@ -35,7 +35,7 @@ export const privacyPolicy: LegalDocument = {
   showTableOfContents: true,
   intro: [
     // TODO: legal review
-    'This policy explains how SafePass handles personal information collected through this website. It covers the information you give us directly — for example when you request a demo, submit a partner enquiry, or join a waitlist — and information collected automatically as you browse.',
+    'This policy explains how SafePass handles personal information collected through this website. It covers the information you give us directly (for example when you request a demo, submit a partner enquiry, or join a waitlist) and information collected automatically as you browse.',
     // TODO: legal review
     'This website does not perform any trip monitoring, location tracking, or emergency functionality. Personal information handled inside the SafePass mobile app and dashboards is governed separately by the in-product privacy notice.',
   ],
@@ -45,9 +45,19 @@ export const privacyPolicy: LegalDocument = {
       heading: 'Who We Are',
       needsLegalReview: true,
       body: [
-        // TODO: legal review — the registered entity name, RC number, and registered
-        // address must be supplied by the company; none are recorded in the docs.
-        'SafePass operates this website and is the data controller for personal information submitted through it. Our registered company details and registered address are set out at the end of this policy.',
+        // The entity name ("SafePass Technologies Ltd") and data-controller
+        // framing are client-supplied. The RC number and registered office are
+        // NOT supplied and must come from the company — see the details block.
+        'SafePass Technologies Ltd operates this website and acts as the data controller for information collected through it. Our registered company details are set out below.',
+      ],
+      list: [
+        'Registered company: SafePass Technologies Ltd',
+        // TODO: legal review — RC number must be supplied by the company.
+        'RC number: to be confirmed',
+        // TODO: legal review — registered office must be supplied by the company.
+        'Registered office: to be confirmed',
+        'Country: Nigeria',
+        `Email: ${clientEnv.fallbackContactEmail}`,
       ],
     },
     {
@@ -58,12 +68,22 @@ export const privacyPolicy: LegalDocument = {
         // TODO: legal review
         'We collect the following categories of information through this website.',
       ],
-      list: [
-        // The field lists below ARE accurate — they mirror schema.md's lead
-        // contracts, which is what the forms actually submit.
-        'Information you submit in a form: your name, email address, and — depending on the form — your phone number, company or organisation name, organisation size, fleet size, city or region, and any free-text description you choose to include.',
-        'Technical information collected automatically when you visit: IP address, browser and device type, referring page, and pages viewed.',
-        'Information from cookies and similar technologies, as described below.',
+      // Split into visually distinct groups so a visitor can skim what they
+      // provide vs what is collected automatically (client feedback).
+      listGroups: [
+        {
+          heading: 'Information you provide',
+          items: [
+            'Your name and email address, and, depending on the form, your phone number, company or organisation name, organisation size, fleet size, city or region, and any free-text description you choose to include.',
+          ],
+        },
+        {
+          heading: 'Information collected automatically',
+          items: [
+            'IP address, browser and device type, referring page, and pages viewed when you visit.',
+            'Information from cookies and similar technologies, as described below.',
+          ],
+        },
       ],
     },
     {
@@ -73,9 +93,11 @@ export const privacyPolicy: LegalDocument = {
       body: [
         // TODO: legal review
         'We use the information you submit to respond to your enquiry, to contact you about SafePass, and to operate, secure, and improve this website. We use technical and analytics information to understand how the site is used so that it can be made clearer and faster.',
-        // TODO: legal review
-        'We do not sell your personal information.',
       ],
+      // Rendered as a visually strong statement a skimming reader cannot miss
+      // (client feedback: "Many users skim. Seeing this immediately creates
+      // trust.").
+      emphasis: ['We do not sell your personal information.'],
     },
     {
       id: 'lawful-basis',
@@ -94,7 +116,7 @@ export const privacyPolicy: LegalDocument = {
       needsLegalReview: true,
       body: [
         // TODO: legal review
-        'This website uses cookies and similar technologies that are necessary for the site to function, and — where applicable — analytics technologies that help us understand aggregate site usage. This section describes the categories in use, their purpose, and how you can control them through your browser.',
+        'This website uses cookies and similar technologies that are necessary for the site to function, and (where applicable) analytics technologies that help us understand aggregate site usage. This section describes the categories in use, their purpose, and how you can control them through your browser.',
       ],
     },
     {
@@ -104,7 +126,10 @@ export const privacyPolicy: LegalDocument = {
       body: [
         // TODO: legal review — the named processors (hosting, email delivery,
         // CRM, analytics) must be listed by the company before launch.
-        'Information you submit through this website is forwarded to SafePass systems so that our team can respond to you. We also use service providers that process information on our behalf — for example hosting, email delivery, and customer-relationship tooling. These providers may only process information on our instructions.',
+        'Information you submit through this website is forwarded to SafePass systems so that our team can respond to you. We also use service providers that process information on our behalf, for example hosting, email delivery, and customer-relationship tooling. These providers may only process information on our instructions.',
+        // The "never sell/rent to advertisers or data brokers" statement is the
+        // sentence people actively look for (client feedback).
+        'We never sell or rent personal information to advertisers or data brokers.',
         // TODO: legal review
         'We may disclose information where we are legally required to do so, or to establish, exercise, or defend legal claims.',
       ],
@@ -125,8 +150,11 @@ export const privacyPolicy: LegalDocument = {
       heading: 'How We Protect Information',
       needsLegalReview: true,
       body: [
+        // Client feedback: lead with the positive measures, end with the
+        // limitation — "Lead with strength. End with limitation."
+        'We protect information using encryption, access controls, authentication, logging, and organisational security procedures appropriate to the sensitivity of the data.',
         // TODO: legal review
-        'We apply technical and organisational measures intended to protect personal information against unauthorised access, loss, or misuse. No method of transmission or storage is completely secure, and we cannot guarantee absolute security.',
+        'Although no system can guarantee absolute security, we work to keep the information we hold secure and to respond promptly if a risk is identified.',
       ],
     },
     {
@@ -149,14 +177,17 @@ export const privacyPolicy: LegalDocument = {
         // them must be confirmed by the company.
         'Subject to Nigerian data protection law, you have rights over the personal information we hold about you.',
       ],
+      // Rendered with a check mark beside each right so the list is scannable
+      // at a glance (client feedback).
+      listStyle: 'check',
       list: [
-        'To ask what personal information we hold about you and obtain a copy of it.',
-        'To ask us to correct information that is inaccurate or incomplete.',
-        'To ask us to delete your information in the circumstances the law allows.',
-        'To object to, or ask us to restrict, certain processing.',
-        'To withdraw consent where our processing relies on your consent.',
-        'To ask us to transfer your information to you or another controller in a portable format.',
-        'To complain to the Nigeria Data Protection Commission.',
+        'Access: ask what personal information we hold about you and obtain a copy of it.',
+        'Correction: ask us to correct information that is inaccurate or incomplete.',
+        'Deletion: ask us to delete your information in the circumstances the law allows.',
+        'Restriction: object to, or ask us to restrict, certain processing.',
+        'Withdrawal: withdraw consent where our processing relies on your consent.',
+        'Portability: ask us to transfer your information to you or another controller in a portable format.',
+        'Complaint: complain to the Nigeria Data Protection Commission.',
       ],
     },
     {
@@ -183,6 +214,19 @@ export const privacyPolicy: LegalDocument = {
       body: [
         // Not placeholder: the contact route is real and configured.
         `If you have a question about this policy or want to exercise any of the rights above, contact us at ${clientEnv.fallbackContactEmail}.`,
+        // Response-time commitment makes the company appear operational
+        // (client feedback). Legal-review flag is NOT set: the commitment is
+        // an operational promise the company chooses to make.
+        'We aim to respond to privacy enquiries within 30 days.',
+      ],
+    },
+    {
+      id: 'privacy-commitment',
+      heading: 'Our Privacy Commitment',
+      body: [
+        // The trust statement (client feedback): "That's not legal. That's
+        // trust. And SafePass is selling trust."
+        'SafePass exists to improve personal safety, not to exploit personal information. We collect only the information needed to operate our services, protect users, and respond to enquiries. We never sell personal information, and we design our systems to minimise data collection wherever practical.',
       ],
     },
   ],

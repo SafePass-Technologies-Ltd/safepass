@@ -36,7 +36,7 @@ describe('Navbar — audience-selecting variant', () => {
   it('displays logo, all three audience options, and a primary CTA', () => {
     renderNavbar();
 
-    expect(screen.getByRole('link', { name: /safepass — home/i })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: /safepass home/i })).toHaveAttribute('href', '/');
 
     const selector = screen.getByRole('navigation', { name: /choose your audience/i });
     expect(within(selector).getByRole('link', { name: 'Individual' })).toBeInTheDocument();
@@ -148,7 +148,7 @@ describe('Navbar — non-audience-selecting variant (legal pages)', () => {
       screen.queryByRole('navigation', { name: /choose your audience/i })
     ).not.toBeInTheDocument();
 
-    expect(screen.getByRole('link', { name: /safepass — home/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /safepass home/i })).toBeInTheDocument();
 
     const siteNav = screen.getAllByRole('navigation', { name: 'Site' })[0];
     expect(within(siteNav).getByRole('link', { name: 'Individual' })).toHaveAttribute(

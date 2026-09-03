@@ -26,12 +26,13 @@ describe('AUDIENCE_NAV', () => {
 });
 
 describe('navigation link sets', () => {
-  it('routes every audience plus the credibility page in the static nav', () => {
+  it('routes every audience plus the credibility and about pages in the static nav', () => {
     expect(STATIC_NAV.map((link) => link.href)).toEqual([
       '/individual',
       '/business',
       '/transport-partners',
       '/how-we-verify',
+      '/about',
     ]);
   });
 

@@ -1,5 +1,19 @@
 import Link from 'next/link';
+import { Check, Eye, MapPin, Radar, ShieldCheck, type LucideIcon } from 'lucide-react';
 import type { LegalDocument } from './types';
+import { cn } from '@/lib/utils';
+
+/**
+ * Icon keys usable in `LegalSection.listIcons`. Kept as a map rather than
+ * importing lucide into the content module, so the copy stays dependency-free
+ * and the icon choice lives with the renderer.
+ */
+const LIST_ICONS: Record<string, LucideIcon> = {
+  navigation: MapPin,
+  human: Eye,
+  intelligence: Radar,
+  evidence: ShieldCheck,
+};
 
 /**
  * Renderer for the Standard Static Page Layout body (screens.md) — FEAT-015.
@@ -31,7 +45,7 @@ export function LegalArticle({ document: doc }: { document: LegalDocument }) {
         <time dateTime={doc.lastUpdated}>{formatLastUpdated(doc.lastUpdated)}</time>
       </p>
 
-      {needsReview ? <LegalReviewNotice /> : null}
+      {needsReview ? <LegalReviewNotice title={doc.title} /> : null}
 
       <div className="mt-xl flex flex-col gap-md">
         {doc.intro.map((paragraph) => (
@@ -53,11 +67,74 @@ export function LegalArticle({ document: doc }: { document: LegalDocument }) {
             </p>
           ))}
 
-          {section.list ? (
-            <ul className="mt-md flex list-disc flex-col gap-sm pl-lg text-body text-text-secondary">
-              {section.list.map((item) => (
-                <li key={item}>{item}</li>
+          {section.emphasis?.map((paragraph) => (
+            <p
+              key={paragraph}
+              className="mt-md rounded-md border border-border bg-surface-elevated p-lg text-body font-semibold text-text-primary"
+            >
+              {paragraph}
+            </p>
+          ))}
+
+          {section.listGroups ? (
+            <div className="mt-lg grid gap-md md:grid-cols-2">
+              {section.listGroups.map((group) => (
+                <div
+                  key={group.heading}
+                  className="rounded-md border border-border bg-surface-secondary p-lg"
+                >
+                  <h3 className="text-caption uppercase tracking-wide text-text-secondary">
+                    {group.heading}
+                  </h3>
+                  <ul className="mt-md flex list-disc flex-col gap-sm pl-lg text-body text-text-secondary">
+                    {group.items.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
               ))}
+            </div>
+          ) : section.list ? (
+            <ul
+              className={cn(
+                'mt-md flex flex-col gap-sm text-body text-text-secondary',
+                section.listStyle === 'check' || section.listIcons
+                  ? 'pl-0 [list-style:none]'
+                  : 'list-disc pl-lg'
+              )}
+            >
+              {section.list.map((item, index) => {
+                const Icon = section.listIcons ? LIST_ICONS[section.listIcons[index]] : undefined;
+
+                return (
+                  <li
+                    key={item}
+                    className={
+                      section.listStyle === 'check' || Icon
+                        ? 'flex items-start gap-xs'
+                        : undefined
+                    }
+                  >
+                    {section.listStyle === 'check' && (
+                      <span
+                        aria-hidden="true"
+                        className="mt-xs flex size-(--size-icon-sm) shrink-0 items-center justify-center rounded-full bg-success/15 text-success"
+                      >
+                        <Check className="size-(--size-icon-sm)" strokeWidth={2.5} />
+                      </span>
+                    )}
+                    {Icon && (
+                      <span
+                        aria-hidden="true"
+                        className="mt-xs flex size-(--size-icon-lg) shrink-0 items-center justify-center rounded-md bg-primary-light text-accent-text"
+                      >
+                        <Icon className="size-(--size-icon-md)" strokeWidth={2} />
+                      </span>
+                    )}
+                    <span>{item}</span>
+                  </li>
+                );
+              })}
             </ul>
           ) : null}
         </section>
@@ -113,21 +190,32 @@ function TableOfContents({ document: doc }: { document: LegalDocument }) {
 /**
  * Shown while any section is still placeholder prose awaiting counsel.
  *
- * Presenting unreviewed text as a binding policy would be worse than saying so
- * plainly — and R-011's contingency is precisely "take lead-capture forms
+ * Presenting unreviewed text as a binding document would be worse than saying
+ * so plainly — and R-011's contingency is precisely "take lead-capture forms
  * offline if a compliance gap is identified", so the gap must be visible.
- * Delete this by clearing the `needsLegalReview` flags once the copy is
- * approved; there is nothing to change in this component.
+ * The wording is deliberately confidence-inspiring (client feedback across the
+ * legal pages: "the lawyers are polishing something already complete", not
+ * "this isn't finished") while still stating that final legal review is
+ * ongoing. Delete this by clearing the `needsLegalReview` flags once the copy
+ * is approved; there is nothing to change in this component.
+ *
+ * Uses the document's own title so the same notice is correct on both the
+ * Privacy Policy and Terms of Service pages — it must never hardcode one
+ * document's name.
  */
-function LegalReviewNotice() {
+function LegalReviewNotice({ title }: { title: string }) {
   return (
     <p
       role="note"
       className="mt-lg rounded-md border border-warning bg-surface-secondary p-lg text-body-small text-text-primary"
     >
-      <strong className="font-semibold">This document is being finalised.</strong> The sections and
-      headings below are complete, but the wording is still under legal review and is provided for
-      information only. Contact us if you need the reviewed version before it is published here.
+      <strong className="font-semibold">
+        {title} is currently undergoing final legal review.
+      </strong>{' '}
+      The principles, scope and obligations described below are substantially complete and reflect
+      how SafePass operates today. Any future revisions are expected to clarify legal wording rather
+      than change these commitments. Contact us if you need the reviewed version before it is
+      published here.
     </p>
   );
 }

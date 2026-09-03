@@ -141,11 +141,14 @@ export function StatCallout({
       ) : null}
 
       {/* R-007: source and as-of date are rendered, always, next to the figure
-          they qualify — not collected in a footnote block a reader can miss. */}
+          they qualify — not collected in a footnote block a reader can miss.
+          "Last reviewed" (client feedback) rather than "As of" reads as an
+          actively maintained page, which is the whole point of publishing the
+          date at all. */}
       <figcaption className="text-body-small text-text-secondary">
         {stat.source}.{' '}
         <span className="whitespace-nowrap">
-          As of{' '}
+          Last reviewed{' '}
           <time dateTime={stat.asOfDate}>
             {new Date(`${stat.asOfDate}T00:00:00Z`).toLocaleDateString('en-GB', {
               day: 'numeric',

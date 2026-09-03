@@ -16,7 +16,7 @@ import { CredibilitySection } from '@/sections/credibility';
 export const metadata: Metadata = {
   title: 'How we verify safety data',
   description:
-    "How SafePass seeds its safety map from public incident records, grows it from travellers' journeys, and weights every report across five verification tiers — with sources and dates.",
+    "How SafePass builds its safety map from public incident records, grows it from travellers' journeys, and weights every report across five verification tiers, with sources and dates.",
   alternates: { canonical: '/how-we-verify' },
 };
 

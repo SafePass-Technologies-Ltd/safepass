@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { Footer } from './footer';
-import { CONTACT_EMAIL } from '@/lib/content/navigation';
+import { CONTACT_EMAIL, SOCIAL_LINKS } from '@/lib/content/navigation';
 
 /**
  * FEAT-002 — Footer with Trust & Legal Links.
@@ -59,6 +59,16 @@ describe('Footer', () => {
     expect(
       screen.getByText(new RegExp(`${new Date().getFullYear()} SafePass`))
     ).toBeInTheDocument();
+  });
+
+  it('renders social links when supplied, and none before they exist', () => {
+    // SOCIAL_LINKS is deliberately empty until the client supplies real URLs.
+    // The footer must not render a Social column (or a fabricated handle) when
+    // there is nothing to point at — this is the documented deferral decision.
+    const { container } = render(<Footer />);
+    expect(container.querySelectorAll('nav[aria-label="Social"]')).toHaveLength(
+      SOCIAL_LINKS.length > 0 ? 1 : 0
+    );
   });
 
   it('offers a route back to the homepage and to every top-level page', () => {

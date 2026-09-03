@@ -14,8 +14,30 @@ export interface LegalSection {
   heading: string;
   /** Body paragraphs, in order. */
   body: string[];
+  /**
+   * Paragraphs rendered with emphasis (a visually stronger style). Used for a
+   * single trust-critical sentence — e.g. "We do not sell your personal
+   * information." — that a skimming reader must not miss.
+   */
+  emphasis?: string[];
   /** Optional bulleted list rendered after the paragraphs. */
   list?: string[];
+  /**
+   * Optional grouped lists rendered as visual cards, each group with its own
+   * heading. Used when the information naturally splits into categories a
+   * visitor should be able to skim independently (e.g. "information you
+   * provide" vs "information collected automatically").
+   */
+  listGroups?: { heading: string; items: string[] }[];
+  /** Rendered list marker style. Defaults to `disc`. */
+  listStyle?: 'disc' | 'check';
+  /**
+   * Optional lucide icon keys, one per list item, rendered beside each item.
+   * Used to give a short list (e.g. the "How We Are Different" pillars) a
+   * visual anchor without making the section image-heavy. Length must match
+   * the list; items without an icon simply render without one.
+   */
+  listIcons?: string[];
   /**
    * True when the prose above is placeholder text standing in for copy that a
    * Nigerian-qualified lawyer must write or approve before launch. The page

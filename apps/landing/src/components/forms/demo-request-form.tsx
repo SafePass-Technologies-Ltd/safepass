@@ -79,7 +79,7 @@ export function DemoRequestForm({ sourcePage = '/business' }: { sourcePage?: str
       submitLabel="Request a Demo"
       ariaLabel="Request a demo"
       confirmation={{
-        heading: 'Thanks — your demo request is in',
+        heading: 'Thanks, your demo request is in',
         body: [
           // FEAT-010 AC3 requires the confirmation state indicate expected
           // response time or next steps. "One working day" is a service
@@ -130,7 +130,7 @@ export function DemoRequestForm({ sourcePage = '/business' }: { sourcePage?: str
             value={values.teamSize}
             onChange={(event) => setValue('teamSize', event.target.value)}
             error={error('teamSize')}
-            hint="A rough figure is fine — for example, “50-200 field staff”."
+            hint="A rough figure is fine, for example “50-200 field staff”."
             disabled={disabled}
           />
 

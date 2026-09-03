@@ -7,6 +7,8 @@ import {
   CREDIBILITY_INTRO,
   CREDIBILITY_LAYERS,
   CREDIBILITY_PREVIEW,
+  INFORMATION_CHANGES,
+  SOURCES,
   VERIFICATION_TIERS,
 } from '@/lib/content/credibility';
 import { SAFETY_DATA_STATS, PREVIEW_STAT_ID, getStat } from '@/lib/content/safety-data-stats';
@@ -143,6 +145,38 @@ export function CredibilitySection({
             alone.
           </p>
           <VerificationTierList />
+        </div>
+
+        {/* "How quickly information changes" — client-requested disclaimer. States
+            plainly that markers move and users must stay alert. Legal protection
+            and trust in one block; server-rendered like everything here. */}
+        <div className="flex max-w-[70ch] flex-col gap-sm">
+          <h2 className={cn(subHeadingClass, 'text-text-primary')}>
+            {INFORMATION_CHANGES.heading}
+          </h2>
+          {INFORMATION_CHANGES.body.map((paragraph) => (
+            <p key={paragraph} className="text-body text-text-secondary">
+              {paragraph}
+            </p>
+          ))}
+        </div>
+
+        {/* "Our sources" — the concrete answer to "where does this come from".
+            Source *types*, not quantities, so nothing here needs a source or an
+            as-of date (R-007). */}
+        <div className="flex max-w-[70ch] flex-col gap-md">
+          <h2 className={cn(subHeadingClass, 'text-text-primary')}>{SOURCES.heading}</h2>
+          <p className="text-body text-text-secondary">{SOURCES.lead}</p>
+          <ul className="flex flex-wrap gap-xs">
+            {SOURCES.items.map((source) => (
+              <li
+                key={source}
+                className="rounded-full border border-border bg-surface-secondary px-md py-xs text-body-small text-text-primary"
+              >
+                {source}
+              </li>
+            ))}
+          </ul>
         </div>
 
         <p className="max-w-[70ch] text-body-small text-text-secondary">{CONTENT_REVIEW_NOTE}</p>

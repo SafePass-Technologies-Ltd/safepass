@@ -26,9 +26,9 @@ import { clientEnv } from '@/lib/env';
  */
 
 export const metadata: Metadata = {
-  title: 'SafePass for travellers — monitored road journeys in Nigeria',
+  title: 'SafePass for travellers: monitored road journeys in Nigeria',
   description:
-    'Register a journey and a real SafePass officer monitors it live from departure to arrival. ₦2,000 per monitored journey, no subscription.',
+    'Register a journey and a real SafePass officer monitors it live from departure to arrival. Every journey matters, wherever it takes you.',
   alternates: { canonical: '/individual' },
 };
 
@@ -65,7 +65,7 @@ export default function IndividualPage() {
             <Reveal className="flex flex-col gap-sm">
               <h2 className="text-h2 text-text-primary">When people use SafePass</h2>
               <p className="text-body-large text-text-secondary">
-                The two journeys it was built for.
+                Some of the journeys where SafePass makes the biggest difference.
               </p>
             </Reveal>
             <Reveal>

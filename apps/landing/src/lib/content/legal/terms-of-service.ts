@@ -58,6 +58,9 @@ export const termsOfService: LegalDocument = {
       body: [
         // TODO: legal review
         'You agree to use this site lawfully and not to interfere with its operation, attempt to gain unauthorised access to it, or use it to send unlawful or abusive content through our enquiry forms.',
+        // Client feedback — the reverse-engineer/scrape prohibition is common
+        // and worth stating explicitly.
+        'You must not attempt to reverse engineer, scrape, interfere with, or disrupt the operation or security of this website.',
       ],
     },
     {
@@ -66,7 +69,10 @@ export const termsOfService: LegalDocument = {
       needsLegalReview: true,
       body: [
         // TODO: legal review
-        'When you submit an enquiry, demo request, partner enquiry, or waitlist signup, you confirm that the information you provide is accurate and that you are entitled to provide it — including where it relates to an organisation you represent. How we handle that information is described in our Privacy Policy.',
+        'When you submit an enquiry, demo request, partner enquiry, or waitlist signup, you confirm that the information you provide is accurate and that you are entitled to provide it, including where it relates to an organisation you represent. How we handle that information is described in our Privacy Policy.',
+        // Client feedback — protects SafePass from being treated as a secure
+        // channel for confidential material.
+        'You agree not to submit confidential information unless specifically requested.',
       ],
     },
     {
@@ -78,6 +84,14 @@ export const termsOfService: LegalDocument = {
         // and permitted use of the SafePass name and marks, must be set by
         // counsel. No licence terms are stated here on purpose.
         'The content, design, and branding of this site belong to SafePass or its licensors. This section sets out what you may and may not do with that material.',
+      ],
+      // Client feedback — naming the protected categories makes the IP position
+      // explicit for investors and due-diligence readers.
+      list: [
+        'Text, graphics, and the overall design and layout of the site',
+        'The SafePass name, logos, and brand marks',
+        'Software and underlying technology',
+        'Database rights in the content displayed on the site',
       ],
     },
     {
@@ -109,6 +123,8 @@ export const termsOfService: LegalDocument = {
         // TODO: legal review — warranty disclaimer wording must be drafted by
         // counsel.
         'This section sets out the warranties we give and disclaim in relation to this website.',
+        // Client feedback — the standard "as is / as available" framing.
+        'The website is provided "as is" and "as available" without warranties that it will always be uninterrupted, error-free, or suitable for any particular purpose.',
       ],
     },
     {
@@ -135,17 +151,34 @@ export const termsOfService: LegalDocument = {
       heading: 'Governing Law',
       needsLegalReview: true,
       body: [
-        // TODO: legal review — governing law and the dispute-resolution forum
-        // must be confirmed by counsel rather than assumed from the market.
-        'This section states the law governing these terms and how disputes relating to them are resolved.',
+        // Client-directed: the law is stated explicitly rather than left as a
+        // placeholder. (The dispute-resolution forum clause still awaits
+        // counsel.)
+        'These Terms are governed by the laws of the Federal Republic of Nigeria.',
+      ],
+    },
+    {
+      id: 'commitment',
+      heading: 'Our Commitment',
+      body: [
+        // Trust statement (client feedback) — the human note on an otherwise
+        // "lawyerly" page. Not legal-review prose: it is a commitment the
+        // company chooses to make.
+        'SafePass is committed to providing accurate information about our services. Where information changes, we aim to update this website promptly, but users should rely on the SafePass platform itself for live monitoring, alerts, and operational information.',
       ],
     },
     {
       id: 'contact',
-      heading: 'Contact Us',
+      // Client feedback — a little humanity on the legal pages ("Questions?"
+      // rather than the colder "Contact Us"). The section id stays `contact`
+      // for anchors and the legal-page test.
+      heading: 'Questions?',
       body: [
         // Not placeholder: the contact route is real and configured.
-        `Questions about these terms can be sent to ${clientEnv.fallbackContactEmail}.`,
+        `If anything in these Terms isn't clear, we'd be happy to explain it. Email us at ${clientEnv.fallbackContactEmail}.`,
+        // Operational promise (not legal-review prose): makes the company
+        // appear responsive.
+        'We aim to respond to enquiries within 30 days.',
       ],
     },
   ],

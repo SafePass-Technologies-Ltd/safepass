@@ -109,7 +109,7 @@ export function Logo({
   }
 
   return (
-    <Link href={href} className={classes} aria-label="SafePass — home">
+    <Link href={href} className={classes} aria-label="SafePass home">
       {lockup}
     </Link>
   );

@@ -16,9 +16,13 @@ import { SafetyDataStatSchema, type SafetyDataStat } from '@safepass/shared';
  * prove. So the bar for adding an entry is: the figure is stated in a SafePass
  * product document, and a reader could be pointed at where it comes from.
  *
- * Every stat below is a *methodology or pricing* fact drawn from
- * `docs/SafePass/README.md` (Cold-Start Strategy, Layer 3) and
- * `docs/SafePass/monetization.md`. None is an operational metric.
+ * Every stat below is a *methodology* fact drawn from `docs/SafePass/README.md`
+ * (Cold-Start Strategy, Layer 3). The pricing figures that used to appear here
+ * (`₦2,000` journey fee / wallet minimum) were removed on client feedback: this
+ * page is about verification, not pricing, and a stat that mentions cost
+ * interrupts the trust story. Those figures live on the Individual page's
+ * pricing block (FEAT-006), where they belong. None of the entries here is an
+ * operational metric.
  *
  * DELIBERATELY ABSENT — SafePass has published no operational data yet, and a
  * plausible-looking placeholder on this page in particular would be worse than
@@ -44,11 +48,11 @@ export const STATS_REVIEWED_ON = '2026-07-27';
 const RAW_STATS: SafetyDataStat[] = [
   {
     statId: 'verification-tiers',
-    label: 'Verification tiers every safety marker is classified into',
+    label: 'Verification levels every safety marker is classified into',
     value: '5',
     verificationTier: 'verified',
     source:
-      'SafePass incident-verification model — Unverified, Partially Confirmed, Verified, Disputed, Rejected',
+      'SafePass incident-verification model: Unverified, Partially Confirmed, Verified, Disputed, Rejected',
     asOfDate: STATS_REVIEWED_ON,
   },
   {
@@ -57,23 +61,7 @@ const RAW_STATS: SafetyDataStat[] = [
     value: '5+',
     verificationTier: 'verified',
     source:
-      'SafePass verification weighting rules — a report reaches Verified at 5 or more user confirmations, or on admin approval',
-    asOfDate: STATS_REVIEWED_ON,
-  },
-  {
-    statId: 'journey-fee',
-    label: 'Cost of a monitored journey',
-    value: '₦2,000',
-    verificationTier: 'verified',
-    source: 'SafePass published pricing — charged per monitored journey, deducted from the wallet',
-    asOfDate: STATS_REVIEWED_ON,
-  },
-  {
-    statId: 'wallet-minimum',
-    label: 'Minimum wallet top-up',
-    value: '₦2,000',
-    verificationTier: 'verified',
-    source: 'SafePass published pricing — minimum wallet funding amount',
+      'SafePass verification weighting rules: a report reaches Verified at 5 or more user confirmations, or on admin approval',
     asOfDate: STATS_REVIEWED_ON,
   },
 ];

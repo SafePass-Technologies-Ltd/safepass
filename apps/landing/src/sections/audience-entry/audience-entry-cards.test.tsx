@@ -13,8 +13,14 @@ describe('AudienceEntryCards', () => {
   it('offers a route for every audience', () => {
     render(<AudienceEntryCards />);
 
+    // Scope each assertion to the card heading rather than a page-wide regex:
+    // the card blurbs legitimately share vocabulary across audiences (e.g. the
+    // transport card now says "transport business"), which a /Business/i
+    // page-wide query treats as a duplicate.
     for (const { label, href } of AUDIENCE_LIST) {
-      const link = screen.getByRole('link', { name: new RegExp(label, 'i') });
+      const heading = screen.getByRole('heading', { name: new RegExp(`^${label}$`, 'i') });
+      const link = heading.closest('a');
+      expect(link).not.toBeNull();
       expect(link).toHaveAttribute('href', href);
     }
   });
@@ -45,7 +51,7 @@ describe('AudienceEntryCards', () => {
     // A card that is just a label is not a branch a visitor can choose between.
     render(<AudienceEntryCards />);
     expect(screen.getByText(/travelling inter-city/i)).toBeInTheDocument();
-    expect(screen.getByText(/responsible for staff who travel/i)).toBeInTheDocument();
+    expect(screen.getByText(/protect employees travelling for work/i)).toBeInTheDocument();
     expect(screen.getByText(/running a fleet/i)).toBeInTheDocument();
   });
 });

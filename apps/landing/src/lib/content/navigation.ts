@@ -20,6 +20,12 @@ export interface NavLink {
   href: string;
 }
 
+/** A social profile link — the label doubles as the accessible name. */
+export interface SocialLink {
+  label: string;
+  href: string;
+}
+
 export interface AudienceNavLink extends NavLink {
   audience: Audience;
   /** The audience's converting action, from AUDIENCE_CONFIG.ctaLabel. */
@@ -37,12 +43,16 @@ export const AUDIENCE_NAV: ReadonlyArray<AudienceNavLink> = AUDIENCE_LIST.map(
 /**
  * Non-audience navigation shown in both Navbar variants.
  *
- * Deliberately one item: screens.md's navigation map has exactly one
- * cross-cutting destination reachable from every page (`/how-we-verify`), and
- * the header's job per FEAT-001 is audience routing, not a site directory.
+ * Two cross-cutting destinations: `/how-we-verify` (the credibility page) and
+ * `/about`. About was added to the header (client feedback) so visitors arriving
+ * to evaluate the company — investors, partners, government, media — can reach
+ * it in one click rather than hunting through the footer. screens.md's
+ * navigation map still scopes the header's job as audience routing, so these
+ * stay a deliberately short list.
  */
 export const PRIMARY_NAV: ReadonlyArray<NavLink> = [
   { label: 'How We Verify', href: '/how-we-verify' },
+  { label: 'About', href: '/about' },
 ];
 
 /**
@@ -81,5 +91,17 @@ export const FOOTER_LEGAL: ReadonlyArray<NavLink> = [
  * value can be pointed at this constant without touching the component.
  */
 export const CONTACT_EMAIL = clientEnv.fallbackContactEmail;
+
+/**
+ * Social profile links for the footer (FEAT-002's "social/press links").
+ *
+ * DELIBERATELY EMPTY — the client has not supplied any social handles, and
+ * inventing a URL would give the site a link to an account that may not exist.
+ * The footer renders this list as-is, so when real URLs are supplied here (or
+ * driven by env vars) they appear without touching the component. This is the
+ * same decision the docs record for social/press links (README "Open Decisions
+ * Blocking Launch Facts", features.md FEAT-002).
+ */
+export const SOCIAL_LINKS: ReadonlyArray<SocialLink> = [];
 
 export const BRAND_TAGLINE = 'Every Journey Matters.';

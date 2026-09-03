@@ -130,10 +130,68 @@ describe('Privacy Policy', () => {
 
   // The prose is placeholder pending counsel. Presenting it as binding would
   // be worse than saying so — and R-011's contingency depends on the gap being
-  // visible rather than silent.
-  it('states plainly that the wording is still under legal review', () => {
+  // visible rather than silent. The wording is confidence-inspiriring (client
+  // feedback) but must still state the review is not yet complete.
+  it('states that the wording is still under legal review', () => {
     render(<PrivacyPage />);
-    expect(screen.getByRole('note')).toHaveTextContent(/under legal review/i);
+    expect(screen.getByRole('note')).toHaveTextContent(/legal review/i);
+    expect(screen.getByRole('note')).toHaveTextContent(/final legal review/i);
+  });
+
+  it('leads with a positive security statement before the limitation', () => {
+    const { container } = render(<PrivacyPage />);
+    const security = container.querySelector('#security')?.textContent ?? '';
+
+    const positiveIndex = security.indexOf('We protect information using encryption');
+    const limitationIndex = security.indexOf('Although no system can guarantee');
+    expect(positiveIndex).toBeGreaterThan(-1);
+    expect(limitationIndex).toBeGreaterThan(-1);
+    expect(positiveIndex).toBeLessThan(limitationIndex);
+  });
+
+  it('renders the "we do not sell" statement as an emphasised trust line', () => {
+    const { container } = render(<PrivacyPage />);
+    const useSection = container.querySelector('#how-we-use-information');
+
+    expect(useSection?.textContent).toContain('We do not sell your personal information.');
+  });
+
+  it('separates provided vs automatic information into groups', () => {
+    const { container } = render(<PrivacyPage />);
+    const collect = container.querySelector('#information-we-collect');
+
+    expect(collect?.textContent).toContain('Information you provide');
+    expect(collect?.textContent).toContain('Information collected automatically');
+  });
+
+  it('states the never-sell-to-advertisers sentence in sharing', () => {
+    const { container } = render(<PrivacyPage />);
+    const sharing = container.querySelector('#sharing')?.textContent ?? '';
+
+    expect(sharing).toContain('We never sell or rent personal information to advertisers or data brokers.');
+  });
+
+  it('makes the data-subject rights scannable with a check-style list', () => {
+    const { container } = render(<PrivacyPage />);
+    const rights = container.querySelector('#your-rights');
+
+    expect(rights?.querySelectorAll('li').length).toBeGreaterThanOrEqual(5);
+    // Check icons render beside each right (aria-hidden decorative markers).
+    expect(rights?.querySelectorAll('[aria-hidden="true"] svg').length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('states the contact response-time commitment', () => {
+    const { container } = render(<PrivacyPage />);
+    const contact = container.querySelector('#contact')?.textContent ?? '';
+
+    expect(contact).toMatch(/respond to privacy enquiries within 30 days/i);
+  });
+
+  it('opens with the trust commitment section', () => {
+    const { container } = render(<PrivacyPage />);
+    const commitment = container.querySelector('#privacy-commitment');
+
+    expect(commitment?.textContent).toContain('SafePass exists to improve personal safety');
   });
 
   it('states no specific retention period, which only counsel can set', () => {
@@ -163,7 +221,65 @@ describe('Terms of Service', () => {
 
   it('states plainly that the wording is still under legal review', () => {
     render(<TermsPage />);
-    expect(screen.getByRole('note')).toHaveTextContent(/under legal review/i);
+    expect(screen.getByRole('note')).toHaveTextContent(/legal review/i);
+  });
+
+  it('names the shared legal-review notice with its own title, not the Privacy Policy', () => {
+    render(<TermsPage />);
+    const note = screen.getByRole('note');
+    expect(note).toHaveTextContent(/Terms of Service is currently undergoing final legal review/i);
+    expect(note).not.toHaveTextContent(/Privacy Policy is currently/i);
+  });
+
+  it('prohibits reverse engineering, scraping, and interference with the site', () => {
+    const { container } = render(<TermsPage />);
+    const useOfSite = container.querySelector('#use-of-site')?.textContent ?? '';
+
+    expect(useOfSite).toMatch(/reverse engineer, scrape, interfere with/i);
+  });
+
+  it('asks visitors not to submit confidential information unless requested', () => {
+    const { container } = render(<TermsPage />);
+    const submit = container.querySelector('#information-you-submit')?.textContent ?? '';
+
+    expect(submit).toMatch(/not to submit confidential information unless specifically requested/i);
+  });
+
+  it('names the protected intellectual property categories', () => {
+    const { container } = render(<TermsPage />);
+    const ip = container.querySelector('#intellectual-property');
+
+    expect(ip?.querySelectorAll('li').length).toBeGreaterThanOrEqual(3);
+    expect(ip?.textContent).toMatch(/brand marks/i);
+    expect(ip?.textContent).toMatch(/database rights/i);
+  });
+
+  it('disclaims warranties with standard as-is / as-available wording', () => {
+    const { container } = render(<TermsPage />);
+    const disclaimers = container.querySelector('#disclaimers')?.textContent ?? '';
+
+    expect(disclaimers).toMatch(/"as is" and "as available"/i);
+  });
+
+  it('states the governing law explicitly', () => {
+    const { container } = render(<TermsPage />);
+    const law = container.querySelector('#governing-law')?.textContent ?? '';
+
+    expect(law).toMatch(/governed by the laws of the Federal Republic of Nigeria/i);
+  });
+
+  it('states the contact response-time commitment', () => {
+    const { container } = render(<TermsPage />);
+    const contact = container.querySelector('#contact')?.textContent ?? '';
+
+    expect(contact).toMatch(/respond to enquiries within 30 days/i);
+  });
+
+  it('opens the commitment trust statement', () => {
+    const { container } = render(<TermsPage />);
+    const commitment = container.querySelector('#commitment');
+
+    expect(commitment?.textContent).toContain('SafePass is committed to providing accurate information');
   });
 });
 
@@ -180,6 +296,28 @@ describe('About page', () => {
     expect(text).toMatch(/corporate/i);
     expect(text).toMatch(/transport/i);
     expect(text).toMatch(/Nigeria/);
+  });
+
+  it('opens with the problem statement the company exists to solve', () => {
+    const { container } = render(<AboutPage />);
+    const why = container.querySelector('#why-safepass-exists');
+
+    expect(why?.textContent).toMatch(/every year, millions of journeys/i);
+    expect(why?.textContent).toMatch(/make every journey safer/i);
+  });
+
+  it('explains the Nigeria-first choice as deliberate, not incidental', () => {
+    const { container } = render(<AboutPage />);
+    const where = container.querySelector('#where-we-operate')?.textContent ?? '';
+
+    expect(where).toMatch(/world[’']s most demanding safety environments/i);
+  });
+
+  it('renders an icon beside each of the four differentiator pillars', () => {
+    const { container } = render(<AboutPage />);
+    const differentiators = container.querySelector('#how-we-are-different');
+
+    expect(differentiators?.querySelectorAll('[aria-hidden="true"] svg').length).toBeGreaterThanOrEqual(4);
   });
 
   it('names the four platform surfaces a due-diligence reader needs', () => {

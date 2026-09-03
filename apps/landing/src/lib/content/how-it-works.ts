@@ -64,14 +64,14 @@ export const HOW_IT_WORKS: HowItWorksContent = {
     },
     {
       id: 'fund',
-      title: 'Fund your wallet',
+      title: 'Activate monitoring',
       body: 'Monitoring is paid from your in-app wallet: a ₦2,000 minimum balance, and ₦2,000 for each monitored journey.',
       icon: 'wallet',
     },
     {
       id: 'monitor',
-      title: 'A real officer watches the trip',
-      body: 'A SafePass monitoring officer — a person, not an automated alert on its own — follows your live location for the whole journey and can message you through the app.',
+      title: 'Live human monitoring',
+      body: 'A SafePass monitoring officer (a person, not an automated alert on its own) follows your live location for the whole journey and can message you through the app.',
       icon: 'eye',
     },
     {
@@ -82,8 +82,8 @@ export const HOW_IT_WORKS: HowItWorksContent = {
     },
     {
       id: 'escalate',
-      title: 'Escalate an emergency',
-      body: 'If you trigger the panic alert, the officer escalates straight away and the app begins silent background audio recording so evidence is preserved.',
+      title: 'Rapid emergency response',
+      body: 'If you trigger the panic alert, the officer escalates straight away, and (where permitted by law) the app can securely preserve background audio as evidence.',
       icon: 'alert',
     },
   ],

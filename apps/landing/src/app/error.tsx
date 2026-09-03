@@ -31,7 +31,7 @@ export default function ErrorBoundary({
       <Container className="flex flex-col items-center gap-lg text-center">
         <h1 className="text-h1 text-text-primary">Something went wrong</h1>
         <p className="max-w-prose text-body text-text-secondary">
-          We couldn&apos;t load this page. Your details are safe — nothing was submitted.
+          We couldn&apos;t load this page. Your details are safe, nothing was submitted.
         </p>
         <div className="flex flex-wrap justify-center gap-md">
           <Button onClick={reset}>Try again</Button>

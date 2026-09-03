@@ -62,6 +62,10 @@ export function HeroSection() {
             {HERO.subheadline}
           </p>
 
+          <p data-hero-supporting className="mt-md text-body text-white/60">
+            {HERO.marketLine}
+          </p>
+
           <div data-hero-supporting className="mt-xl flex flex-col gap-lg">
             {/*
               FEAT-003: "Primary CTA is visible in the hero and links to the app

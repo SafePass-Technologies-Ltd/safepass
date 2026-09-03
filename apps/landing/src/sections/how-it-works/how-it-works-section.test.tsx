@@ -61,12 +61,14 @@ describe('FEAT-004 acceptance criteria', () => {
   it('covers the five mechanics FEAT-004 enumerates', () => {
     render(<HowItWorksSection />);
 
-    // register → fund → monitor → confirm arrival → escalate
+    // The mechanic is the same even where the client changed the wording:
+    // register → activate monitoring (fund) → live human monitoring →
+    // confirm arrival → rapid emergency response.
     expect(screen.getByText(/register your journey/i)).toBeInTheDocument();
-    expect(screen.getByText(/fund your wallet/i)).toBeInTheDocument();
-    expect(screen.getByText(/a real officer watches the trip/i)).toBeInTheDocument();
+    expect(screen.getByText(/activate monitoring/i)).toBeInTheDocument();
+    expect(screen.getByText(/live human monitoring/i)).toBeInTheDocument();
     expect(screen.getByText(/confirm checkpoints and arrival/i)).toBeInTheDocument();
-    expect(screen.getByText(/escalate an emergency/i)).toBeInTheDocument();
+    expect(screen.getByText(/rapid emergency response/i)).toBeInTheDocument();
   });
 
   it('is anchorable from the hero', () => {

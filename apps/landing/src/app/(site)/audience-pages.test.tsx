@@ -27,13 +27,28 @@ describe('Individual Traveller Page (FEAT-006)', () => {
     // FEAT-006 AC1: pricing stated plainly and prominently, never hidden.
     expect(html).toContain('₦2,000');
     expect(html).toMatch(/per monitored journey/i);
-    expect(html).toMatch(/minimum wallet funding/i);
+    expect(html).toMatch(/minimum wallet top-up/i);
   });
 
-  it('describes both documented individual use cases', () => {
-    // FEAT-006 AC2 requires the two named in docs/SafePass/README.md.
+  it('leads its pricing section with value and reassurance, not just the price', () => {
+    // Client feedback: the section must reframe ₦2,000 as a lot of value, not
+    // lead with the figure. Reassurance badges and the "includes" box both ship
+    // in the server HTML.
+    expect(html).toMatch(/simple, transparent pricing/i);
+    expect(html).toMatch(/no subscription/i);
+    expect(html).toMatch(/pay per journey/i);
+    expect(html).toMatch(/every monitored journey includes/i);
+    expect(html).toMatch(/a live safepass monitoring officer/i);
+  });
+
+  it('describes the four documented individual use cases', () => {
+    // FEAT-006 AC2 requires the two named in docs/SafePass/README.md; Local
+    // journeys and "when someone is waiting" were added on client feedback to
+    // broaden the market beyond "dangerous roads".
     expect(html).toMatch(/inter-city travel/i);
     expect(html).toMatch(/high-risk corridor/i);
+    expect(html).toMatch(/local journeys/i);
+    expect(html).toMatch(/when someone is waiting for you/i);
   });
 
   it('makes the app store the primary action, not a lead form', () => {
@@ -50,17 +65,65 @@ describe('Individual Traveller Page (FEAT-006)', () => {
 describe('Corporate Audience Page (FEAT-009)', () => {
   const html = markup(<BusinessPage />);
 
-  it('names both documented corporate use cases', () => {
-    // FEAT-009 AC1.
+  it('names the three corporate use cases', () => {
+    // FEAT-009 AC1 — the two documented use cases plus Executive & VIP travel,
+    // added on client feedback to widen enterprise appeal.
     expect(html).toMatch(/staff travel between branches/i);
     expect(html).toMatch(/field operations/i);
+    expect(html).toMatch(/executive/i);
+    expect(html).toMatch(/vip travel/i);
   });
 
   it('describes the corporate dashboard at marketing depth', () => {
     // FEAT-009 AC2 — capability names, no internal implementation detail.
-    expect(html).toMatch(/staff management/i);
+    // The ampersand in "People & team management" renders as &amp; in static
+    // markup, so the name is matched a-word-at-a-time.
+    expect(html).toMatch(/people/i);
+    expect(html).toMatch(/team management/i);
     expect(html).toMatch(/live trip monitoring/i);
     expect(html).toMatch(/history and reports/i);
+    expect(html).toMatch(/journey analytics/i);
+  });
+
+  it('answers the security review with role-based access', () => {
+    // Businesses ask about access control immediately; the data-posture card
+    // answers it without claiming any compliance certification.
+    expect(html).toMatch(/access is role-based/i);
+  });
+
+  it('names the industries SafePass fits, without claiming any as a customer', () => {
+    expect(html).toMatch(/suitable for organisations like/i);
+    expect(html).toMatch(/oil/i);
+    expect(html).toMatch(/financial services/i);
+    expect(html).toMatch(/government/i);
+  });
+
+  it('presents the "why choose SafePass" comparison', () => {
+    expect(html).toMatch(/why organisations choose safepass/i);
+    expect(html).toMatch(/live monitored journey/i);
+    expect(html).toMatch(/full audit history/i);
+    expect(html).toMatch(/emergency response workflow/i);
+  });
+
+  it('annotates the dashboard preview with a numbered call-out legend', () => {
+    expect(html).toMatch(/active journeys/i);
+    expect(html).toMatch(/live officer monitoring/i);
+    expect(html).toMatch(/incident history/i);
+  });
+
+  it('presents an explicitly-illustrative case study, not published data', () => {
+    // R-007: the figures must be framed as an example, so they are never read
+    // as SafePass operational data.
+    expect(html).toMatch(/illustrative example/i);
+    expect(html).toMatch(/324/i);
+    expect(html).toMatch(/arrival confirmation/i);
+    expect(html).toMatch(/illustrative figures shown/i);
+  });
+
+  it('shows the assurance strip for procurement reviewers', () => {
+    expect(html).toMatch(/built for procurement and legal review/i);
+    expect(html).toMatch(/audit logs/i);
+    expect(html).toMatch(/role-based access/i);
   });
 
   it('offers the downloadable overview asset', () => {
@@ -100,6 +163,30 @@ describe('Transport Partner Page (FEAT-011)', () => {
     expect(html).toMatch(/vehicle management/i);
     expect(html).toMatch(/driver management/i);
     expect(html).toMatch(/QR/);
+    // Deliberately NOT "Driver Verification History": the QR verification page
+    // never exposes driver data, so that claim is not shipped (Non-Negotiable 5).
+    expect(html).not.toMatch(/driver verification history/i);
+  });
+
+  it('gives the QR code its own section as a passenger trust signal', () => {
+    // Client feedback: the per-vehicle QR is a top selling point, so it gets a
+    // dedicated section rather than sitting inside a capability list.
+    expect(html).toMatch(/every vehicle gets its own safepass identity/i);
+    expect(html).toMatch(/correct vehicle/i);
+    expect(html).toMatch(/documents are current/i);
+  });
+
+  it('lists the operator benefits and fleet types SafePass serves', () => {
+    expect(html).toMatch(/why operators partner with safepass/i);
+    expect(html).toMatch(/reduce incident response time/i);
+    expect(html).toMatch(/suitable for/i);
+    expect(html).toMatch(/ride-hailing fleets/i);
+    expect(html).toMatch(/logistics personnel transport/i);
+  });
+
+  it('answers the passenger-friction question directly', () => {
+    expect(html).toMatch(/will passengers have to install safepass/i);
+    expect(html).toMatch(/works without changing your existing booking process/i);
   });
 
   it('answers cost and operational effort head-on', () => {
@@ -169,5 +256,25 @@ describe('cross-page audience separation (R-001)', () => {
     expect(individual).not.toMatch(/fleet size/i);
     expect(business).not.toMatch(/fleet size/i);
     expect(transport).toMatch(/fleet/i);
+  });
+
+  it('carries the Road Journey Assurance category on every audience page', () => {
+    // The owned category name must be consistent across the three audience
+    // pages, so the site never presents two different category names.
+    const individual = markup(<IndividualPage />);
+    const business = markup(<BusinessPage />);
+    const transport = markup(<TransportPartnersPage />);
+
+    expect(individual).toMatch(/road journey assurance/i);
+    expect(business).toMatch(/road journey assurance/i);
+    expect(transport).toMatch(/road journey assurance/i);
+  });
+
+  it('reframes the lead lines around certainty, not just monitoring', () => {
+    const individual = markup(<IndividualPage />);
+    const business = markup(<BusinessPage />);
+
+    expect(individual).toMatch(/certainty that someone knows where you are/i);
+    expect(business).toMatch(/prove you met your duty of care/i);
   });
 });

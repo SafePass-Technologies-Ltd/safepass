@@ -28,10 +28,21 @@ export const about: LegalDocument = {
   lastUpdated: '2026-07-27',
   showTableOfContents: false,
   intro: [
-    'SafePass is a safety-focused satnav platform for road travel in Nigeria. Where a conventional navigation app answers "what is the fastest route", SafePass answers "is this journey safe, and is anyone watching it" — layering live human monitoring and verified incident intelligence on top of navigation.',
+    'SafePass is a safety-focused satnav platform for road travel in Nigeria. Where a conventional navigation app answers "what is the fastest route", SafePass answers "is this journey safe, and is anyone watching it", layering live human monitoring and verified incident intelligence on top of navigation.',
     'Our tagline is the shortest statement of why the company exists: Every Journey Matters.',
   ],
   sections: [
+    {
+      id: 'why-safepass-exists',
+      heading: 'Why SafePass Exists',
+      body: [
+        // Client feedback: lead with the problem, not the company history.
+        // "Investors don't invest in products. They invest in companies — and
+        // this is the problem the company exists to solve."
+        'Every year, millions of journeys across Nigeria begin without anyone knowing whether the road ahead is safe, whether someone will notice if something goes wrong, or whether reliable information exists to help travellers make informed decisions.',
+        'SafePass was created to change that. Our goal is simple: make every journey safer through better information, human monitoring, and trusted incident intelligence.',
+      ],
+    },
     {
       id: 'what-we-do',
       heading: 'What We Do',
@@ -46,18 +57,21 @@ export const about: LegalDocument = {
       body: [
         'Four things separate SafePass from a tracking app with a map in it.',
       ],
+      // Icons beside each pillar (client feedback: shield, people, intelligence,
+      // evidence) break up the text without diluting the professionalism.
+      listIcons: ['navigation', 'human', 'intelligence', 'evidence'],
       list: [
-        'Safety-first navigation — route alerts driven by risk, not only by traffic.',
-        'Human-in-the-loop monitoring — real monitoring officers watching active journeys, not only automated alerting. A missed check-in is seen by a person.',
-        'An incident intelligence network — checkpoints, attacks, and hazards are reported and verified rather than taken at face value.',
-        'Emergency evidence capture — silent background recording on panic trigger, so an incident leaves a record.',
+        'Safety-first navigation: route alerts driven by risk, not only by traffic.',
+        'Human-in-the-loop monitoring: real monitoring officers watching active journeys, not only automated alerting. A missed check-in is seen by a person.',
+        'An incident intelligence network: checkpoints, attacks, and hazards are reported and verified rather than taken at face value.',
+        'Emergency evidence capture: silent background recording on panic trigger, so an incident leaves a record.',
       ],
     },
     {
       id: 'how-safety-data-is-verified',
       heading: 'How Our Safety Data Is Verified',
       body: [
-        'The credibility of a safety product rests entirely on the credibility of its data, so we treat verification as part of the product rather than as a disclaimer. Incident and checkpoint reports move through a verification process before they influence what a traveller is shown, and our monitoring team curates map markers directly — which is also how the safety map is seeded in a new corridor before enough travellers are using it to sustain itself.',
+        'The credibility of a safety product rests entirely on the credibility of its data, so we treat verification as part of the product rather than as a disclaimer. Incident and checkpoint reports move through a verification process before they influence what a traveller is shown, and our monitoring team curates map markers directly. That is also how the safety map is seeded in a new corridor before enough travellers are using it to sustain itself.',
         'Every safety statistic we publish on this site carries its source and the date it was current. If we cannot show you where a number came from, we do not publish it.',
       ],
     },
@@ -65,27 +79,30 @@ export const about: LegalDocument = {
       id: 'who-we-serve',
       heading: 'Who We Serve',
       body: [
-        'SafePass is one platform with four surfaces, because the people who need road safety in Nigeria need it in different shapes.',
+        'SafePass is one platform with four surfaces, because the people who need safety in Nigeria need it in different shapes.',
       ],
       list: [
-        'Individual travellers — the mobile app, for inter-city journeys and travel through high-risk corridors.',
-        'Corporate clients — a corporate dashboard for staff management, journey registration, live monitoring, and reporting. Built for organisations moving people: banks between branches, oil and gas field operations, NGOs with staff in remote areas.',
-        'Commercial transport partners — a partner dashboard for vehicle and driver management, document verification, and monitoring of linked journeys, for bus companies, fleet operators, and logistics firms.',
-        'SafePass monitoring officers — the internal admin dashboard where live journeys are watched, incidents are managed, and escalations are handled.',
+        'Individual travellers: the mobile app, for inter-city journeys and travel through high-risk corridors.',
+        'Corporate clients: a corporate dashboard for staff management, journey registration, live monitoring, and reporting. Built for organisations moving people: banks between branches, oil and gas field operations, NGOs with staff in remote areas.',
+        'Commercial transport partners: a partner dashboard for vehicle and driver management, document verification, and monitoring of linked journeys, for bus companies, fleet operators, and logistics firms.',
+        'SafePass monitoring officers: the internal admin dashboard where live journeys are watched, incidents are managed, and escalations are handled.',
       ],
     },
     {
       id: 'where-we-operate',
       heading: 'Where We Operate',
       body: [
-        'Nigeria is our initial market, and the product is built around Nigerian road travel specifically — the corridors, the checkpoint reality, and the incident patterns that travellers here actually face. Pan-African expansion is on our roadmap beyond the initial launch.',
+        'Nigeria is our initial market, and the product is built around Nigerian road travel specifically: the corridors, the checkpoint reality, and the incident patterns that travellers here actually face. Pan-African expansion is on our roadmap beyond the initial launch.',
+        // Client feedback — makes the Nigeria-first choice sound deliberate
+        // rather than incidental.
+        'We chose Nigeria first because it presents one of the world’s most demanding safety environments. Building for Nigeria means building for some of the toughest operational conditions anywhere.',
       ],
     },
     {
       id: 'working-with-us',
       heading: 'Working With Us',
       body: [
-        'If you are evaluating SafePass for an organisation — staff travel, fleet safety, or passenger safety — we would rather have a conversation than have you piece it together from a brochure. Corporate and transport-partner enquiries go to a person, not an autoresponder.',
+        'If you are evaluating SafePass for an organisation (staff travel, fleet safety, or passenger safety), we would rather have a conversation than have you piece it together from a brochure. Corporate and transport-partner enquiries go to a person, not an autoresponder.',
         `You can reach us at ${clientEnv.fallbackContactEmail}.`,
       ],
     },

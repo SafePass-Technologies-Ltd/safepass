@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
+import { Check } from 'lucide-react';
 import { Reveal } from '@/components/motion/reveal';
 import { Container, Section } from '@/components/ui/container';
 import { CredibilityPreview } from '@/sections/credibility';
@@ -29,9 +30,9 @@ import { TRANSPORT_CONTENT } from '@/lib/content/audience-pages';
  */
 
 export const metadata: Metadata = {
-  title: 'SafePass for transport partners — monitored trips for fleets',
+  title: 'SafePass for transport partners: monitored trips for fleets',
   description:
-    'Vehicle and driver verification, QR-checkable vehicles, and journeys monitored live by real officers — a passenger-safety differentiator fleet operators can advertise.',
+    'Vehicle and driver verification, QR-checkable vehicles, and journeys monitored live by real officers. A passenger-safety differentiator fleet operators can advertise.',
   alternates: { canonical: '/transport-partners' },
 };
 
@@ -74,11 +75,86 @@ export default function TransportPartnersPage() {
         </Container>
       </Section>
 
+      {/* "Every vehicle gets its own SafePass identity" — the QR code section.
+          Client feedback: the per-vehicle QR is one of the biggest selling
+          points and was undersold, so it gets its own section. Each element is
+          a capability claim, not a figure (R-007). */}
+      <ContentSection
+        heading={TRANSPORT_CONTENT.vehicleIdentity.heading}
+        lead={TRANSPORT_CONTENT.vehicleIdentity.lead}
+      >
+        <Reveal>
+          <ul className="grid gap-sm sm:grid-cols-2">
+            {TRANSPORT_CONTENT.vehicleIdentity.checks.map((check) => (
+              <li key={check} className="flex items-center gap-xs">
+                <span
+                  aria-hidden="true"
+                  className="flex size-(--size-icon-sm) shrink-0 items-center justify-center rounded-full bg-success/15 text-success"
+                >
+                  <Check className="size-(--size-icon-sm)" strokeWidth={2.5} />
+                </span>
+                <span className="text-body text-text-primary">{check}</span>
+              </li>
+            ))}
+          </ul>
+        </Reveal>
+        <Reveal>
+          <p className="text-body-small text-text-secondary">
+            {TRANSPORT_CONTENT.vehicleIdentity.note}
+          </p>
+        </Reveal>
+      </ContentSection>
+
+      <ContentSection
+        heading={TRANSPORT_CONTENT.partnerBenefits.heading}
+        lead={TRANSPORT_CONTENT.partnerBenefits.lead}
+      >
+        <Reveal>
+          <ul className="grid gap-sm sm:grid-cols-2 lg:grid-cols-3">
+            {TRANSPORT_CONTENT.partnerBenefits.items.map((benefit) => (
+              <li
+                key={benefit}
+                className="flex items-center gap-xs rounded-md border border-border bg-surface-secondary px-md py-sm"
+              >
+                <span
+                  aria-hidden="true"
+                  className="flex size-(--size-icon-sm) shrink-0 items-center justify-center rounded-full bg-success/15 text-success"
+                >
+                  <Check className="size-(--size-icon-sm)" strokeWidth={2.5} />
+                </span>
+                <span className="text-body font-medium text-text-primary">{benefit}</span>
+              </li>
+            ))}
+          </ul>
+        </Reveal>
+      </ContentSection>
+
       <ContentSection
         heading={TRANSPORT_CONTENT.differentiator.heading}
         lead={TRANSPORT_CONTENT.differentiator.lead}
       >
         <ContentCardGrid cards={TRANSPORT_CONTENT.differentiator.points} columns={3} />
+      </ContentSection>
+
+      {/* Fleet types SafePass fits — client feedback: the page read too
+          bus-focused, so it now names the segments. No operator is claimed as a
+          customer; this is fit-legibility only. */}
+      <ContentSection
+        heading={TRANSPORT_CONTENT.suitableFor.heading}
+        lead={TRANSPORT_CONTENT.suitableFor.lead}
+      >
+        <Reveal>
+          <ul className="flex flex-wrap gap-sm">
+            {TRANSPORT_CONTENT.suitableFor.industries.map((industry) => (
+              <li
+                key={industry}
+                className="rounded-full border border-border bg-surface-secondary px-md py-xs text-body font-medium text-text-primary"
+              >
+                {industry}
+              </li>
+            ))}
+          </ul>
+        </Reveal>
       </ContentSection>
 
       <ContentSection

@@ -1,4 +1,5 @@
 import { HeroSection } from '@/sections/hero/hero-section';
+import { TrustSection } from '@/sections/trust/trust-section';
 import { HowItWorksSection } from '@/sections/how-it-works/how-it-works-section';
 import { CredibilityPreview } from '@/sections/credibility';
 import { AudienceEntryCards } from '@/sections/audience-entry/audience-entry-cards';
@@ -10,14 +11,21 @@ import { AudienceEntryCards } from '@/sections/audience-entry/audience-entry-car
  * initial HTML. The motion layer hydrates on top of it (the screen's Loading
  * state), and if it never hydrates at all the page still reads correctly.
  *
- * Section order follows the screen doc: Hero → How It Works → Credibility
- * Preview → Audience Entry Cards → Footer (supplied by `(site)/layout.tsx`).
+ * Section order follows the screen doc: Hero → Trust → How It Works →
+ * Credibility Preview → Audience Entry Cards → Footer (supplied by
+ * `(site)/layout.tsx`). The Trust section was added between Hero and How It
+ * Works (client feedback): the homepage should first answer "why does this
+ * exist and can I trust it" before the visitor reaches price.
  */
 export default function HomePage() {
   return (
     <>
       {/* FEAT-003 */}
       <HeroSection />
+
+      {/* Client-requested trust layer (not carried by a feature ID — see the
+          section's own doc). */}
+      <TrustSection />
 
       {/* FEAT-004 */}
       <HowItWorksSection />

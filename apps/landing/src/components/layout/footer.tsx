@@ -9,6 +9,7 @@ import {
   CONTACT_EMAIL,
   FOOTER_EXPLORE,
   FOOTER_LEGAL,
+  SOCIAL_LINKS,
 } from '@/lib/content/navigation';
 
 /**
@@ -35,9 +36,12 @@ export function Footer() {
   return (
     <footer className="mt-3xl border-t border-border bg-surface-secondary">
       <Container className="flex flex-col gap-2xl py-2xl">
-        <div className="grid gap-xl md:grid-cols-[2fr_1fr_1fr]">
+        {/* Identity spans wider than the nav columns; the navs (Explore, Legal,
+            and Social when populated) sit to the right. Flex rather than a fixed
+            grid so the Social column can appear without redefining the layout. */}
+        <div className="flex flex-col gap-xl md:flex-row md:gap-lg">
           {/* Identity + contact method (FEAT-002 acceptance criterion 3). */}
-          <div className="flex flex-col gap-sm">
+          <div className="flex flex-col gap-sm md:mr-xl md:w-[40%] md:shrink-0">
             {/* Unlinked: the footer's Explore column already carries a Home
                 link, so a second one on the wordmark is redundant. */}
             <Logo href={null} size="lg" />
@@ -77,6 +81,32 @@ export function Footer() {
             ))}
           </nav>
         </div>
+
+        {/* Social/press links (FEAT-002's description mentions them), in their
+            own row so they never crowd the nav columns or need a grid change.
+            Hidden entirely until `SOCIAL_LINKS` is non-empty — it is
+            deliberately empty until the client supplies real URLs (never a
+            fabricated handle). Each is an external anchor whose label is the
+            accessible name, so the platform is announced by screen readers and
+            `rel` guards window.opener. */}
+        {SOCIAL_LINKS.length > 0 && (
+          <nav aria-label="Social" className="flex flex-col gap-sm">
+            <h2 className="text-caption uppercase text-text-secondary">Follow us</h2>
+            <div className="flex flex-wrap gap-lg">
+              {SOCIAL_LINKS.map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-body-small text-text-secondary transition-colors duration-[var(--duration-instant)] ease-out-smooth hover:text-text-primary"
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
+          </nav>
+        )}
 
         {/* Repeated secondary CTAs, one per audience. `secondary` rather than
             `primary` variant: branding.md reserves shadow-glow-primary for the

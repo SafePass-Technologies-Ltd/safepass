@@ -8,10 +8,13 @@
  *
  * Every claim here traces to a document. The headline is `branding.md`'s
  * tagline; the supporting sentence restates the differentiators listed in
- * `docs/SafePass/README.md` ("safety-focused satnav", "human-in-the-loop
- * monitoring — real officers watching trips, not just automated alerts").
- * Nothing here asserts a statistic, a response time, or a coverage figure,
- * because no document supplies one.
+ * `docs/SafePass/README.md` ("human-in-the-loop monitoring — real officers
+ * watching trips, not just automated alerts"), reworded in the post-launch
+ * client copy pass to lead with why SafePass exists rather than what it is.
+ * `marketLine` names the segments the site serves, drawn from the three
+ * audience paths in screens.md's navigation map. Nothing here asserts a
+ * statistic, a response time, or a coverage figure, because no document
+ * supplies one.
  */
 
 export interface HeroContent {
@@ -29,6 +32,8 @@ export interface HeroContent {
   headline: string;
   /** The one-sentence explanation required by FEAT-003's first criterion. */
   subheadline: string;
+  /** A short line framing the market the product serves, beneath the subheadline. */
+  marketLine: string;
   /** Label above the store badges. */
   ctaLabel: string;
   /** Secondary action for visitors who want detail (and pricing) first. */
@@ -38,15 +43,24 @@ export interface HeroContent {
 }
 
 export const HERO: HeroContent = {
-  eyebrow: 'Road safety monitoring for Nigeria',
+  // The owned category name. Client positioning: SafePass is not a tracker, not
+  // a satnav, not even "a monitoring app" — it is a Road Journey Assurance
+  // Platform. The category is the thing SafePass owns in the market, so it sits
+  // where the eyebrow (the first line a visitor reads) is.
+  eyebrow: 'Road Journey Assurance Platform',
   headlineLines: ['Every Journey', 'Matters.'],
   headline: 'Every Journey Matters.',
   subheadline:
-    'SafePass is a safety-focused satnav: you register your road trip, and a real SafePass monitoring officer watches it live from departure to arrival — not an automated alert on its own.',
-  ctaLabel: 'Get SafePass on your phone',
+    'Plan your journey. Travel with certainty. Every monitored trip is watched live by a trained SafePass monitoring officer from departure to arrival, combining intelligent technology with real human oversight when it matters most.',
+  marketLine:
+    'Designed for inter-city travel, high-risk routes, business travel and passenger transport.',
+  // The "Get the App" wording is the primary, store-agnostic action: a visitor
+  // deciding which store to use is a second decision that acts as friction
+  // before conversion. The store badges beneath are the concrete options.
+  ctaLabel: 'Get the App',
   // Names pricing deliberately: Flow 1's Alternate Path C loses the visitor who
   // "cannot find pricing quickly", and the traveller page (FEAT-006) is where
   // Flow 1 step 5 says the figures live.
-  secondaryCta: { label: 'See pricing for travellers', href: '/individual' },
+  secondaryCta: { label: 'View Plans & Pricing', href: '/individual' },
   scrollCue: 'How it works',
 };

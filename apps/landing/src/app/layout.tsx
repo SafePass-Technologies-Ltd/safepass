@@ -29,7 +29,7 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(clientEnv.siteUrl),
   title: {
-    default: 'SafePass — Every Journey Matters',
+    default: 'SafePass: Every Journey Matters',
     template: '%s | SafePass',
   },
   description:
