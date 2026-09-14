@@ -4,7 +4,7 @@
    SafePassLanding — Design Tokens
 
    Single source of truth for styling, implementing docs/SafePassLanding/branding.md
-   Section 3 (Design System) and Section 6 (Motion Design). There is no
+   (Design System) and (Motion Design). There is no
    tailwind.config.ts and no second token file anywhere in this app.
 
    LIGHT/DARK MECHANISM
@@ -23,7 +23,7 @@
    ============================================================================= */
 
 :root {
-  /* --- Primary (branding.md 3.1) --- */
+  /* --- Primary (branding.md) --- */
   --sp-primary: #0ea5e9;
   --sp-primary-hover: #0c87bd;
   --sp-primary-light: #e0f4fd;
@@ -60,7 +60,7 @@
   /* --- Night-navy anchor: the logo's own background tone --- */
   --sp-ink: #1e293b;
 
-  /* --- Shadows (3.4). Light mode leans on soft slate shadows. --- */
+  /* --- Shadows. Light mode leans on soft slate shadows. --- */
   --sp-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
   --sp-shadow-md: 0 6px 16px rgba(15, 23, 42, 0.08);
   --sp-shadow-lg: 0 16px 40px rgba(15, 23, 42, 0.12);
@@ -94,7 +94,7 @@
 
   /* Dark shadows lean on deeper opacity rather than a border: the ink
      background is already dark enough that a light border reads as a harsh
-     outline rather than elevation (branding.md 3.4). */
+     outline rather than elevation (branding.md). */
   --sp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --sp-shadow-md: 0 6px 20px rgba(0, 0, 0, 0.6);
   --sp-shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.75);
@@ -105,7 +105,7 @@
 
 @theme inline {
   /* ---------------------------------------------------------------------
-     Colors — all 15 tokens from branding.md 3.1, both modes
+     Colors — all 15 tokens from branding.md, both modes
      --------------------------------------------------------------------- */
   --color-primary: var(--sp-primary);
   --color-primary-hover: var(--sp-primary-hover);
@@ -127,7 +127,7 @@
   --color-ink: var(--sp-ink);
 
   /* ---------------------------------------------------------------------
-     Typography — branding.md 3.2
+     Typography — branding.md
      Inter (variable) for display+body, JetBrains Mono for stat/data readouts.
      Weight axis 400-700 is used for the scroll-driven "focus pulling into
      view" headline reveal, which is why the variable font matters.
@@ -172,7 +172,7 @@
   --text-stat--font-weight: 600;
 
   /* ---------------------------------------------------------------------
-     Spacing — 4px base grid, branding.md 3.3
+     Spacing — 4px base grid, branding.md
      --------------------------------------------------------------------- */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
@@ -190,7 +190,7 @@
   --radius-full: 9999px;
 
   /* --- Sizing: CTAs sit above the 44px a11y floor because app download and
-         request-demo are this site's entire purpose (branding.md 3.3). --- */
+         request-demo are this site's entire purpose (branding.md). --- */
   --size-button-height: 48px;
   --size-input-height: 48px;
   /* Height of the persistent header. A token rather than a literal because two
@@ -202,12 +202,12 @@
   --size-icon-md: 24px;
   --size-icon-lg: 40px;
 
-  /* --- Container max-width (branding.md 8, Perspective & Scale) --- */
+  /* --- Container max-width (branding.md Perspective & Scale) --- */
   --container-content: 1200px;
   --container-prose: 800px;
 
   /* ---------------------------------------------------------------------
-     Shadows — branding.md 3.4
+     Shadows — branding.md
      --------------------------------------------------------------------- */
   --shadow-none: none;
   --shadow-sm: var(--sp-shadow-sm);
@@ -218,7 +218,7 @@
   --shadow-glow-primary: var(--sp-shadow-glow-primary);
 
   /* ---------------------------------------------------------------------
-     Easing — branding.md 6. Never inline a cubic-bezier at a call site;
+     Easing — branding.md. Never inline a cubic-bezier at a call site;
      GSAP reads these through lib/motion/constants.ts.
      --------------------------------------------------------------------- */
   --ease-out-smooth: cubic-bezier(0.16, 1, 0.3, 1);
@@ -228,10 +228,10 @@
   --ease-in-power: cubic-bezier(0.7, 0, 0.84, 0);
 
   /* ---------------------------------------------------------------------
-     Durations — branding.md 6's Timing Scale.
+     Durations — branding.md's Timing Scale.
      EXTENDED token: Tailwind v4 has no --duration-* theme namespace, so these
      are consumed as duration-[--duration-normal] in markup and read by GSAP
-     via lib/motion/constants.ts. Recorded in IMPLEMENTATION.md 3a.
+     via lib/motion/constants.ts. Recorded in IMPLEMENTATION.md.
      --------------------------------------------------------------------- */
   --duration-instant: 100ms;
   --duration-fast: 200ms;
@@ -242,7 +242,7 @@
 }
 
 /* =============================================================================
-   Gradients (branding.md 3.1, Creative Color)
+   Gradients (branding.md, Creative Color)
    EXTENDED: gradients have no native Tailwind theme slot, so they're exposed as
    utility classes rather than as raw values copied into components.
    ============================================================================= */
@@ -292,7 +292,7 @@
    Base layer
 
    Accessibility lives here, not in individual sections, so every feature slice
-   inherits it (branding.md Section 4).
+   inherits it (branding.md Accessibility).
    ============================================================================= */
 
 @layer base {
@@ -311,7 +311,7 @@
   }
 
   /* 2px primary outline at 2px offset on EVERY interactive element.
-     branding.md Section 4: "never removed for aesthetic reasons even during
+     branding.md Accessibility: "never removed for aesthetic reasons even during
      motion sequences." */
   :focus-visible {
     outline: 2px solid var(--color-primary);
@@ -346,7 +346,7 @@
 }
 
 /* =============================================================================
-   Reduced motion — branding.md Section 8: a HARD requirement, not a nicety.
+   Reduced motion — branding.md Reduced Motion: a HARD requirement, not a nicety.
 
    "for a product whose credibility depends on the content being trustworthy
    independent of the spectacle."
