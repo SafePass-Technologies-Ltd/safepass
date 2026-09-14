@@ -273,6 +273,15 @@ const envSchema = z.object({
   // storage instead. Terraform passes this in production (see
   // terraform/environments/production/main.tf's `EVIDENCE_BUCKET_NAME`).
   EVIDENCE_BUCKET_NAME: z.string().optional(),
+  // S3 bucket for transport compliance documents (FEAT-017) -- see
+  // apps/api/src/services/document.service.ts and
+  // terraform/modules/s3/main.tf's evidence bucket for the provisioning
+  // pattern. Optional: unset in local development, where
+  // document.routes.ts falls back to local disk storage (same pattern as
+  // emergency audio). In production this MUST be set by Terraform --
+  // without it the upload endpoint fails closed (500) rather than writing
+  // to ephemeral container disk.
+  DOCUMENTS_BUCKET_NAME: z.string().optional(),
   // Paystack requires an email address on every transaction, but users who
   // sign up with a phone number (no email on file) don't have one --
   // without a fallback, wallet top-up for those accounts fails outright
