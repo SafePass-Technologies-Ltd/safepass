@@ -67,9 +67,9 @@ This file freezes the API surface the SafePass team builds against. It was deriv
 | POST | `/v1/payments/initialize` | user | C-009 | Initialize a wallet top-up |
 | POST | `/v1/payments/verify` | user | Frozen | Verify a payment reference |
 | POST | `/v1/payments/webhook` | gateway | Frozen | Gateway charge callback |
-| GET | `/v1/messages/conversations` | user | Frozen | List conversations |
-| GET | `/v1/messages/conversations/:tripId/messages` | user | Frozen | Conversation thread |
-| POST | `/v1/messages` | user | C-012 | Send a journey-scoped message |
+| GET | `/v1/messages/conversations` | officer+ | Frozen | List conversations |
+| GET | `/v1/messages/conversations/:tripId/messages` | officer+ | Frozen | Conversation thread |
+| POST | `/v1/messages` | officer+ | C-012 | Send a journey-scoped message (officer/admin surface) |
 | GET | `/v1/trips/:tripId/messages` | user/admin | Frozen | Trip message thread |
 | POST | `/v1/trips/:tripId/messages` | user/admin | C-012 | Send trip message |
 | POST | `/v1/trips/:tripId/messages/read` | user/admin | Frozen | Mark thread read |
@@ -210,8 +210,8 @@ Status: Frozen
 Description: Marketing lead intake from the landing site. Shape per `lead.schema.ts` in `@safepass/shared`.
 Auth: service key (anonymous visitor).
 Request: `LeadSubmission` per docs/SafePassLanding/schema.md (submissionId, leadType, sourcePage, submittedAt, contact and type-specific fields).
-Response 201: `{ "id": "string", "status": "new" }`
-Errors: 400 (validation), 409 (duplicate submissionId reconciled to the existing lead).
+Response 201: `{ "id": "string", "submissionId": "string", "status": "received" }`
+Errors: 400 (validation). A duplicate submissionId is not an error: the backend returns 200 with the already-received lead.
 Note: the landing site never stores leads; this endpoint is the system of record.
 
 ### C-004 — POST /v1/trips
@@ -245,8 +245,8 @@ Status: Frozen
 Description: Report a GPS position during an active trip. Writes the live-state entry and, on significant change, a sampled history point.
 Auth: user (trip owner).
 Request: `{ "lat": "number", "lng": "number", "speed": "number|null", "heading": "number|null", "recordedAt": "date" }`
-Response 200: `{ "received": true, "arrived": "boolean" }`
-Errors: 400, 404 (trip not found or not active).
+Response 200: `{ "status": "ok" }`
+Errors: 400, 404, 422 (trip not found, not owned, or not active).
 
 ### C-007 — POST /v1/trips/:tripId/complete · POST /v1/trips/:tripId/cancel
 Status: Frozen
@@ -260,39 +260,39 @@ Status: Frozen
 Description: Own wallet balance and transaction history.
 Auth: user.
 Response 200 (wallet): `{ "id": "string", "balance": "number", "currency": "NGN" }`
-Response 200 (transactions): `{ "transactions": [{ "id": "string", "type": "string", "amount": "number", "balanceAfter": "number", "description": "string|null", "createdAt": "date" }] }`
+Response 200 (transactions): `{ "wallet": { "id": "string", "balance": "number" }, "transactions": [{ "id": "string", "type": "string", "amount": "number", "balanceAfter": "number", "description": "string|null", "createdAt": "date" }] }`
 
 ### C-009 — POST /v1/payments/initialize
 Status: Frozen
-Description: Initialize a wallet top-up at the payment gateway.
+Description: Initialize a wallet top-up at the payment gateway and return the checkout redirect.
 Auth: user.
-Request: `{ "amount": "number", "ownerType": "user|organization", "ownerId": "string" }`
-Response 200: `{ "reference": "string", "checkoutUrl": "string" }`
-Errors: 400 (amount below minimum).
+Request: `{ "amount": "number" (min 2000), "email": "string|null", "gateway": "paystack|flutterwave" (default paystack) }`
+Response 201: `{ "paymentId": "string", "authorizationUrl": "string", "reference": "string" }`
+Errors: 400 (amount below minimum), 500 (gateway error).
 
 ### C-010 — POST /v1/emergency/trigger
 Status: Frozen
-Description: Raise an emergency for a trip (panic flow) and start evidence capture.
+Description: Raise an emergency for a monitored trip (panic flow). Flags the trip emergency and broadcasts to officers.
 Auth: user (trip owner).
-Request: `{ "tripId": "string", "triggerType": "panic_button" }`
-Response 201: `{ "emergencyId": "string", "status": "active" }`
-Errors: 400, 404.
+Request: `{ "tripId": "string", "latitude": "number", "longitude": "number", "speed": "number|null" }`
+Response 201: the emergency event row `{ "id": "string", "tripId": "string", "triggerType": "panic_button", "status": "active", "latitude": "number", "longitude": "number", ... }`
+Errors: 403 (not the trip owner), 404 (trip not found), 422 (trip not active or delayed).
 
 ### C-011 — POST /v1/emergency/:id/audio
 Status: Frozen
 Description: Upload one finished audio chunk; appends to the emergency's recording URLs.
 Auth: user (trip owner).
 Request: multipart audio file.
-Response 200: `{ "chunkIndex": "number", "url": "string" }`
-Errors: 400, 404.
+Response 201: `{ "emergencyEventId": "string", "audioRecordingUrls": "string[]" }`
+Errors: 403 (not the emergency owner), 404 (emergency not found).
 
 ### C-012 — POST /v1/messages · POST /v1/trips/:tripId/messages
 Status: Frozen
-Description: Send a journey-scoped message. Blocked on terminal trips.
-Auth: user, officer, or admin (sender role in the body).
-Request: `{ "tripId": "string", "content": "string" }`
-Response 201: `{ "id": "string", "senderRole": "string", "createdAt": "date" }`
-Errors: 422 (trip ended), 400.
+Description: Send a message. The officer and admin surface uses `conversationId` (the trip id) and is restricted to officers and admins; the traveller sends through the trip-scoped route.
+Auth: officer or admin for `POST /v1/messages`; trip owner for `POST /v1/trips/:tripId/messages`.
+Request: `{ "conversationId": "string (uuid, equals tripId)", "content": "string" }`
+Response 201: `{ "id": "string", "conversationId": "string", "content": "string", "senderRole": "string", "createdAt": "date" }`
+Errors: 403 (non-officer on the admin surface), 404 (trip not found), 422 (trip ended).
 
 ### C-013 — POST /v1/incidents
 Status: Frozen
@@ -315,19 +315,19 @@ Errors: 400.
 Status: Frozen
 Description: Markers near a point for route alerts; user interactions that move verification state.
 Auth: user.
-Request (nearby): `{ "lat": "number", "lng": "number", "radiusMeters": "number" }`
+Request (nearby, query params): `?latitude=<number>&longitude=<number>&radius=<meters>`
 Request (interact): `{ "action": "confirm|dispute_not_there|reclassify_police|reclassify_suspicious" }`
 Response 200 (nearby): `{ "markers": [{ "id", "markerType", "lat", "lng", "title", "severity", "verificationStatus" }] }`
-Response 200 (interact): `{ "markerId": "string", "verificationStatus": "string", "verificationWeight": "number" }`
+Response 201 (interact): `{ "markerId": "string", "verificationStatus": "string", "verificationWeight": "number" }`
 
 ### C-015 — POST /v1/org/join/resolve · POST /v1/org/join
 Status: Frozen
 Description: Resolve an invite token to its org, then join with consent.
 Auth: user.
 Request (resolve): `{ "token": "string" }`
-Request (join): `{ "token": "string", "consent": true }`
-Response 200 (resolve): `{ "organization": { "id", "name", "type" } }`
-Response 201 (join): `{ "slotId": "string", "organizationId": "string" }`
+Request (join): `{ "token": "string" }`
+Response 200 (resolve): `{ "data": { "orgId": "string", "orgName": "string", "orgType": "corporate|transport_partner" } }`
+Response 200 (join): the redeemed membership record
 Errors: 400 (expired, used, or invalid token), 409 (already in an org).
 
 ## Change process
