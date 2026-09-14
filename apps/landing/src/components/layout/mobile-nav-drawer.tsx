@@ -87,25 +87,43 @@ export function MobileNavDrawer({
    * portal is actually in the DOM; `shown` is whether it sits at its final,
    * visible position. Keeping the portal mounted through the exit lets the
    * panel fade/slide OUT instead of vanishing the moment it closes.
+   *
+   * The state writes below are all deferred to timers/callbacks — React's
+   * lint discipline (and correct React 19 practice) forbids synchronous
+   * setState inside an effect body because it cascades a render during the
+   * commit. The open/close EVENTS carry the intent; these effects only
+   * schedule the timed halves of the enter/exit choreography.
    */
   const [mounted, setMounted] = useState(false);
   const [shown, setShown] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setMounted(true);
-      // Defer the reveal to the next tick so the hidden state paints first and
-      // the enter transition actually runs (a same-tick class swap is a jump).
-      const timer = window.setTimeout(() => setShown(true), 0);
+      // Mount on the next tick, then the second effect reveals on the frame
+      // after that — the hidden state paints before the enter transition
+      // runs (a same-tick class swap is a jump).
+      const timer = window.setTimeout(() => setMounted(true), 0);
       return () => window.clearTimeout(timer);
     }
 
-    setShown(false);
     // The window matches the CSS transition (duration-normal) so the portal
-    // unmounts only after the exit animation has finished.
+    // unmounts only after the exit animation has finished. A close can arrive
+    // without an event in this tree (browser back/forward), so the hide must
+    // live here rather than only in the close handlers.
     const timer = window.setTimeout(() => setMounted(false), durationMs('normal'));
     return () => window.clearTimeout(timer);
   }, [open]);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    // Reveal on the next tick after the portal exists so the hidden state
+    // paints first; on exit-path renders (open flipped false while still
+    // mounted) this collapses the panel to its hidden transform to start the
+    // fade/slide OUT. Both halves run deferred — never synchronously.
+    const timer = window.setTimeout(() => setShown(open), 0);
+    return () => window.clearTimeout(timer);
+  }, [mounted, open]);
 
   // Keep the header informed of the open state so it can switch to the frosted
   // material for the duration of the overlay (see navbar.tsx). Fired on every
