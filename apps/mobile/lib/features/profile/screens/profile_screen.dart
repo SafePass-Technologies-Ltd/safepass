@@ -381,10 +381,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  /// M-38 Account Deletion — screens.md Screen 7's "Delete My Account"
+  /// FEAT-004 Account Deletion — the "Delete My Account"
   /// element. Shows a scheduled-deletion / legal-hold banner with a Cancel
   /// Deletion action if a request is already in flight; otherwise shows the
-  /// destructive "Delete My Account" text action that navigates to Screen 7a.
+  /// destructive "Delete My Account" text action that navigates to the
+  /// delete-account screen.
   Widget _buildAccountDeletionSection(BuildContext context, ProfileState state) {
     final request = state.deletionRequest;
 

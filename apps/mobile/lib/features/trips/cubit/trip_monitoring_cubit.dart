@@ -138,7 +138,7 @@ class GpsPosition extends Equatable {
 }
 
 /// A nearby safety hazard surfaced from `/v1/markers/nearby`, used to drive
-/// route safety alerts (M-08) while a trip is active.
+/// route safety alerts (FEAT-035) while a trip is active.
 class RouteHazard extends Equatable {
   final String id;
   final String markerType;
@@ -220,10 +220,10 @@ class TripMonitoringState extends Equatable {
   /// check's query radius (see _checkRouteHazards) -- unlike
   /// [newHazardAlert] (a one-shot "just entered range" alert, cleared after
   /// the banner is shown), this is the full current set, redrawn on the map
-  /// every poll cycle. Per features.md's M-07 (Safety Map View): "Map
+  /// every poll cycle. Per features.md's FEAT-034 (Safety Map View): "Map
   /// showing ... active incidents, checkpoints, hotspots along route.
   /// Colour-coded markers by verification level" -- the banner alone
-  /// (M-08) doesn't satisfy that; the map needs the actual marker icons.
+  /// (FEAT-035) doesn't satisfy that; the map needs the actual marker icons.
   final List<RouteHazard> nearbyMarkers;
 
   /// Set once an emergency has been triggered on this trip -- needed to
@@ -326,7 +326,7 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
   WebSocketChannel? _emergencyChannel;
   StreamSubscription<dynamic>? _emergencyWsSub;
 
-  /// Hazard radius (M-08): markers within this distance of the user trigger
+  /// Hazard radius (FEAT-035): markers within this distance of the user trigger
   /// an alert.
   static const double _hazardAlertRadiusMeters = 500;
 
@@ -896,7 +896,7 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
       // Upload position to backend (fire-and-forget).
       _uploadGpsPosition(tripId, position);
 
-      // Route safety alerts (M-08) — throttled proximity check.
+      // Route safety alerts (FEAT-035) — throttled proximity check.
       _maybeCheckRouteHazards(position);
     });
   }
@@ -918,9 +918,9 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
     });
   }
 
-  /// Query nearby markers, update the full visible set for the map (M-07),
+  /// Query nearby markers, update the full visible set for the map (FEAT-034),
   /// and emit an alert for the closest hazard the user hasn't already been
-  /// shown this trip (M-08).
+  /// shown this trip (FEAT-035).
   Future<void> _checkRouteHazards(Position position) async {
     try {
       final response = await _dio.get('/v1/markers/nearby', queryParameters: {
@@ -962,7 +962,7 @@ class TripMonitoringCubit extends Cubit<TripMonitoringState> {
         final hazard = RouteHazard.fromJson(json, distance);
         visibleMarkers.add(hazard);
 
-        // Alert-banner path (M-08) — separate, tighter radius + "already
+        // Alert-banner path (FEAT-035) — separate, tighter radius + "already
         // shown this trip" de-dupe on top of the map layer above.
         if (_shownHazardIds.contains(hazard.id)) continue;
         if (distance > _hazardAlertRadiusMeters) continue;

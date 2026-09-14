@@ -1,8 +1,8 @@
-/// Delete Account Cubit — M-38 Account Deletion (Screen 7a).
+/// Delete Account Cubit — FEAT-004 Account Deletion confirmation flow.
 ///
 /// Drives the multi-step confirmation flow: warning -> (conditional re-auth)
 /// -> typed "DELETE" confirmation -> pre-flight checks -> success. See
-/// docs/SafePass/user_flow.md Flow 10a.
+/// docs/SafePass/user_flow.md deletion-request flow.
 ///
 /// Re-authentication simplification: Firebase's reauthenticateWithCredential
 /// flow differs per sign-in provider (Google/Facebook/Apple each need their
@@ -35,7 +35,7 @@ class DeleteAccountCubit extends Cubit<DeleteAccountState> {
   final FirebaseAuth _firebaseAuth;
   final _dio = ApiClient.instance.dio;
 
-  /// Step 2 of Flow 10a: determine whether re-authentication is required
+  /// Step 2 of the deletion-request flow: determine whether re-authentication is required
   /// before the user can proceed to typed confirmation.
   void checkReauthRequirement() {
     final lastSignIn = _firebaseAuth.currentUser?.metadata.lastSignInTime;
@@ -58,7 +58,7 @@ class DeleteAccountCubit extends Cubit<DeleteAccountState> {
     emit(state.copyWith(forfeitWalletBalance: value));
   }
 
-  /// Submit the deletion request (Flow 10a: POST /v1/users/me/deletion-request).
+  /// Submit the deletion request (POST /v1/users/me/deletion-request).
   Future<void> submit() async {
     if (state.typedConfirmation.trim() != 'DELETE') return;
 

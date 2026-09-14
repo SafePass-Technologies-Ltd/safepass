@@ -87,7 +87,7 @@ class EmergencyContactModel extends Equatable {
       [name, relationship, phone, phoneWhatsappEnabled, email];
 }
 
-/// M-38 Account Deletion: summary of the caller's latest
+/// FEAT-004 Account Deletion: summary of the caller's latest
 /// AccountDeletionRequest, as returned by GET /v1/users/me/deletion-request.
 class DeletionRequestSummary extends Equatable {
   final String id;
@@ -137,7 +137,7 @@ class ProfileState extends Equatable {
   /// Current org membership, or null if not in an org.
   final OrgMembership? orgMembership;
 
-  /// M-38: the caller's latest deletion request, or null if none exists
+  /// FEAT-004: the caller's latest deletion request, or null if none exists
   /// (or their only request was cancelled/completed and shouldn't be shown).
   final DeletionRequestSummary? deletionRequest;
 

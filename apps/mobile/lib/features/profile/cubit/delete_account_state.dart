@@ -4,7 +4,7 @@ enum DeleteAccountStatus {
   initial,
   submitting,
   success,
-  // Edge cases 1/2/3 from features.md M-38 (active trip / sole org admin /
+  // Edge cases 1/2/3 from features.md FEAT-004 (active trip / sole org admin /
   // wallet balance above threshold) -- a terminal, non-retryable-as-is block.
   preFlightBlocked,
   // Wallet balance is nonzero but at/below the forfeiture threshold -- the

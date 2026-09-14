@@ -4,7 +4,7 @@
 /// Home (Map), Trips, Wallet, Profile.
 ///
 /// Panic button (emergency red FAB) will be added in Week 2-3
-/// once trip state tracking is implemented (M-09, M-10).
+/// once trip state tracking is implemented (FEAT-040, FEAT-028).
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

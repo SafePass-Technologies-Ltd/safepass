@@ -183,7 +183,7 @@ class _AppBodyState extends State<_AppBody> {
     _initDeepLinks();
   }
 
-  /// Org invite deep links (C-02) -- handles both a real Universal Link /
+  /// Org invite deep links (FEAT-010) -- handles both a real Universal Link /
   /// App Link (https://api.safepass-tech.com/join/<token>, once
   /// APPLE_TEAM_ID / ANDROID_SHA256_FINGERPRINTS are configured on the API
   /// so iOS/Android actually verify domain ownership) and the

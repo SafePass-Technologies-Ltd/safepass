@@ -1,8 +1,8 @@
-/// Delete Account Screen (7a) — M-38 Account Deletion confirmation flow.
+/// Delete Account Screen — FEAT-004 Account Deletion confirmation flow.
 ///
-/// Implements screens.md Screen 7a's step sequence: warning -> conditional
+/// Implements the delete-account screen's step sequence: warning -> conditional
 /// re-auth -> typed "DELETE" confirmation -> pre-flight error handling ->
-/// success. Reached from Screen 7 (Profile & Settings)'s "Delete My Account"
+/// success. Reached from the profile & settings screen's "Delete My Account"
 /// action.
 library delete_account_screen;
 
