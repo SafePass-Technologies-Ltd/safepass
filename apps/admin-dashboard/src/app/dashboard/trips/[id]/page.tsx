@@ -84,9 +84,9 @@ interface TripDetail {
    * position -> trip_location_history breadcrumb fallback -> null. Seeds
    * the route map's live position marker. */
   currentLocation?: TripLocation | null;
-  /** The traveller's account info (screens.md A-04 "User info"/"Emergency
+  /** The traveller's account info (screens.md FEAT-043 "User info"/"Emergency
    * Contacts"). Null if the lookup failed or the user's account has since
-   * been anonymized (M-38 Account Deletion). */
+   * been anonymized (FEAT-004 Account Deletion). */
   user?: TripUser | null;
 }
 
@@ -1136,7 +1136,7 @@ function EscalationsSection({
 }
 
 // =============================================================================
-// Traveller section (screens.md A-04 "User info" / "Emergency Contacts")
+// Traveller section (screens.md FEAT-043 "User info" / "Emergency Contacts")
 // =============================================================================
 
 function TravellerSection({ user }: { user: TripUser | null | undefined }) {
@@ -1196,7 +1196,7 @@ function TravellerSection({ user }: { user: TripUser | null | undefined }) {
           </div>
         </div>
 
-        {/* Right: emergency contacts, with quick-call per screens.md A-04
+        {/* Right: emergency contacts, with quick-call per screens.md FEAT-043
             ("Emergency Contacts... quick-call button"). */}
         <div className="p-6">
           <div className="mb-2 flex items-center gap-2">
@@ -1536,11 +1536,11 @@ export default function TripDetailPage() {
         </div>
       </div>
 
-      {/* Traveller info + emergency contacts (screens.md A-04). */}
+      {/* Traveller info + emergency contacts (screens.md FEAT-043). */}
       <TravellerSection user={trip.user} />
 
       {/* Route map: fixed planned route + real-time/last-known position.
-          See screens.md A-04's "Location Timeline" section -- this is that map. */}
+          See screens.md FEAT-043's "Location Timeline" section -- this is that map. */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="border-b border-slate-100 px-6 py-4">
           <h2 className="text-sm font-semibold text-slate-700">Route Map</h2>

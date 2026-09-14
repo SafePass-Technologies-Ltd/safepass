@@ -69,7 +69,7 @@ export default function MarkersPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
 
-  // "Add Marker" form state (A-09: admins manually place incident/
+  // "Add Marker" form state (FEAT-038: admins manually place incident/
   // checkpoint/hotspot markers with coordinates, category, description,
   // severity -- per features.md. No map-click placement yet, just direct
   // lat/lng entry -- a click-to-place UX can be layered on later using the
@@ -79,7 +79,7 @@ export default function MarkersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // CSV bulk import (A-09) — cold-start pre-seeding and ongoing re-seeding
+  // CSV bulk import (FEAT-038) — cold-start pre-seeding and ongoing re-seeding
   // without engineering involvement. See BulkImportMarkersModal for the
   // full validating/errors/duplicates/success state machine.
   const [showBulkImport, setShowBulkImport] = useState(false);

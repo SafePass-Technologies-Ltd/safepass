@@ -1,4 +1,4 @@
-/// Corporate Dashboard — Wallet (C-07)
+/// Corporate Dashboard — Wallet (FEAT-013)
 ///
 /// Displays the organization wallet balance, transaction history,
 /// and provides a funding button for Paystack top-up.

@@ -1,4 +1,4 @@
-/// Corporate Dashboard — Staff Management (C-02)
+/// Corporate Dashboard — Staff Management (FEAT-010)
 ///
 /// Add, view, and remove staff members for the organization.
 /// Organization ID is sourced from the JWT payload (orgId claim).

@@ -1,6 +1,6 @@
 /// Admin Dashboard — Account Deletion Requests (Legal Hold Queue)
 ///
-/// Backs A-27 "Account Deletion Oversight & Legal Holds" (screens.md
+/// Backs FEAT-048 "Account Deletion Oversight & Legal Holds" (screens.md
 /// Screen 17c). Lists AccountDeletionRequest rows so an admin/super_admin
 /// can see why a request is on legal hold (linked open Incident/
 /// EmergencyEvent/Escalation IDs) and either resolve the underlying safety
