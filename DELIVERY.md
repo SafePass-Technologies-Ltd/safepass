@@ -136,11 +136,11 @@ Mission 1: reconcile implemented code with the regenerated spec. Mission 2: road
 | T-001 | Recreate `AGENTS.md` as a general agent file: reference ASSETS/CONTRACTS/DELIVERY as the coordination home and the two doc sets as spec | infra | Done | none | — | — |
 | T-002 | Sync Flutter theme to spec tokens (scales; dark mode noted spec-only) | frontend | Done | T-001 | — | — |
 | T-003 | Sync dashboard Tailwind configs to spec token names | frontend | Done (admin + landing) | T-001 | — | — |
-| T-003b | Fix off-spec colors in corporate/transport `globals.css` (Tailwind v4 CSS-first) | frontend | Ready | T-001 | — | — |
+| T-003b | Fix off-spec colors in corporate/transport `globals.css` (Tailwind v4 CSS-first) | frontend | Done | T-001 | — | — |
 | T-004 | Replace stale M/A/C/T feature refs and old doc paths with FEAT-### in `apps/api/src` comments | backend | Done | none | — | — |
 | T-004f | Same stale-ref cleanup in `apps/mobile/lib` and dashboard/landing comments | frontend | Done | none | — | — |
-| T-006 | Fix pre-existing lint error in `apps/landing/src/components/layout/mobile-nav-drawer.tsx` (setState in effect) | frontend | Ready | none | — | — |
-| T-007 | Fix pre-existing Flutter test failures (`Firebase.initializeApp` missing in `auth_cubit_test`) | frontend | Ready | none | — | — |
+| T-006 | Fix pre-existing lint error in `apps/landing/src/components/layout/mobile-nav-drawer.tsx` (setState in effect) | frontend | Done | none | — | — |
+| T-007 | Fix pre-existing Flutter test failures (`Firebase.initializeApp` missing in `auth_cubit_test`) | frontend | Done | none | — | — |
 | T-005 | QA sweep: CONTRACTS.md matches code; spec/code parity; DoD gate | qa | Backlog | T-001..T-007 | all | — |
 | T-010 | FEAT-050 Emergency live streaming + dual camera | backend + frontend | Backlog | — | C-010/C-011 | — |
 | T-011 | FEAT-051 Silent/secret emergency triggers | frontend | Backlog | — | C-010 | — |
