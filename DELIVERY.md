@@ -142,13 +142,14 @@ Mission 1: reconcile implemented code with the regenerated spec. Mission 2: road
 | T-006 | Fix pre-existing lint error in `apps/landing/src/components/layout/mobile-nav-drawer.tsx` (setState in effect) | frontend | Done | none | — | — |
 | T-007 | Fix pre-existing Flutter test failures (`Firebase.initializeApp` missing in `auth_cubit_test`) | frontend | Done | none | — | — |
 | T-005 | QA sweep: CONTRACTS.md matches code; spec/code parity; DoD gate | qa | In Progress | T-001..T-007 | all | — |
-| T-022 | Restore landing drawer focus tests (T-006 regression: focus-on-open + focus trap) | frontend | Ready | T-006 | — | — |
-| T-023 | Migrate 4 dashboard map components to spec tokens (off-spec hex literals) | frontend | Ready | T-003 | — | — |
-| T-024 | Clean 24 stale feature-ID comments in the three dashboards | frontend | Ready | T-004f | — | — |
-| T-025 | Document upload: pipe file to storage backend instead of discarding it | backend | Ready | none | — | — |
-| T-026 | Payment webhook: validate gateway HMAC signature (security-critical) | backend | Ready | none | — | — |
-| T-027 | Tokenize `verify.routes.ts` / `join.routes.ts` page CSS; remove emoji glyphs | backend | Ready | none | — | — |
-| T-028 | Coverage backlog: FEAT-038 marker bulk-import tests; add test scripts to corporate/transport dashboards | qa + backend + frontend | Backlog | T-005 | — | — |
+| T-022 | Restore landing drawer focus tests (T-006 regression: focus-on-open + focus trap) | frontend | Done | T-006 | — | — |
+| T-023 | Migrate 4 dashboard map components to spec tokens (off-spec hex literals) | frontend | Done | T-003 | — | — |
+| T-024 | Clean 24 stale feature-ID comments in the three dashboards | frontend | Done | T-004f | — | — |
+| T-025 | Document upload: pipe file to storage backend instead of discarding it | backend | Done | none | — | — |
+| T-026 | Payment webhook: validate gateway HMAC signature (security-critical) | backend | Done | none | — | — |
+| T-027 | Tokenize `verify.routes.ts` / `join.routes.ts` page CSS; remove emoji glyphs | backend | Done | none | — | — |
+| T-029 | Infra: provision `DOCUMENTS_BUCKET_NAME` in Terraform + ECS env + IAM `s3:PutObject` | infra | Ready | T-025 | — | — |
+| T-028 | Coverage backlog: FEAT-038 marker bulk-import tests; add test scripts to corporate/transport dashboards; trip-route-map legend token sweep | qa + backend + frontend | Backlog | T-005 | — | — |
 | T-010 | FEAT-050 Emergency live streaming + dual camera | backend + frontend | Backlog | — | C-010/C-011 | — |
 | T-011 | FEAT-051 Silent/secret emergency triggers | frontend | Backlog | — | C-010 | — |
 | T-012 | FEAT-052 Offline recording + low-battery audio mode | frontend | Backlog | — | C-011 | — |
