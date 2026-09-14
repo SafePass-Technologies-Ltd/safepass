@@ -5,11 +5,14 @@
 /// platform channels or real credentials.
 ///
 /// Full Firebase integration is tested via integration tests and manual QA.
+library;
 import 'package:bloc_test/bloc_test.dart';
 import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:safepass_mobile/core/api/api_client.dart';
 import 'package:safepass_mobile/features/auth/cubit/auth_cubit.dart';
+
+import '../../../helpers/firebase_test_setup.dart';
 
 /// A test user as returned by MockFirebaseAuth after sign-in.
 final _testUser = MockUser(
@@ -24,11 +27,17 @@ void main() {
   // (the actual network calls will fail — that's fine for unit tests).
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
-    try {
-      ApiClient.instance.initialize(baseUrl: 'http://localhost:9999');
-    } catch (_) {
-      // Already initialized in a previous test run.
-    }
+    // The AuthCubit constructor subscribes to FirebaseMessaging streams, so a
+    // (mocked) default Firebase app must exist before any test builds one.
+    return setupTestFirebase().then((_) {
+      // Initialize the API client with a dummy base URL for token exchange
+      // (the actual network calls will fail — that's fine for unit tests).
+      try {
+        ApiClient.instance.initialize(baseUrl: 'http://localhost:9999');
+      } catch (_) {
+        // Already initialized in a previous test run.
+      }
+    });
   });
 
   // ────────────────────────────────────────────────────────────
