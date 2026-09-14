@@ -28,12 +28,16 @@ delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIcon
 L.Icon.Default.mergeOptions({ iconUrl, iconRetinaUrl, shadowUrl });
 
 // Colour-coded marker icons by trip status (mirrors the admin dashboard's
-// Live Trip Map convention: green/amber/red).
+// Live Trip Map convention; hexes are spec tokens from branding.md's light
+// column — Google/Leaflet markers need literal values, not CSS classes):
+//   active   success-500 (#0D904F)
+//   delayed  warning-500 (#F5A623)
+//   red      error-500   (#D93025)
 const COLOR_ICONS: Record<string, L.Icon> = {
-  active: markerIcon('#22C55E'),
-  delayed: markerIcon('#EAB308'),
-  emergency: markerIcon('#EF4444'),
-  escalated: markerIcon('#EF4444'),
+  active: markerIcon('#0D904F'),
+  delayed: markerIcon('#F5A623'),
+  emergency: markerIcon('#D93025'),
+  escalated: markerIcon('#D93025'),
 };
 
 function markerIcon(color: string): L.Icon {

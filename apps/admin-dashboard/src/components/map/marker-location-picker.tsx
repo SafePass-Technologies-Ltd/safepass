@@ -187,7 +187,8 @@ export default function MarkerLocationPicker({
                   onChange(latLng.lat(), latLng.lng());
                 }}
               >
-                <Pin background="#EF4444" borderColor="#DC2626" glyphColor="#FFFFFF" />
+                {/* Unverified-marker colour: spec error-500/700 (branding.md light column). */}
+                <Pin background="#D93025" borderColor="#B0261D" glyphColor="#FFFFFF" />
               </AdvancedMarker>
             )}
           </Map>

@@ -31,14 +31,17 @@ interface LiveTripMapProps {
 // Status → colour mapping
 // ────────────────────────────────────────────────────────────
 
+// Spec tokens (docs/SafePass/branding.md, light column; these are raw values
+// because Google Maps markers need literal hexes, not CSS classes):
+//   success-500/700, warning-500/700, error-500/700, grey-500/600/700.
 const STATUS_COLOURS: Record<string, { bg: string; border: string; glyph: string }> = {
-  active:     { bg: '#22C55E', border: '#16A34A', glyph: '#FFFFFF' },
-  delayed:    { bg: '#EAB308', border: '#CA8A04', glyph: '#FFFFFF' },
-  emergency:  { bg: '#EF4444', border: '#DC2626', glyph: '#FFFFFF' },
-  escalated:  { bg: '#EF4444', border: '#DC2626', glyph: '#FFFFFF' },
-  draft:      { bg: '#9CA3AF', border: '#6B7280', glyph: '#FFFFFF' },
-  completed:  { bg: '#6B7280', border: '#4B5563', glyph: '#FFFFFF' },
-  cancelled:  { bg: '#6B7280', border: '#4B5563', glyph: '#FFFFFF' },
+  active:     { bg: '#0D904F', border: '#0A7340', glyph: '#FFFFFF' },
+  delayed:    { bg: '#F5A623', border: '#C47F14', glyph: '#FFFFFF' },
+  emergency:  { bg: '#D93025', border: '#B0261D', glyph: '#FFFFFF' },
+  escalated:  { bg: '#D93025', border: '#B0261D', glyph: '#FFFFFF' },
+  draft:      { bg: '#94A3B8', border: '#64748B', glyph: '#FFFFFF' },
+  completed:  { bg: '#64748B', border: '#475569', glyph: '#FFFFFF' },
+  cancelled:  { bg: '#64748B', border: '#475569', glyph: '#FFFFFF' },
 };
 
 const STATUS_LABELS: Record<string, string> = {
