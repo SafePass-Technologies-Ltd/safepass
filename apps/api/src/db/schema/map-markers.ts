@@ -4,10 +4,10 @@ import { users } from './users';
 import { incidents } from './incidents';
 
 // =============================================================================
-// Map Marker Bulk Imports (A-09 CSV bulk import audit log)
+// Map Marker Bulk Imports (FEAT-038 CSV bulk import audit log)
 // =============================================================================
 // One row per CSV bulk-import operation (not per marker) -- per features.md's
-// A-09 acceptance criterion #7: "Every bulk import is logged (uploaded_by
+// FEAT-038 acceptance criteria: "Every bulk import is logged (uploaded_by
 // admin, filename, row count, timestamp) for audit purposes."
 
 export const mapMarkers = pgTable(

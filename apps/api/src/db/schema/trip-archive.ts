@@ -1,23 +1,21 @@
 /**
- * Trip Archival Tables — A-26 "Trip Persistence & Archival (Yearly
- * Compliance Log + Route Replay)".
+ * Trip Archival Tables — FEAT-049 "Trip Archive & Route Replay".
  *
- * See docs/SafePass/architecture.md's "Trip Data Persistence (Yearly
- * Compliance Log)" section and docs/SafePass/schema.md's TripSummary /
- * TripLocationHistory entity definitions. Both tables are durable
- * PostgreSQL stores, distinct from the ephemeral DynamoDB-backed live
- * location (60s TTL) in dynamo.service.ts -- neither is written to on a
- * per-GPS-ping basis (see trip-archive.service.ts for the batched/queued
+ * See docs/SafePass/architecture.md and docs/SafePass/schema.md's
+ * TripSummary / TripLocationHistory entity definitions. Both tables are
+ * durable PostgreSQL stores, distinct from the ephemeral DynamoDB-backed
+ * live location (60s TTL) in dynamo.service.ts -- neither is written to on
+ * a per-GPS-ping basis (see trip-archive.service.ts for the batched/queued
  * write path).
  *
- * Retention (R-013, revised): both tables are retained indefinitely by
+ * Retention (per risk_log.md): both tables are retained indefinitely by
  * default -- there is no fixed-duration/scheduled purge job. Retention is
  * instead tied to account lifecycle: both tables cascade-delete via
  * `trip_id` whenever the parent trip row is deleted (see each table's
  * `onDelete: 'cascade'` reference below), which is how they get cleaned up
  * if/when a user/account-deletion flow deletes that user's trips. No such
  * account-deletion flow exists in this codebase yet (see
- * docs/SafePass/risk_log.md R-013's residual note) -- these FKs simply
+ * docs/SafePass/risk_log.md) -- these FKs simply
  * ensure that whenever trips *are* deleted, their archival rows never
  * become orphaned.
  */
@@ -49,7 +47,7 @@ export const tripSummaries = pgTable(
     durationSeconds: integer('duration_seconds'),
     averageSpeedKmh: doublePrecision('average_speed_kmh'),
     maxSpeedKmh: doublePrecision('max_speed_kmh'),
-    // { delayed, emergency, escalated } -- see schema.md's TripSummary.status_transition_counts.
+    // { delayed, emergency, escalated } -- see schema.md's TripSummary.statusTransitionCounts.
     statusTransitionCounts: jsonb('status_transition_counts')
       .$type<{ delayed: number; emergency: number; escalated: number }>()
       .notNull()
@@ -69,8 +67,8 @@ export const tripSummaries = pgTable(
 
 // =============================================================================
 // trip_location_history — sampled route breadcrumbs, admin/super_admin-only
-// read access (see schema.md's TripLocationHistory access-control note and
-// R-013). Bounded per trip via the significant-change sampling filter in
+// read access (see schema.md's TripLocationHistory entity and risk_log.md).
+// Bounded per trip via the significant-change sampling filter in
 // trip-archive.service.ts -- never one row per raw GPS ping.
 // =============================================================================
 

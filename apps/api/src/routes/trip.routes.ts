@@ -52,9 +52,9 @@ tripRoutes.post('/', zValidator('json', TripCreateSchema), async (c) => {
   const data = c.req.valid('json');
 
   // Corporate/transport-partner admins (and platform admins) can register a
-  // trip ON BEHALF OF another user -- see docs/SafePass/screens.md Screen 31
-  // "Trip Registration (Corporate)": "Register a trip on behalf of a staff
-  // member" via a Staff Selector. Everyone else always registers for
+  // trip ON BEHALF OF another user -- see docs/SafePass/screens.md (corporate
+  // trip registration uses a Staff Selector to pick the staff member).
+  // Everyone else always registers for
   // themselves regardless of what `userId` the body contains, so a client
   // can never spoof another user's trip. This used to unconditionally force
   // userId = the caller, which silently broke corporate trip registration
@@ -194,7 +194,7 @@ tripRoutes.get('/:tripId', async (c) => {
 
 /**
  * GET /v1/trips/:tripId/summary
- * A-26: fetch the trip's TripSummary (aggregate stats -- distance,
+ * FEAT-049: fetch the trip's TripSummary (aggregate stats -- distance,
  * duration, speed, incident/status-transition counts, message count).
  *
  * Access follows the same trip-visibility rules as GET /:tripId (direct
@@ -520,10 +520,10 @@ adminTripRoutes.get('/active', async (c) => {
  *    live/last-known position marker, alongside the existing
  *    `routePolyline` field (fixed, one-time-computed route) and the
  *    safe-zone corridor the frontend derives from origin/destination.
- *  - `user` (screens.md A-04 "User info"/"Emergency Contacts" sections) --
+ *  - `user` (FEAT-043 Trip Detail "User info"/"Emergency Contacts" sections) --
  *    the traveller's name, phone, email, and emergency contacts, resolved
  *    via getUserById. Best-effort: a lookup failure (or the trip's user
- *    having since been anonymized by account deletion -- see M-38) yields
+ *    having since been anonymized by account deletion -- see FEAT-004) yields
  *    `user: null` rather than failing the whole trip-detail response, since
  *    everything else on this page still needs to render regardless.
  */
@@ -556,11 +556,10 @@ adminTripRoutes.get('/:tripId', async (c) => {
 
 /**
  * GET /v1/admin/trips/:tripId/route-history
- * A-26 "Replay Route" action (A-04 Trip Detail View cross-reference).
+ * FEAT-049 "Replay Route" action (FEAT-043 Trip Detail View cross-reference).
  *
- * ADMIN-ONLY per schema.md's TripLocationHistory access-control note and
- * risk_log.md R-013 (resolved): full-fidelity breadcrumb route replay is
- * restricted to admin/super_admin. The adminTripRoutes group above already
+ * ADMIN-ONLY per schema.md and risk_log.md: full-fidelity breadcrumb route
+ * replay is restricted to admin/super_admin. The adminTripRoutes group above already
  * requires admin/monitoring_officer/super_admin, so requireRole here
  * additionally excludes monitoring_officer specifically for this endpoint --
  * everyone else (monitoring_officer, corporate_admin, transport_partner,

@@ -3,7 +3,7 @@
  *
  * Handles:
  *   - Admin: marker CRUD (create, read, update, delete)
- *   - User: marker interactions (confirm, dispute, reclassify per M-14)
+ *   - User: marker interactions (confirm, dispute, reclassify per FEAT-037)
  *   - Proximity queries for route safety alerts
  */
 import { v4 as uuidv4 } from 'uuid';
@@ -282,7 +282,7 @@ export async function deactivateMarker(markerId: string): Promise<void> {
 }
 
 // ────────────────────────────────────────────────────────────
-// User Interactions (M-14)
+// User Interactions (FEAT-037)
 // ────────────────────────────────────────────────────────────
 
 /**
@@ -366,8 +366,8 @@ export async function getMarkerInteractions(
 }
 
 // ────────────────────────────────────────────────────────────
-// CSV Bulk Import (A-09) — per features.md's A-09 acceptance criteria and
-// screens.md's Screen 14 "Bulk Import" states.
+// CSV Bulk Import (FEAT-038) — per features.md's FEAT-038 acceptance
+// criteria and screens.md's Marker Management "Bulk Import" states.
 // ────────────────────────────────────────────────────────────
 
 /** Column order for both the downloadable template and upload parsing. */
@@ -491,7 +491,7 @@ export function buildMarkerImportCsvTemplate(): string {
 }
 
 /**
- * Parses and validates a CSV file's contents against the A-09 column spec.
+ * Parses and validates a CSV file's contents against the FEAT-038 column spec.
  * Never throws on malformed row DATA (collected as row errors instead) --
  * only throws if the file itself isn't parseable CSV at all (e.g. binary
  * garbage), which the route layer turns into a 400.

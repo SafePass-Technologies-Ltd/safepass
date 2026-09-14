@@ -30,7 +30,7 @@ incidentRoutes.use('*', authMiddleware);
 
 /**
  * POST /v1/incidents
- * Report a new incident (M-13).
+ * Report a new incident (FEAT-036).
  * Body: { tripId?, incidentType, location: { latitude, longitude, address? }, description, photoUrl? }
  */
 incidentRoutes.post(

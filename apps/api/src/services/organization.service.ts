@@ -196,7 +196,7 @@ export async function updateOrgVerification(
 }
 
 // ────────────────────────────────────────────────────────────
-// Staff / User Management (C-02)
+// Staff / User Management (FEAT-010)
 // ────────────────────────────────────────────────────────────
 
 /**

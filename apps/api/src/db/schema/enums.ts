@@ -214,7 +214,7 @@ export const subscriptionRequestStatusEnum = pgEnum('subscription_request_status
   'cancelled',
 ]);
 
-// --- Account Deletion (M-38 / A-27) ---
+// --- Account Deletion (FEAT-004 / FEAT-048) ---
 
 export const accountDeletionStatusEnum = pgEnum('account_deletion_status', [
   'pending',
@@ -224,7 +224,7 @@ export const accountDeletionStatusEnum = pgEnum('account_deletion_status', [
   'force_deleted',
 ]);
 
-// --- Trip Archival (A-26 Trip Persistence & Archival) ---
+// --- Trip Archival (FEAT-049 Trip Archive & Route Replay) ---
 
 // TripSummary.final_status is a strict subset of trip_status -- a summary is
 // only ever written once a trip reaches one of these two terminal states

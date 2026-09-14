@@ -14,7 +14,7 @@
  * None"). The service key exists so this endpoint can't be scraped into a spam
  * firehose by anyone who finds the URL; it is never exposed to the browser.
  *
- * See docs/SafePassLanding/features.md FEAT-012 and risk_log.md R-004.
+ * See docs/SafePassLanding/features.md FEAT-012 and docs/SafePassLanding/risk_log.md.
  */
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';

@@ -44,7 +44,7 @@ export const trips = pgTable(
     driverPhone: varchar('driver_phone', { length: 20 }),
     routePolyline: text('route_polyline'),
     paymentIds: jsonb('payment_ids').$type<string[]>().default([]),
-    // A-26 Trip Persistence & Archival: tracks how many times this trip has
+    // FEAT-049 Trip Archive & Route Replay: tracks how many times this trip has
     // re-entered the 'delayed' status (the only non-terminal status without
     // a dedicated durable table of its own -- see types.ts's
     // StatusTransitionCounts doc comment). Read at trip completion/

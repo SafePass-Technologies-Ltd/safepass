@@ -189,13 +189,13 @@ const envSchema = z.object({
   // password) -- kept only in case a REST-based integration is added later.
   UPSTASH_REDIS_TOKEN: z.string().optional(),
   TRIP_PRICE_NGN: z.coerce.number().int().positive().default(2000),
-  // M-38 Account Deletion: a wallet balance at or below this amount can be
+  // FEAT-004 Account Deletion: a wallet balance at or below this amount can be
   // explicitly forfeited by the user to proceed with deletion (checkbox
   // confirmation); balances above it require a manual refund via support
   // (no automated wallet payout rail exists yet). See
-  // docs/SafePass/features.md M-38 edge case 3.
+  // docs/SafePass/features.md FEAT-004.
   ACCOUNT_DELETION_WALLET_FORFEIT_THRESHOLD_NGN: z.coerce.number().nonnegative().default(500),
-  // M-38: cooling-off period before a pending deletion request executes.
+  // FEAT-004: cooling-off period before a pending deletion request executes.
   ACCOUNT_DELETION_COOLING_OFF_DAYS: z.coerce.number().int().positive().default(14),
   ADMIN_DASHBOARD_URL: z.string().url().default('http://localhost:3001'),
   // Corporate/transport dashboards are separate Next.js apps with their own
@@ -216,15 +216,15 @@ const envSchema = z.object({
   // CLOSED in production (503) and open in development -- it never silently
   // accepts unauthenticated production traffic.
   LEAD_INTAKE_API_KEY: z.string().optional(),
-  // Base URL for org invite deep links (C-02: "invite link, deep link
+  // Base URL for org invite deep links (FEAT-010: "invite link, deep link
   // (safepass.ng/join/TOKEN)") -- was hardcoded to the wrong/unowned
   // "safepass.ng" domain in both this API (bulk CSV export) and the
   // corporate dashboard (single-token display + its own CSV export).
   // Token is appended as `${APP_DEEP_LINK_BASE_URL}/${token}`.
   APP_DEEP_LINK_BASE_URL: z.string().url().default('https://api.safepass-tech.com/join'),
-  // T-05 (Vehicle QR Generation) + architecture.md's Vehicle Verification
-  // Service: base URL embedded in each vehicle's QR code, per schema.md's
-  // Vehicle.qr_verification_token doc comment ("e.g., /verify/v/abc123xy").
+  // FEAT-018 (Vehicle QR Generation) + architecture.md's vehicle verification
+  // design: base URL embedded in each vehicle's QR code, per schema.md's
+  // TransportVehicle.qrVerificationToken field.
   // Token appended as `${VEHICLE_VERIFY_BASE_URL}/${token}` -- see
   // vehicle.routes.ts's QR generation endpoint and verify.routes.ts's
   // public lookup page.

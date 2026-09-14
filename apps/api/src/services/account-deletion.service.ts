@@ -1,16 +1,16 @@
 /**
- * Account Deletion Service — M-38 "Account Deletion" / A-27 "Account
- * Deletion Oversight & Legal Holds".
+ * Account Deletion Service — FEAT-004 "Account Deletion" / FEAT-048
+ * "Account Deletion Oversight & Legal Holds".
  *
- * Implements the flow documented in docs/SafePass/user_flow.md Flow 10:
+ * Implements the flow documented in docs/SafePass/user_flow.md:
  * self-service request creation (with pre-flight checks), cancellation
  * during the 14-day cooling-off period, background sweep execution (normal
  * path vs. legal hold), and admin-side legal-hold override / force-delete.
  *
  * The per-entity retention behaviour at execution time follows
- * docs/SafePass/schema.md's "Account Deletion — Data Retention Matrix"
- * exactly -- see executeDeletionCascade's inline comments for the mapping
- * from each matrix row to the corresponding query here.
+ * docs/SafePass/schema.md exactly -- see executeDeletionCascade's inline
+ * comments for the mapping from each matrix row to the corresponding query
+ * here.
  */
 import { v4 as uuidv4 } from 'uuid';
 import { eq, and, or, inArray, lte, ne, isNull } from 'drizzle-orm';
@@ -49,7 +49,7 @@ export type LegalHoldCheck =
   | { blocked: true; reason: string; refs: string[] };
 
 // ────────────────────────────────────────────────────────────
-// Pre-flight checks (Flow 10a)
+// Pre-flight checks
 // ────────────────────────────────────────────────────────────
 
 /** A pre-flight check failure, surfaced to the caller as an HTTP 409. */
@@ -98,12 +98,12 @@ async function checkWalletBalance(
 
 /**
  * Edge case 2 + the general "org membership must be resolved first"
- * precondition (schema.md's OrgSlot/InviteToken retention-matrix row):
- * ANY current org member must leave their org (M-32) before requesting
+ * precondition (see schema.md's OrgSlot/InviteToken entities):
+ * ANY current org member must leave their org (FEAT-012) before requesting
  * deletion. A corporate_admin/transport_partner who is the org's *sole*
  * active admin gets the more specific "needs a handoff" message instead of
  * the generic "leave your org first" one, since they cannot simply leave
- * without first transferring or deactivating the org (see A-27's org
+ * without first transferring or deactivating the org (see FEAT-048's org
  * handoff assist).
  */
 async function checkOrgMembership(
@@ -143,7 +143,7 @@ async function checkOrgMembership(
   }
 
   // Any other org membership (regular member, or admin with another admin
-  // present) must be released via Leave Organisation (M-32) first.
+  // present) must be released via Leave Organisation (FEAT-012) first.
   return {
     blocked: true,
     wasSoleOrgAdmin: false,
@@ -345,12 +345,12 @@ export async function checkLegalHold(userId: string): Promise<LegalHoldCheck> {
 }
 
 // ────────────────────────────────────────────────────────────
-// Deletion cascade execution (Flow 10c normal path, Flow 10d override/force)
+// Deletion cascade execution (sweep normal path, override/force)
 // ────────────────────────────────────────────────────────────
 
 /**
- * Execute the deletion cascade for a user, per docs/SafePass/schema.md's
- * Account Deletion Data Retention Matrix. This is the single place all
+ * Execute the deletion cascade for a user, per docs/SafePass/schema.md.
+ * This is the single place all
  * three trigger paths (sweep job, super_admin legal-hold override,
  * super_admin force-delete) funnel through, so the retention behaviour
  * can never drift between them.
@@ -363,7 +363,7 @@ export async function checkLegalHold(userId: string): Promise<LegalHoldCheck> {
  *     every other FK-holding entity below marked "no mutation needed").
  *   - TripSummary / TripLocationHistory: HARD DELETE via explicit query on
  *     trip.user_id (NOT the trip_id cascade FK, since Trip rows are never
- *     deleted) -- this is the fix for the A-26/R-013 gap.
+ *     deleted) -- this is the fix for the FEAT-049 archive-retention gap.
  *   - Payment / WalletTransaction: retained untouched (no mutation needed).
  *   - Incident (reporter_id=user), Message (sender_id=user), MapMarker
  *     (created_by=user), MapMarkerInteraction (user_id=user),
@@ -375,7 +375,7 @@ export async function checkLegalHold(userId: string): Promise<LegalHoldCheck> {
  *     since these aren't keyed directly by user_id).
  *   - UserVehicle / ScheduledTrip: HARD DELETE.
  *   - fcm_tokens: HARD DELETE (not in the matrix by name, but "signed out
- *     of all sessions; FCM token deregistered" in Flow 10c -- this is the
+ *     of all sessions; FCM token deregistered" -- this is the
  *     concrete mechanism for that step; see also this table's existing
  *     onDelete:'cascade' FK to users, which never fires here since User is
  *     anonymized not deleted).
@@ -479,7 +479,7 @@ export async function runDeletionSweep(): Promise<SweepResult> {
         })
         .where(eq(accountDeletionRequests.id, request.id));
       heldOnLegalHold++;
-      // Notification to admin/super_admin: the Legal Hold Queue (A-27,
+      // Notification to admin/super_admin: the Legal Hold Queue (FEAT-048,
       // GET /v1/admin/account-deletions?status=legal_hold) is the system of
       // record for discovering held requests -- no separate push/email
       // notification pipeline exists yet (there is no generic
@@ -504,7 +504,7 @@ export async function runDeletionSweep(): Promise<SweepResult> {
 }
 
 // ────────────────────────────────────────────────────────────
-// Admin actions (Flow 10d / A-27)
+// Admin actions (FEAT-048)
 // ────────────────────────────────────────────────────────────
 
 /**

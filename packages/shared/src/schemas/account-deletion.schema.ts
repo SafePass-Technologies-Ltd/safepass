@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-// M-38 Account Deletion / A-27 Account Deletion Oversight & Legal Holds.
+// FEAT-004 Account Deletion / FEAT-048 Account Deletion Oversight & Legal Holds.
 // See docs/SafePass/schema.md's AccountDeletionRequest entity.
 
 export const AccountDeletionStatusEnum = z.enum([

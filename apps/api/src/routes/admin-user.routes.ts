@@ -81,9 +81,9 @@ adminUserRoutes.get('/:id', async (c) => {
     return c.json({ error: { code: 404, message: 'User not found' } }, 404);
   }
 
-  // M-38/A-27: surface the latest deletion request (if any) so the User
+  // FEAT-004/FEAT-048: surface the latest deletion request (if any) so the User
   // Management view can show "Account scheduled for deletion on [date]" /
-  // "Deletion on hold" per screens.md Screen 15.
+  // "Deletion on hold" per screens.md.
   const deletionRequest = await getLatestDeletionRequest(user.id);
 
   return c.json({ ...user, deletionRequest });

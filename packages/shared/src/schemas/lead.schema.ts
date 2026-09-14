@@ -5,8 +5,8 @@ import { z } from 'zod';
  *
  * Mirrors `docs/SafePassLanding/schema.md`. These are *data contracts*, not
  * database entities from the landing site's perspective: SafePassLanding
- * persists none of them (see that doc's Overview and `architecture.md`'s
- * "SafePassLanding intentionally has no primary database"). The site's Lead
+ * persists none of them (see that doc's Overview and `architecture.md`).
+ * The site's Lead
  * Intake Service validates and forwards; the SafePass backend is the system
  * of record and assigns its own durable identifiers on receipt.
  *

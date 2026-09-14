@@ -1,5 +1,5 @@
 /**
- * Account Deletion Sweep Job — M-38 Flow 10c background execution.
+ * Account Deletion Sweep Job — FEAT-004 cooling-off background execution.
  *
  * Periodically scans for AccountDeletionRequest rows whose 14-day
  * cooling-off window (`scheduled_for`) has elapsed and either executes the

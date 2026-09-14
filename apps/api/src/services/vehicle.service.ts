@@ -146,7 +146,7 @@ export async function updateVehicle(
 }
 
 /**
- * Generate (or regenerate) a vehicle's SafePass QR code (T-05).
+ * Generate (or regenerate) a vehicle's SafePass QR code (FEAT-018).
  *
  * No image is rendered/stored here -- the token + verification URL are all
  * a QR code encodes anyway, so the dashboard renders the actual QR image

@@ -3,7 +3,7 @@
  * creation, via a single Google Directions API call.
  *
  * Deliberately NOT a general-purpose routing utility that gets re-invoked
- * on every map render: the Trip Detail route map (screens.md A-04 "Location
+ * on every map render: the Trip Detail route map (FEAT-043 "Location
  * Timeline") shows this as a fixed reference path so a monitoring officer
  * can tell whether a traveller has deviated from their *assigned* route --
  * that only means something if the displayed route never changes after the

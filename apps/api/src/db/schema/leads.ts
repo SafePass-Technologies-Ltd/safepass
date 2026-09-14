@@ -11,10 +11,11 @@ import { leadTypeEnum, leadStatusEnum } from './enums';
  * database at all. Its Lead Intake Service validates, tags, and forwards to
  * `POST /v1/leads` here — this is where a lead becomes durable.
  *
- * Why persist rather than only forward to a CRM: `risk_log.md` R-004 scores a
- * dropped lead as Impact 5 ("the lead is lost outright, directly costing
- * revenue-funnel volume"). Writing the row first means a CRM/email hand-off
- * failure downstream degrades to a delayed follow-up rather than a lost lead.
+ * Why persist rather than only forward to a CRM: a dropped lead is scored
+ * in `risk_log.md` as high impact ("the lead is lost outright, directly
+ * costing revenue-funnel volume"). Writing the row first means a CRM/email
+ * hand-off failure downstream degrades to a delayed follow-up rather than a
+ * lost lead.
  *
  * Field shapes mirror `docs/SafePassLanding/schema.md`. The three lead types
  * have partly-disjoint fields, so type-specific columns are nullable and the

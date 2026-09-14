@@ -1,5 +1,5 @@
 /**
- * Subscription Routes — org subscription plan management (C-20, T-20).
+ * Subscription Routes — org subscription plan management (FEAT-009).
  *
  * Self-serve wallet billing (new primary path):
  *   GET  /v1/org/subscription              — current org subscription + wallet balance

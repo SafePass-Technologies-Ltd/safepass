@@ -3,7 +3,7 @@
  * and admin incident management.
  *
  * Handles:
- *   - User incident reporting (9 incident types per M-13)
+ *   - User incident reporting (9 incident types per FEAT-036)
  *   - Admin verification workflow (approve/reject/review)
  *   - Incident querying and filtering
  */
@@ -137,11 +137,10 @@ export async function createIncident(
     })
     .returning();
 
-  // Per schema.md ("Incident ||--o{ MapMarker : generates") and README's
-  // cold-start Layer 2, every user-reported incident is supposed to
+  // Per schema.md and README.md, every user-reported incident is supposed to
   // surface on the safety map as a marker -- not just live in the
   // incidents table. Mapped via INCIDENT_TO_MARKER_TYPE above. Deliberately
-  // non-fatal: incident reporting is safety-critical (M-13) and must never
+  // non-fatal: incident reporting is safety-critical (FEAT-036) and must never
   // fail just because the marker side-effect did -- same resilience
   // pattern this codebase already uses for DynamoDB/email/etc.
   try {

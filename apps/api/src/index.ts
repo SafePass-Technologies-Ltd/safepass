@@ -155,14 +155,14 @@ app.get('/health', (c) => {
   });
 });
 
-// Org invite deep-link landing page (C-02) -- mounted at the site root
+// Org invite deep-link landing page (FEAT-010) -- mounted at the site root
 // (not under /v1) so it matches APP_DEEP_LINK_BASE_URL exactly:
 // https://api.safepass-tech.com/join/<token>. Public, unauthenticated --
 // see join.routes.ts's header comment.
 app.route('/join', joinRoutes);
 
-// Public vehicle QR verification page (T-05 / architecture.md's Vehicle
-// Verification Service) -- mounted at the site root to match
+// Public vehicle QR verification page (FEAT-018 / architecture.md) --
+// mounted at the site root to match
 // VEHICLE_VERIFY_BASE_URL exactly: https://api.safepass-tech.com/verify/v/<token>.
 app.route('/verify/v', verifyRoutes);
 
@@ -223,7 +223,7 @@ v1.route('/organizations', orgRoutes);
 // Org membership: slots, invite tokens, join/leave
 v1.route('/org', orgMembershipRoutes);
 
-// Org subscription plan requests (C-20, T-20)
+// Org subscription plan requests (FEAT-009)
 v1.route('/org/subscription', orgSubscriptionRoutes);
 
 // Geocoding: reverse (GPS → address) + autocomplete + place resolve
