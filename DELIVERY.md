@@ -141,7 +141,7 @@ Mission 1: reconcile implemented code with the regenerated spec. Mission 2: road
 | T-004f | Same stale-ref cleanup in `apps/mobile/lib` and dashboard/landing comments | frontend | Done | none | — | — |
 | T-006 | Fix pre-existing lint error in `apps/landing/src/components/layout/mobile-nav-drawer.tsx` (setState in effect) | frontend | Done | none | — | — |
 | T-007 | Fix pre-existing Flutter test failures (`Firebase.initializeApp` missing in `auth_cubit_test`) | frontend | Done | none | — | — |
-| T-005 | QA sweep: CONTRACTS.md matches code; spec/code parity; DoD gate | qa | In Progress | T-001..T-007 | all | — |
+| T-005 | QA sweep: CONTRACTS.md matches code; spec/code parity; DoD gate | qa | Done (Verified: PASS) | T-001..T-007 | all | 2026-09-15 |
 | T-022 | Restore landing drawer focus tests (T-006 regression: focus-on-open + focus trap) | frontend | Done | T-006 | — | — |
 | T-023 | Migrate 4 dashboard map components to spec tokens (off-spec hex literals) | frontend | Done | T-003 | — | — |
 | T-024 | Clean 24 stale feature-ID comments in the three dashboards | frontend | Done | T-004f | — | — |

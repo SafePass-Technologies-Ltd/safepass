@@ -244,7 +244,7 @@ Errors: 400, 402 (insufficient wallet balance), 409 (trip already started or ano
 Status: Frozen
 Description: Report a GPS position during an active trip. Writes the live-state entry and, on significant change, a sampled history point.
 Auth: user (trip owner).
-Request: `{ "lat": "number", "lng": "number", "speed": "number|null", "heading": "number|null", "recordedAt": "date" }`
+Request: `{ "latitude": "number", "longitude": "number", "speed": "number|null", "heading": "number|null", "recordedAt": "date" }`
 Response 200: `{ "status": "ok" }`
 Errors: 400, 404, 422 (trip not found, not owned, or not active).
 
@@ -260,7 +260,7 @@ Status: Frozen
 Description: Own wallet balance and transaction history.
 Auth: user.
 Response 200 (wallet): `{ "id": "string", "balance": "number", "currency": "NGN" }`
-Response 200 (transactions): `{ "wallet": { "id": "string", "balance": "number" }, "transactions": [{ "id": "string", "type": "string", "amount": "number", "balanceAfter": "number", "description": "string|null", "createdAt": "date" }] }`
+Response 200 (transactions): `{ "wallet": { "id": "string", "balance": "number" }, "transactions": [{ "id": "string", "transactionType": "string", "amount": "number", "balanceAfter": "number", "description": "string|null", "createdAt": "date" }] }`
 
 ### C-009 — POST /v1/payments/initialize
 Status: Frozen
@@ -317,8 +317,8 @@ Description: Markers near a point for route alerts; user interactions that move 
 Auth: user.
 Request (nearby, query params): `?latitude=<number>&longitude=<number>&radius=<meters>`
 Request (interact): `{ "action": "confirm|dispute_not_there|reclassify_police|reclassify_suspicious" }`
-Response 200 (nearby): `{ "markers": [{ "id", "markerType", "lat", "lng", "title", "severity", "verificationStatus" }] }`
-Response 201 (interact): `{ "markerId": "string", "verificationStatus": "string", "verificationWeight": "number" }`
+Response 200 (nearby): `{ "markers": [{ "id", "markerType", "latitude", "longitude", "title", "severity", "verificationStatus" }] }`
+Response 201 (interact): the interaction row `{ "id": "string", "markerId": "string", "userId": "string", "action": "string", "notes": "string|null", "createdAt": "date" }`
 
 ### C-015 — POST /v1/org/join/resolve · POST /v1/org/join
 Status: Frozen
@@ -327,8 +327,8 @@ Auth: user.
 Request (resolve): `{ "token": "string" }`
 Request (join): `{ "token": "string" }`
 Response 200 (resolve): `{ "data": { "orgId": "string", "orgName": "string", "orgType": "corporate|transport_partner" } }`
-Response 200 (join): the redeemed membership record
-Errors: 400 (expired, used, or invalid token), 409 (already in an org).
+Response 200 (join): the membership record `{ "organization": { "id": "string", "name": "string", "type": "string" }, ... }`
+Errors: 404 (invalid token), 410 (expired token), 409 (already in an org).
 
 ## Change process
 
