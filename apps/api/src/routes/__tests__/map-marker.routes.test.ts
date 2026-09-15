@@ -403,6 +403,24 @@ describe('POST /v1/admin/markers/bulk-import — duplicate review', () => {
     expect([...(skipArg as Set<number>)]).toEqual([2]);
   });
 
+  it('does not honor skipRows when confirmDuplicates is absent (T-030 regression)', async () => {
+    // skipRows is only meaningful on the confirmation call. A stray skipRows
+    // sent without confirmDuplicates must not silently drop rows the admin
+    // never reviewed, so the service must receive an empty skip set.
+    const form = new FormData();
+    form.append(
+      'file',
+      new File([csv(row(), row({ title: 'Second' }))], 'markers.csv', { type: 'text/csv' })
+    );
+    form.append('skipRows', JSON.stringify([1]));
+
+    const res = await post(form);
+
+    expect(res.status).toBe(201);
+    const [, skipArg] = hoisted.mockBulkImport.mock.calls[0]!;
+    expect((skipArg as Set<number>).size).toBe(0);
+  });
+
   it('passes an empty skip set when none was supplied', async () => {
     await post(makeForm(csv(row()), { confirm: true }));
 

@@ -341,6 +341,31 @@ describe('bulkImportMarkers (AC: all-or-nothing commit + audit log)', () => {
     expect(auditRow).toMatchObject({ rowCount: 2, createdCount: 1, skippedDuplicateCount: 1 });
   });
 
+  it('does not count a skipRows entry that matches no file row (T-030 regression)', async () => {
+    // A client could send a row number that isn't in the file (stale review
+    // state, off-by-one, hand-crafted request). It must not inflate `skipped`
+    // or the audit count -- created + skipped must equal the file's row count.
+    const result = await bulkImportMarkers(twoRows(), new Set([999]), 'admin-1', 'markers.csv');
+
+    expect(result).toEqual({ created: 2, skipped: 0 });
+    const insertedMarkers = hoisted.mockTxValues.mock.calls[0]![0] as Array<Record<string, unknown>>;
+    expect(insertedMarkers).toHaveLength(2);
+
+    const auditRow = hoisted.mockTxValues.mock.calls[1]![0] as Record<string, unknown>;
+    expect(auditRow).toMatchObject({ rowCount: 2, createdCount: 2, skippedDuplicateCount: 0 });
+    expect((auditRow.createdCount as number) + (auditRow.skippedDuplicateCount as number)).toBe(
+      auditRow.rowCount
+    );
+  });
+
+  it('counts only in-file skips when the set mixes real and phantom row numbers (T-030 regression)', async () => {
+    const result = await bulkImportMarkers(twoRows(), new Set([2, 999]), 'admin-1', 'markers.csv');
+
+    expect(result).toEqual({ created: 1, skipped: 1 });
+    const auditRow = hoisted.mockTxValues.mock.calls[1]![0] as Record<string, unknown>;
+    expect(auditRow).toMatchObject({ rowCount: 2, createdCount: 1, skippedDuplicateCount: 1 });
+  });
+
   it('still logs the import when every row is skipped', async () => {
     const result = await bulkImportMarkers(twoRows(), new Set([1, 2]), 'admin-1', 'markers.csv');
 
