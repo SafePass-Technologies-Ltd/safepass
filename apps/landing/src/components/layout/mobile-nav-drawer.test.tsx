@@ -142,4 +142,112 @@ describe('MobileNavDrawer', () => {
       '/business'
     );
   });
+
+  describe('page-scoped active states (T-034)', () => {
+    it('marks an audience row active only while the visitor is on that page', async () => {
+      const user = userEvent.setup();
+      mockPathname.value = '/business';
+      renderDrawer();
+
+      await user.click(screen.getByRole('button', { name: /open menu/i }));
+      const dialog = screen.getByRole('dialog');
+
+      // jsdom flattens the row's spans into the accessible name "BusinessSelected".
+      expect(within(dialog).getByRole('link', { name: /Business/ })).toHaveAttribute(
+        'aria-current',
+        'page'
+      );
+      expect(
+        within(dialog).getByRole('link', { name: /Individual/ })
+      ).not.toHaveAttribute('aria-current');
+    });
+
+    it('highlights nothing when the persisted audience does not match the page', async () => {
+      // The T-034 bug's drawer half: after choosing Business, /how-we-verify
+      // used to show the Business row as "Selected". The context still drives
+      // the CTA below — only the highlight is page-scoped now.
+      const user = userEvent.setup();
+      window.sessionStorage.setItem('safepass:audience', 'business');
+      mockPathname.value = '/how-we-verify';
+      renderDrawer();
+
+      await user.click(screen.getByRole('button', { name: /open menu/i }));
+      const dialog = screen.getByRole('dialog');
+
+      // No AUDIENCE row may read as current: the persisted context says
+      // Business, but the visitor is on /how-we-verify, which is nobody's
+      // audience page. (The Explore section's own page-scoped active state —
+      // How We Verify here — is asserted in the test below.)
+      const audienceNav = within(dialog).getByRole('navigation', {
+        name: /choose your audience/i,
+      });
+      within(audienceNav)
+        .getAllByRole('link')
+        .forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
+      // Documented kept behaviour: the CTA still follows the session audience.
+      expect(within(dialog).getByRole('link', { name: 'Request a Demo' })).toBeInTheDocument();
+    });
+
+    it('marks How We Verify active in the Explore section on its own page', async () => {
+      const user = userEvent.setup();
+      mockPathname.value = '/how-we-verify';
+      renderDrawer();
+
+      await user.click(screen.getByRole('button', { name: /open menu/i }));
+      const siteNav = within(screen.getByRole('dialog')).getAllByRole('navigation', {
+        name: 'Site',
+      })[0];
+
+      expect(within(siteNav).getByRole('link', { name: 'How We Verify' })).toHaveAttribute(
+        'aria-current',
+        'page'
+      );
+      expect(within(siteNav).getByRole('link', { name: 'About' })).not.toHaveAttribute(
+        'aria-current'
+      );
+      // Same Active chip tokens as the header's audience selector, so the
+      // drawer speaks the page's one active-state language.
+      expect(within(siteNav).getByRole('link', { name: 'How We Verify' })).toHaveClass(
+        'bg-primary-light',
+        'border-primary'
+      );
+    });
+
+    it('marks Home active in Explore on the homepage, and first in the section', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+
+      await user.click(screen.getByRole('button', { name: /open menu/i }));
+      const siteNav = within(screen.getByRole('dialog')).getAllByRole('navigation', {
+        name: 'Site',
+      })[0];
+
+      const home = within(siteNav).getByRole('link', { name: 'Home' });
+      expect(home).toHaveAttribute('href', '/');
+      expect(home).toHaveAttribute('aria-current', 'page');
+      expect(within(siteNav).getAllByRole('link')[0]).toBe(home);
+    });
+
+    it('marks nothing active on the legal variant, and still lists Home first', async () => {
+      const user = userEvent.setup();
+      mockPathname.value = '/terms';
+      renderDrawer(false);
+
+      await user.click(screen.getByRole('button', { name: /open menu/i }));
+      const siteNav = within(screen.getByRole('dialog')).getAllByRole('navigation', {
+        name: 'Site',
+      })[0];
+
+      const links = within(siteNav).getAllByRole('link');
+      expect(links.map((link) => link.textContent)).toEqual([
+        'Home',
+        'Individual',
+        'Business',
+        'Transport Partner',
+        'How We Verify',
+        'About',
+      ]);
+      links.forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
+    });
+  });
 });

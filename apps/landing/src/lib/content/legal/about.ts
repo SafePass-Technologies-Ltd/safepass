@@ -36,11 +36,9 @@ export const about: LegalDocument = {
       id: 'why-safepass-exists',
       heading: 'Why SafePass Exists',
       body: [
-        // Client feedback: lead with the problem, not the company history.
-        // "Investors don't invest in products. They invest in companies — and
-        // this is the problem the company exists to solve."
-        'Every year, millions of journeys across Nigeria begin without anyone knowing whether the road ahead is safe, whether someone will notice if something goes wrong, or whether reliable information exists to help travellers make informed decisions.',
-        'SafePass was created to change that. Our goal is simple: make every journey safer through better information, human monitoring, and trusted incident intelligence.',
+        // Client feedback (T-034): one problem-statement paragraph, exactly as
+        // supplied — verbatim, including the trailing period.
+        'Every year, hundreds of thousands of journeys begin with hope but end in uncertainty because help comes too late. SafePass was created to change that by combining technology with trained human monitoring, giving travellers and their loved ones greater confidence on the road.',
       ],
     },
     {

@@ -6,9 +6,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Check, ChevronRight, Menu, X } from 'lucide-react';
 import { ButtonLink } from '@/components/ui/button';
+import { NAV_ACTIVE_CHIP } from '@/components/layout/audience-selector';
 import { AUDIENCE_CONFIG, AUDIENCE_LIST, useAudience } from '@/lib/audience/audience-context';
 import { durationMs } from '@/lib/motion/constants';
-import { PRIMARY_NAV, STATIC_NAV } from '@/lib/content/navigation';
+import { HOME_LINK, PRIMARY_NAV, STATIC_NAV } from '@/lib/content/navigation';
 import { cn } from '@/lib/utils';
 
 /**
@@ -56,10 +57,6 @@ export function MobileNavDrawer({
   onOpenChange?: (open: boolean) => void;
 }) {
   const pathname = usePathname();
-
-  // The homepage is the neutral hub — see audience-selector.tsx: no audience is
-  // shown as selected there, only on that audience's own page.
-  const isHome = pathname === '/';
 
   /**
    * Open state is stored as "the route the drawer was opened on", so that
@@ -313,7 +310,10 @@ export function MobileNavDrawer({
                   </h2>
 
                   {AUDIENCE_LIST.map((option) => {
-                    const isActive = !isHome && option.audience === audience;
+                    // Page-scoped highlight (T-034): like the header selector,
+                    // active only while the visitor IS on that audience's page.
+                    // The persisted context still drives the header CTA below.
+                    const isActive = pathname === option.href;
 
                     return (
                       <Link
@@ -380,20 +380,40 @@ export function MobileNavDrawer({
                   Explore
                 </h2>
 
-                {(showAudienceSelector ? PRIMARY_NAV : STATIC_NAV).map((link) => (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    onClick={close}
-                    className="flex min-h-(--size-button-height) items-center justify-between gap-md rounded-md px-md text-body font-semibold text-text-primary transition-colors duration-[var(--duration-instant)] ease-out-smooth active:bg-surface-secondary"
-                  >
-                    {link.label}
-                    <ChevronRight
-                      aria-hidden="true"
-                      className="size-(--size-icon-sm) text-text-secondary"
-                    />
-                  </Link>
-                ))}
+                {/* Home leads the Explore section (client feedback, T-034): in
+                    the selector variant it is prepended here; in the static
+                    variant STATIC_NAV already starts with it. */}
+                {(showAudienceSelector ? [HOME_LINK, ...PRIMARY_NAV] : STATIC_NAV).map((link) => {
+                  // Same page-scoped active rule as the audience rows and the
+                  // desktop links, with branding.md §3.5's Active chip tokens
+                  // (via NAV_ACTIVE_CHIP) so the drawer matches the header.
+                  const isActive = pathname === link.href;
+
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={close}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={cn(
+                        'flex min-h-(--size-button-height) items-center justify-between gap-md rounded-md px-md text-body font-semibold',
+                        'transition-colors duration-[var(--duration-fast)] ease-in-out-spring',
+                        isActive
+                          ? cn('border border-transparent', NAV_ACTIVE_CHIP)
+                          : 'text-text-primary hover:bg-surface-secondary'
+                      )}
+                    >
+                      {link.label}
+                      <ChevronRight
+                        aria-hidden="true"
+                        className={cn(
+                          'size-(--size-icon-sm)',
+                          isActive ? 'text-text-primary' : 'text-text-secondary'
+                        )}
+                      />
+                    </Link>
+                  );
+                })}
               </nav>
 
               <ButtonLink
