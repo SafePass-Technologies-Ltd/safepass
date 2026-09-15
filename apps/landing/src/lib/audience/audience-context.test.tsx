@@ -1,16 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { AudienceProvider, useAudience, AUDIENCE_CONFIG } from './audience-context';
 
 /**
- * Foundation tests for audience state (FEAT-001).
+ * Audience state (FEAT-001), as narrowed in T-037.
  *
- * Covers the two behaviours user_flow.md's "Audience Selector Persistence"
- * global flow specifies, both of which are mitigations for R-001/R-002 rather
- * than conveniences: selection survives navigation within a session, and a
- * deep link sets the audience to match the page instead of defaulting to
- * Individual.
+ * The provider no longer exposes a setter: the URL is the only writer (the
+ * pathname-adopt effect), and sessionStorage exists solely to carry the
+ * audience across pages whose URL names none — user_flow.md's "Audience
+ * Selector Persistence" global flow. These tests pin that contract: the
+ * deep-link override, the session restore, and the corrupted-value fallback.
  */
 
 const mockPathname = vi.hoisted(() => ({ value: '/' }));
@@ -20,12 +19,11 @@ vi.mock('next/navigation', () => ({
 }));
 
 function Probe() {
-  const { audience, setAudience } = useAudience();
+  const { audience } = useAudience();
   return (
     <div>
       <span data-testid="audience">{audience}</span>
       <span data-testid="cta">{AUDIENCE_CONFIG[audience].ctaLabel}</span>
-      <button onClick={() => setAudience('business')}>Choose business</button>
     </div>
   );
 }
@@ -49,22 +47,21 @@ describe('AudienceProvider', () => {
     expect(screen.getByTestId('audience')).toHaveTextContent('individual');
   });
 
-  it('surfaces the CTA matching the selected audience', async () => {
-    const user = userEvent.setup();
+  it('adopts the audience of a deep-linked page', () => {
+    // A "For Business" URL forwarded to a colleague must not open showing
+    // consumer messaging — user_flow.md's Global Flow states this explicitly.
+    mockPathname.value = '/business';
     renderProbe();
-
-    // The whole point of the selector: a Business visitor must see "Request a
-    // Demo", never the consumer app-download CTA (FEAT-009's criteria).
-    expect(screen.getByTestId('cta')).toHaveTextContent('Get the App');
-    await user.click(screen.getByRole('button', { name: 'Choose business' }));
+    expect(screen.getByTestId('audience')).toHaveTextContent('business');
     expect(screen.getByTestId('cta')).toHaveTextContent('Request a Demo');
   });
 
-  it('persists a selection to sessionStorage so it survives navigation', async () => {
-    const user = userEvent.setup();
+  it('persists the adopted audience to sessionStorage', () => {
+    // Landing on /business writes the choice so later, audience-less pages
+    // keep the matched CTA.
+    mockPathname.value = '/business';
     renderProbe();
 
-    await user.click(screen.getByRole('button', { name: 'Choose business' }));
     expect(window.sessionStorage.getItem('safepass:audience')).toBe('business');
   });
 
@@ -72,14 +69,7 @@ describe('AudienceProvider', () => {
     window.sessionStorage.setItem('safepass:audience', 'transport');
     renderProbe();
     expect(screen.getByTestId('audience')).toHaveTextContent('transport');
-  });
-
-  it('adopts the audience of a deep-linked page', () => {
-    // A "For Business" URL forwarded to a colleague must not open showing
-    // consumer messaging — user_flow.md's Global Flow states this explicitly.
-    mockPathname.value = '/business';
-    renderProbe();
-    expect(screen.getByTestId('audience')).toHaveTextContent('business');
+    expect(screen.getByTestId('cta')).toHaveTextContent('Partner With Us');
   });
 
   it('lets a deep link override a conflicting stored selection', () => {
@@ -88,6 +78,13 @@ describe('AudienceProvider', () => {
     mockPathname.value = '/transport-partners';
     renderProbe();
     expect(screen.getByTestId('audience')).toHaveTextContent('transport');
+  });
+
+  it('keeps the default on pages whose URL carries no audience signal', () => {
+    // /privacy etc. have no audience — the stored (or default) value applies.
+    mockPathname.value = '/privacy';
+    renderProbe();
+    expect(screen.getByTestId('audience')).toHaveTextContent('individual');
   });
 
   it('ignores a corrupted stored value rather than rendering an invalid state', () => {

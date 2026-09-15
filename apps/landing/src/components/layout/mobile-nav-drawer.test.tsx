@@ -6,8 +6,11 @@ import { AudienceProvider } from '@/lib/audience/audience-context';
 
 /**
  * FEAT-001 — "Header collapses into a mobile nav drawer below the tablet
- * breakpoint", plus branding.md Section 4's accessibility requirements, which
- * are treated as hard requirements rather than polish.
+ * breakpoint", unified in T-037: the drawer presents the SAME six links as the
+ * desktop header, in ONE consistent list, with the same URL-derived active
+ * states. The modal contract (aria-modal, focus trap, Escape, focus return,
+ * aria-expanded, scroll lock, exit animation) is asserted for real because
+ * branding.md Section 4 treats it as a hard requirement.
  *
  * jsdom has no layout engine, so the breakpoint itself is asserted on the
  * responsive classes (the only thing that carries it — there is no JS media
@@ -20,13 +23,22 @@ vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname.value,
 }));
 
-function renderDrawer(showAudienceSelector = true) {
+function renderDrawer() {
   return render(
     <AudienceProvider>
-      <MobileNavDrawer showAudienceSelector={showAudienceSelector} />
+      <MobileNavDrawer />
     </AudienceProvider>
   );
 }
+
+const SITE_LINKS = [
+  'Home',
+  'Individual',
+  'Business',
+  'Transport Partner',
+  'How We Verify',
+  'About',
+];
 
 beforeEach(() => {
   mockPathname.value = '/';
@@ -49,7 +61,7 @@ describe('MobileNavDrawer', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('opens on trigger click, exposing the selector, nav, and CTA', async () => {
+  it('opens on trigger click with the full modal contract', async () => {
     const user = userEvent.setup();
     renderDrawer();
 
@@ -61,12 +73,6 @@ describe('MobileNavDrawer', () => {
       'aria-expanded',
       'true'
     );
-
-    expect(
-      within(dialog).getByRole('navigation', { name: /choose your audience/i })
-    ).toBeInTheDocument();
-    expect(within(dialog).getByRole('link', { name: 'How We Verify' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('link', { name: 'Get the App' })).toBeInTheDocument();
   });
 
   it('carries shadow-lg, the elevation branding.md 3.4 assigns the drawer', async () => {
@@ -110,6 +116,17 @@ describe('MobileNavDrawer', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
+  it('locks body scroll while open and restores it on close', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+
+    await user.click(screen.getByRole('button', { name: /open menu/i }));
+    expect(document.body.style.overflow).toBe('hidden');
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(document.body.style.overflow).not.toBe('hidden'));
+  });
+
   it('traps Tab focus inside the panel while open', async () => {
     const user = userEvent.setup();
     renderDrawer();
@@ -126,128 +143,141 @@ describe('MobileNavDrawer', () => {
     expect(document.activeElement).toBe(focusable[0]);
   });
 
-  it('omits the audience selector in the non-audience-selecting variant, showing plain links instead', async () => {
-    const user = userEvent.setup();
-    mockPathname.value = '/privacy';
-    renderDrawer(false);
-
-    await user.click(screen.getByRole('button', { name: /open menu/i }));
-    const dialog = screen.getByRole('dialog');
-
-    expect(
-      within(dialog).queryByRole('navigation', { name: /choose your audience/i })
-    ).not.toBeInTheDocument();
-    expect(within(dialog).getByRole('link', { name: 'Business' })).toHaveAttribute(
-      'href',
-      '/business'
-    );
-  });
-
-  describe('page-scoped active states (T-034)', () => {
-    it('marks an audience row active only while the visitor is on that page', async () => {
+  describe('one consistent list (T-037)', () => {
+    it('presents the SAME six links as the desktop header, in one section', async () => {
       const user = userEvent.setup();
-      mockPathname.value = '/business';
       renderDrawer();
 
       await user.click(screen.getByRole('button', { name: /open menu/i }));
       const dialog = screen.getByRole('dialog');
 
-      // jsdom flattens the row's spans into the accessible name "BusinessSelected".
-      expect(within(dialog).getByRole('link', { name: /Business/ })).toHaveAttribute(
-        'aria-current',
-        'page'
-      );
+      // Exactly one site nav — the old split rendered an audience section
+      // separate from an Explore section.
+      const navs = within(dialog).getAllByRole('navigation', { name: 'Site' });
+      expect(navs).toHaveLength(1);
+
+      const links = within(navs[0]).getAllByRole('link');
+      expect(links.map((link) => link.textContent)).toEqual(SITE_LINKS);
+
+      // No leftover audience-selector group.
       expect(
-        within(dialog).getByRole('link', { name: /Individual/ })
-      ).not.toHaveAttribute('aria-current');
+        within(dialog).queryByRole('navigation', { name: /choose your audience/i })
+      ).not.toBeInTheDocument();
     });
 
-    it('highlights nothing when the persisted audience does not match the page', async () => {
-      // The T-034 bug's drawer half: after choosing Business, /how-we-verify
-      // used to show the Business row as "Selected". The context still drives
-      // the CTA below — only the highlight is page-scoped now.
+    it('renders identically on legal pages — no variant, same six links', async () => {
+      const user = userEvent.setup();
+      mockPathname.value = '/privacy';
+      renderDrawer();
+
+      await user.click(screen.getByRole('button', { name: /open menu/i }));
+      const dialog = screen.getByRole('dialog');
+      const siteNav = within(dialog).getAllByRole('navigation', { name: 'Site' })[0];
+
+      const links = within(siteNav).getAllByRole('link');
+      expect(links.map((link) => link.textContent)).toEqual(SITE_LINKS);
+    });
+
+    it('closes when a link is tapped, so the overlay never covers the destination', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+
+      await user.click(screen.getByRole('button', { name: /open menu/i }));
+      await user.click(within(screen.getByRole('dialog')).getByRole('link', { name: 'Home' }));
+
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+  });
+
+  describe('URL-derived active states (T-037)', () => {
+    it('marks the current page active in the list, with aria-current and the accent bar', async () => {
+      const user = userEvent.setup();
+      mockPathname.value = '/business';
+      renderDrawer();
+
+      await user.click(screen.getByRole('button', { name: /open menu/i }));
+      const siteNav = within(screen.getByRole('dialog')).getByRole('navigation', {
+        name: 'Site',
+      });
+
+      const current = within(siteNav)
+        .getAllByRole('link')
+        .filter((link) => link.getAttribute('aria-current') === 'page');
+      expect(current.map((link) => link.textContent)).toEqual(['Business']);
+      // Same accent treatment family as the header underline.
+      expect(current[0].className).toContain('before:opacity-100');
+ expect(current[0].className).toContain('bg-primary-light');
+    });
+
+    it('highlights nothing from the persisted audience that is not the page itself', async () => {
+      // The T-034 bug's drawer half: after visiting /business, /how-we-verify
+      // must not present Business as current. The context still drives the
+      // CTA below — only the highlight is URL-derived, so the only current
+      // link is the page's own.
       const user = userEvent.setup();
       window.sessionStorage.setItem('safepass:audience', 'business');
       mockPathname.value = '/how-we-verify';
       renderDrawer();
 
       await user.click(screen.getByRole('button', { name: /open menu/i }));
-      const dialog = screen.getByRole('dialog');
-
-      // No AUDIENCE row may read as current: the persisted context says
-      // Business, but the visitor is on /how-we-verify, which is nobody's
-      // audience page. (The Explore section's own page-scoped active state —
-      // How We Verify here — is asserted in the test below.)
-      const audienceNav = within(dialog).getByRole('navigation', {
-        name: /choose your audience/i,
+      const siteNav = within(screen.getByRole('dialog')).getByRole('navigation', {
+        name: 'Site',
       });
-      within(audienceNav)
+
+      for (const label of ['Home', 'Individual', 'Business', 'Transport Partner', 'About']) {
+        expect(within(siteNav).getByRole('link', { name: label })).not.toHaveAttribute(
+          'aria-current'
+        );
+      }
+      const current = within(siteNav)
         .getAllByRole('link')
-        .forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
+        .filter((link) => link.getAttribute('aria-current') === 'page');
+      expect(current.map((link) => link.textContent)).toEqual(['How We Verify']);
       // Documented kept behaviour: the CTA still follows the session audience.
-      expect(within(dialog).getByRole('link', { name: 'Request a Demo' })).toBeInTheDocument();
+      expect(
+        within(screen.getByRole('dialog')).getByRole('link', { name: 'Request a Demo' })
+      ).toBeInTheDocument();
     });
 
-    it('marks How We Verify active in the Explore section on its own page', async () => {
-      const user = userEvent.setup();
-      mockPathname.value = '/how-we-verify';
-      renderDrawer();
-
-      await user.click(screen.getByRole('button', { name: /open menu/i }));
-      const siteNav = within(screen.getByRole('dialog')).getAllByRole('navigation', {
-        name: 'Site',
-      })[0];
-
-      expect(within(siteNav).getByRole('link', { name: 'How We Verify' })).toHaveAttribute(
-        'aria-current',
-        'page'
-      );
-      expect(within(siteNav).getByRole('link', { name: 'About' })).not.toHaveAttribute(
-        'aria-current'
-      );
-      // Same Active chip tokens as the header's audience selector, so the
-      // drawer speaks the page's one active-state language.
-      expect(within(siteNav).getByRole('link', { name: 'How We Verify' })).toHaveClass(
-        'bg-primary-light',
-        'border-primary'
-      );
-    });
-
-    it('marks Home active in Explore on the homepage, and first in the section', async () => {
-      const user = userEvent.setup();
-      renderDrawer();
-
-      await user.click(screen.getByRole('button', { name: /open menu/i }));
-      const siteNav = within(screen.getByRole('dialog')).getAllByRole('navigation', {
-        name: 'Site',
-      })[0];
-
-      const home = within(siteNav).getByRole('link', { name: 'Home' });
-      expect(home).toHaveAttribute('href', '/');
-      expect(home).toHaveAttribute('aria-current', 'page');
-      expect(within(siteNav).getAllByRole('link')[0]).toBe(home);
-    });
-
-    it('marks nothing active on the legal variant, and still lists Home first', async () => {
+    it('marks nothing active on /terms, and still lists all six links', async () => {
       const user = userEvent.setup();
       mockPathname.value = '/terms';
-      renderDrawer(false);
+      renderDrawer();
 
       await user.click(screen.getByRole('button', { name: /open menu/i }));
-      const siteNav = within(screen.getByRole('dialog')).getAllByRole('navigation', {
+      const siteNav = within(screen.getByRole('dialog')).getByRole('navigation', {
         name: 'Site',
-      })[0];
+      });
 
       const links = within(siteNav).getAllByRole('link');
-      expect(links.map((link) => link.textContent)).toEqual([
-        'Home',
-        'Individual',
-        'Business',
-        'Transport Partner',
-        'How We Verify',
-        'About',
-      ]);
+      expect(links.map((link) => link.textContent)).toEqual(SITE_LINKS);
       links.forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
+    });
+  });
+
+  describe('the primary CTA', () => {
+    it('renders the audience-matched CTA beneath the list', async () => {
+      const user = userEvent.setup();
+      renderDrawer();
+
+      await user.click(screen.getByRole('button', { name: /open menu/i }));
+      const dialog = screen.getByRole('dialog');
+
+      const cta = within(dialog).getByRole('link', { name: 'Get the App' });
+      expect(cta).toHaveAttribute('href', '/individual');
+      expect(cta).toHaveClass('bg-primary');
+    });
+
+    it('follows the stored session audience on pages with no audience in the URL', async () => {
+      const user = userEvent.setup();
+      window.sessionStorage.setItem('safepass:audience', 'business');
+      mockPathname.value = '/privacy';
+      renderDrawer();
+
+      await user.click(screen.getByRole('button', { name: /open menu/i }));
+      expect(
+        within(screen.getByRole('dialog')).getByRole('link', { name: 'Request a Demo' })
+      ).toBeInTheDocument();
     });
   });
 });

@@ -4,17 +4,27 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Check, ChevronRight, Menu, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { ButtonLink } from '@/components/ui/button';
-import { NAV_ACTIVE_CHIP } from '@/components/layout/audience-selector';
-import { AUDIENCE_CONFIG, AUDIENCE_LIST, useAudience } from '@/lib/audience/audience-context';
+import { AUDIENCE_CONFIG, PATH_TO_AUDIENCE, useAudience } from '@/lib/audience/audience-context';
 import { durationMs } from '@/lib/motion/constants';
-import { HOME_LINK, PRIMARY_NAV, STATIC_NAV } from '@/lib/content/navigation';
+import { SITE_NAV } from '@/lib/content/navigation';
 import { cn } from '@/lib/utils';
 
 /**
  * Mobile nav drawer — FEAT-001's "collapses into a mobile nav drawer below the
- * tablet breakpoint" criterion.
+ * tablet breakpoint" criterion, unified in T-037.
+ *
+ * T-037: the drawer presents the SAME six links as the desktop header in ONE
+ * consistent list, with the same URL-derived active states. The old split (an
+ * "I'm travelling as" audience section separate from an "Explore" section,
+ * with a `showAudienceSelector` variant on legal pages) reproduced the desktop
+ * header's two-treatment problem; it is gone. One list, one treatment, one
+ * active rule — `pathname === link.href` — shared with navbar.tsx.
+ *
+ * The active treatment is the header's underline, moved to the row: a 2px
+ * `primary` bar along the row's left edge plus `aria-current="page"`. Colour
+ * is not the only signal (branding.md §4).
  *
  * Breakpoint is `md` (768px): branding.md Section 8 keeps the full creative
  * experience at tablet, so the drawer is a below-tablet affordance only.
@@ -39,7 +49,6 @@ function focusableWithin(container: HTMLElement): HTMLElement[] {
 }
 
 export function MobileNavDrawer({
-  showAudienceSelector,
   /**
    * True while the header is floating over the dark hero. The trigger icon then
    * has to be white — `text-text-primary` is dark slate in light mode and would
@@ -52,7 +61,6 @@ export function MobileNavDrawer({
    */
   onOpenChange,
 }: {
-  showAudienceSelector: boolean;
   onDark?: boolean;
   onOpenChange?: (open: boolean) => void;
 }) {
@@ -72,8 +80,13 @@ export function MobileNavDrawer({
   const panelId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const { audience, setAudience } = useAudience();
-  const cta = AUDIENCE_CONFIG[audience];
+  const { audience } = useAudience();
+
+  /**
+   * CTA resolution — same rule as the desktop header: the pathname wins when it
+   * names an audience; the stored session audience covers pages it doesn't.
+   */
+  const cta = AUDIENCE_CONFIG[PATH_TO_AUDIENCE[pathname] ?? audience];
 
   const [exiting, setExiting] = useState(false);
   const [shown, setShown] = useState(false);
@@ -222,7 +235,7 @@ export function MobileNavDrawer({
         aria-label={open ? 'Close menu' : 'Open menu'}
         // Sized to `button-height` rather than the bare 44px a11y floor: it is
         // the only tap target in the mobile header, and it is a token.
-          className={cn(
+        className={cn(
           'inline-flex size-(--size-button-height) items-center justify-center rounded-md',
           'transition-colors duration-[var(--duration-normal)] ease-out-smooth',
           // While open the panel covers the hero, so the icon sits on the solid
@@ -292,101 +305,18 @@ export function MobileNavDrawer({
               )}
             >
               {/*
-                The audience options are full-width ROWS here, not the header's
-                chip selector. The chips wrapped at 390px — two on one line and
-                "Transport Partner" orphaned on the next, inside a floating
-                bordered box with no label explaining what it was. Rows give
-                each audience an unambiguous full-width tap target, room for the
-                CTA it leads to, and a section label saying what the choice is.
-
-                Deliberately not a variant of `AudienceSelector`: that component
-                implements branding.md §3.5's three-state chip treatment for the
-                header, and bending it into a list would compromise both.
+                THE nav — the same six links the desktop header renders, from
+                the same SITE_NAV list, in one section (T-037). No separate
+                audience group, no variant for legal pages.
               */}
-              {showAudienceSelector ? (
-                <nav aria-label="Choose your audience" className="flex flex-col gap-xs">
-                  <h2 className="px-sm text-caption uppercase tracking-wide text-text-secondary">
-                    I&apos;m travelling as
-                  </h2>
-
-                  {AUDIENCE_LIST.map((option) => {
-                    // Page-scoped highlight (T-034): like the header selector,
-                    // active only while the visitor IS on that audience's page.
-                    // The persisted context still drives the header CTA below.
-                    const isActive = pathname === option.href;
-
-                    return (
-                      <Link
-                        key={option.audience}
-                        href={option.href}
-                        onClick={() => {
-                          setAudience(option.audience);
-                          close();
-                        }}
-                        aria-current={isActive ? 'page' : undefined}
-                        className={cn(
-                          'flex min-h-(--size-button-height) items-center justify-between gap-md rounded-md border px-md',
-                          'transition-colors duration-[var(--duration-fast)] ease-in-out-spring',
-                          // See audience-selector.tsx: blue on `primary-light`
-                          // is 2.45:1 in light mode, so the selected row uses
-                          // `text-text-primary` and lets the border/fill carry
-                          // the state instead.
-                          isActive
-                            ? 'border-primary bg-primary-light text-text-primary'
-                            : 'border-border bg-surface-secondary text-text-primary'
-                        )}
-                      >
-                        <span className="text-body font-semibold">{option.label}</span>
-
-                        {/*
-                          The ACTIVE row shows selection state; the others show
-                          the action they lead to. Showing the CTA on the active
-                          row too would print "Get the App" twice on one screen
-                          — once here and once on the primary button below it —
-                          which reads as a duplicate control rather than as the
-                          current choice.
-
-                          Colour is not the only signal of selection: the icon
-                          and its text alternative carry it too (branding.md §4).
-                        */}
-                        {isActive ? (
-                          <span className="flex items-center gap-xs text-body-small text-accent-text">
-                            <Check aria-hidden="true" className="size-(--size-icon-sm)" />
-                            Selected
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-xs text-body-small text-text-secondary">
-                            {option.ctaLabel}
-                            <ChevronRight aria-hidden="true" className="size-(--size-icon-sm)" />
-                          </span>
-                        )}
-                      </Link>
-                    );
-                  })}
-                </nav>
-              ) : null}
-
-              {/* The divider separates this from the audience section above.
-                  On the legal-page variant there is no section above it, so it
-                  would render as a rule floating under the header. */}
-              <nav
-                aria-label="Site"
-                className={cn(
-                  'flex flex-col gap-xs',
-                  showAudienceSelector && 'border-t border-border pt-md'
-                )}
-              >
+              <nav aria-label="Site" className="flex flex-col gap-xs">
                 <h2 className="px-sm text-caption uppercase tracking-wide text-text-secondary">
-                  Explore
+                  Menu
                 </h2>
 
-                {/* Home leads the Explore section (client feedback, T-034): in
-                    the selector variant it is prepended here; in the static
-                    variant STATIC_NAV already starts with it. */}
-                {(showAudienceSelector ? [HOME_LINK, ...PRIMARY_NAV] : STATIC_NAV).map((link) => {
-                  // Same page-scoped active rule as the audience rows and the
-                  // desktop links, with branding.md §3.5's Active chip tokens
-                  // (via NAV_ACTIVE_CHIP) so the drawer matches the header.
+                {SITE_NAV.map((link) => {
+                  // Same active rule as the desktop header: pathname equality,
+                  // never the persisted audience context.
                   const isActive = pathname === link.href;
 
                   return (
@@ -396,29 +326,32 @@ export function MobileNavDrawer({
                       onClick={close}
                       aria-current={isActive ? 'page' : undefined}
                       className={cn(
-                        'flex min-h-(--size-button-height) items-center justify-between gap-md rounded-md px-md text-body font-semibold',
+                        'relative flex min-h-(--size-button-height) items-center rounded-sm px-md text-body font-semibold',
                         'transition-colors duration-[var(--duration-fast)] ease-in-out-spring',
+                        // The header's 2px accent underline, as a row's left
+                        // edge: `primary` when active, transparent rail when
+                        // not so the state never shifts layout. On the active
+                        // row the fill is `primary-light` — branding.md §3.5's
+                        // Active pairing — with `text-text-primary` because
+                        // blue-on-primary-light is 2.45:1 in light mode (see
+                        // button.tsx's secondary variant for the same maths).
+                        'before:absolute before:inset-y-(--spacing-sm) before:left-0 before:w-[2px] before:rounded-full before:bg-primary',
                         isActive
-                          ? cn('border border-transparent', NAV_ACTIVE_CHIP)
-                          : 'text-text-primary hover:bg-surface-secondary'
+                          ? 'bg-primary-light text-text-primary before:opacity-100'
+                          : 'text-text-primary before:opacity-0 hover:bg-surface-secondary'
                       )}
                     >
                       {link.label}
-                      <ChevronRight
-                        aria-hidden="true"
-                        className={cn(
-                          'size-(--size-icon-sm)',
-                          isActive ? 'text-text-primary' : 'text-text-secondary'
-                        )}
-                      />
                     </Link>
                   );
                 })}
               </nav>
 
+              {/* The single converting action, identical to the desktop CTA:
+                  the drawer is a menu, not a second pitch. */}
               <ButtonLink
                 href={cta.href}
-                className="w-full border-t border-border/0"
+                className="w-full border-t border-border"
                 onClick={close}
               >
                 {cta.ctaLabel}

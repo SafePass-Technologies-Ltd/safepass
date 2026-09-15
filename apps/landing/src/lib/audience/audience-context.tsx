@@ -1,16 +1,56 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { usePathname } from 'next/navigation';
 
 /**
  * Audience state (FEAT-001) — which of the three personas the visitor has
- * identified as, and which content and CTA they therefore see.
+ * identified as, driving the header CTA on pages whose URL carries no audience.
  *
- * This is the site's central information-architecture mechanism and the
- * mitigation for two named risks: R-001 (one site diluting messaging across
- * three buyer types) and R-002 (a visitor bouncing before finding the CTA
- * meant for them). Treat it as load-bearing, not a convenience toggle.
+ * ─── WHY THIS STATE EXISTS AT ALL (T-037 justification) ─────────────────────
+ *
+ * Navigation on this site is URL-native: every nav item is a real anchor and
+ * the active state comes from `usePathname()` (DELIVERY.md D-011). Navigation
+ * itself needs zero client state. This module is NOT navigation — it is the
+ * one piece of state the CTA requirement forces:
+ *
+ *  - user_flow.md's "Audience Selector Persistence" global flow: selecting an
+ *    audience "persists for the session so the header CTA stays stable".
+ *  - A visitor who came in through /business must keep seeing "Request a
+ *    Demo" on /how-we-verify and /privacy — offering a Business visitor the
+ *    consumer app-download CTA there is the exact conversion bug FEAT-009
+ *    exists to prevent.
+ *
+ * Pages whose URL names an audience (/individual, /business,
+ * /transport-partners) do not need this state — the CTA derives from the
+ * pathname (see PATH_TO_AUDIENCE). The storage exists solely for the OTHER
+ * pages — /, /how-we-verify, /about, /privacy, /terms — whose URL carries no
+ * audience signal.
+ *
+ * WHAT WOULD BREAK WITHOUT IT: every non-audience page would fall back to the
+ * default `individual` CTA. A Business visitor deep-linked to /business who
+ * then opened /privacy would be offered "Get the App" — the session-continuity
+ * requirement dies, and with it the reason R-002's mitigation works.
+ *
+ * sessionStorage, not localStorage: user_flow.md scopes persistence to "the
+ * same session". A visitor returning months later should get the neutral
+ * default rather than an identity chosen on a previous visit.
+ *
+ * There is deliberately NO public setter. Under the old two-variant header the
+ * selector wrote `setAudience` on click; T-037 removes that component and the
+ * URL becomes the only source of truth — the effect below adopts the audience
+ * of whichever audience page the visitor is on. One writer, one signal,
+ * nothing to fall out of sync.
+ *
+ * Modelled with `useSyncExternalStore` rather than useState + useEffect so the
+ * stored value is read during render on the client and never causes a
+ * cascading re-render.
  *
  * This module owns the REACT STATE only. The audience DATA (labels, routes,
  * CTA labels) lives in `./audience-config`, which is deliberately not a
@@ -37,14 +77,9 @@ const STORAGE_KEY = 'safepass:audience';
 /**
  * sessionStorage as an external store.
  *
- * Modelled with `useSyncExternalStore` rather than useState + useEffect so the
- * stored value is read during render on the client and never causes a
- * cascading re-render — and so multiple selector instances (header and mobile
- * drawer, say) stay in lockstep automatically.
- *
- * sessionStorage, not localStorage: user_flow.md scopes persistence to "the
- * same session". A visitor returning months later should get the neutral
- * default rather than an identity chosen on a previous visit.
+ * The `storage` listener keeps duplicate tabs consistent if the visitor opens
+ * the site twice; it cannot fire for same-tab writes, which is what the
+ * pathname-adopt effect below needs `emit()` for.
  */
 const listeners = new Set<() => void>();
 
@@ -75,25 +110,26 @@ const storedAudienceStore = {
   },
 };
 
+/**
+ * The single writer. Called only from the pathname-adopt effect: landing on an
+ * audience page adopts that audience for the rest of the session.
+ */
 function persist(audience: Audience): void {
   try {
     window.sessionStorage.setItem(STORAGE_KEY, audience);
   } catch {
-    // Selection still works for the current page; it just won't survive
-    // navigation. Not worth breaking the page over.
+    // Storage write failed (private browsing quota, etc.). The current page
+    // still derives its CTA from the URL; only cross-page continuity is lost.
+    // Not worth breaking the page over.
   }
   emit();
 }
 
 interface AudienceContextValue {
   audience: Audience;
-  setAudience: (next: Audience) => void;
 }
 
-const AudienceContext = createContext<AudienceContextValue>({
-  audience: 'individual',
-  setAudience: () => {},
-});
+const AudienceContext = createContext<AudienceContextValue>({ audience: 'individual' });
 
 export function useAudience(): AudienceContextValue {
   return useContext(AudienceContext);
@@ -121,20 +157,13 @@ export function AudienceProvider({ children }: { children: ReactNode }) {
   const audience = fromPath ?? stored;
 
   // Landing on an audience page adopts that audience for the rest of the
-  // session. This is a write to an external system, not a state sync.
+  // session — the URL is the only signal that ever writes here. This is a
+  // write to an external system, not a state sync.
   useEffect(() => {
     if (fromPath && fromPath !== storedAudienceStore.getSnapshot()) {
       persist(fromPath);
     }
   }, [fromPath]);
 
-  const setAudience = useCallback((next: Audience) => {
-    persist(next);
-  }, []);
-
-  return (
-    <AudienceContext.Provider value={{ audience, setAudience }}>
-      {children}
-    </AudienceContext.Provider>
-  );
+  return <AudienceContext.Provider value={{ audience }}>{children}</AudienceContext.Provider>;
 }
