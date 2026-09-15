@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Container } from '@/components/ui/container';
 import { LegalArticle } from '@/lib/content/legal/legal-article';
 import { about } from '@/lib/content/legal/about';
 
@@ -20,5 +21,12 @@ export const metadata: Metadata = {
 };
 
 export default function AboutPage() {
-  return <LegalArticle document={about} />;
+  // Standard site width, not the legal prose column: About is a company page
+  // read by investors, partners and procurement, and it was the only page on
+  // the site rendering noticeably narrower than the rest.
+  return (
+    <Container width="content">
+      <LegalArticle document={about} />
+    </Container>
+  );
 }

@@ -4,9 +4,9 @@ import { cn } from '@/lib/utils';
 /**
  * Layout container — branding.md Section 8's Perspective & Scale.
  *
- * `content` (1200px) for standard sections; `prose` (800px) for the legal and
- * about pages, whose Standard Static Page Layout in screens.md specifies a
- * single ~800px column for article-style body copy.
+ * `content` (1200px) for standard pages; `prose` (800px) for the legal
+ * documents (Privacy, Terms), whose clauses read badly at full width. The width
+ * is chosen per page — About uses `content` so it matches every other page.
  */
 export function Container({
   children,

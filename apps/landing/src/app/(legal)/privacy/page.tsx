@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Container } from '@/components/ui/container';
 import { LegalArticle } from '@/lib/content/legal/legal-article';
 import { privacyPolicy } from '@/lib/content/legal/privacy-policy';
 
@@ -23,5 +24,10 @@ export const metadata: Metadata = {
 };
 
 export default function PrivacyPage() {
-  return <LegalArticle document={privacyPolicy} />;
+  // Narrow prose column: legal clauses read badly at the full site width.
+  return (
+    <Container width="prose">
+      <LegalArticle document={privacyPolicy} />
+    </Container>
+  );
 }

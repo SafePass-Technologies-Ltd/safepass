@@ -105,6 +105,19 @@ describe('Corporate Audience Page (FEAT-009)', () => {
     expect(html).toMatch(/emergency response workflow/i);
   });
 
+  it('renders the comparison as a real table, not flex-broken cells', () => {
+    // Regression: `display: flex` on a <td> removes its table-cell display and
+    // collapsed the columns, so the "With SafePass" values no longer landed
+    // under their header. The text was still in the DOM, which is why the
+    // content-only assertion above passed while the table looked broken.
+    expect(html).not.toMatch(/<td[^>]*class="[^"]*\bflex\b/);
+    // Both columns must carry the same number of cells.
+    const otherCells = (html.match(/Driver calls when they remember|WhatsApp location sharing|Phone calls|Manual follow-up|No records|No escalation/g) ?? []).length;
+    const safepassCells = (html.match(/Live monitored journey|Dedicated monitoring officer|Dashboard|Automated arrival confirmation|Full audit history|Emergency response workflow/g) ?? []).length;
+    expect(otherCells).toBe(6);
+    expect(safepassCells).toBe(6);
+  });
+
   it('annotates the dashboard preview with a numbered call-out legend', () => {
     expect(html).toMatch(/active journeys/i);
     expect(html).toMatch(/live officer monitoring/i);

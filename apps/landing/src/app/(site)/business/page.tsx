@@ -163,22 +163,30 @@ export default function BusinessPage() {
               <tbody>
                 {CORPORATE_CONTENT.comparison.rows.map((row) => (
                   <tr key={row.other} className="border-b border-border last:border-b-0">
-                    <td className="flex items-center gap-xs px-md py-sm text-body text-text-secondary">
-                      <X
-                        aria-hidden="true"
-                        className="size-(--size-icon-sm) shrink-0 text-text-secondary"
-                        strokeWidth={2}
-                      />
-                      {row.other}
+                    {/* The alignment wrapper is a DIV, not the cell itself.
+                        `display: flex` on a <td> removes its table-cell
+                        display, which collapsed the table's columns and
+                        dropped the "With SafePass" values out of their column. */}
+                    <td className="px-md py-sm text-body text-text-secondary">
+                      <div className="flex items-center gap-xs">
+                        <X
+                          aria-hidden="true"
+                          className="size-(--size-icon-sm) shrink-0 text-text-secondary"
+                          strokeWidth={2}
+                        />
+                        {row.other}
+                      </div>
                     </td>
-                    <td className="flex items-center gap-xs px-md py-sm text-body font-medium text-text-primary">
-                      <span
-                        aria-hidden="true"
-                        className="flex size-(--size-icon-sm) shrink-0 items-center justify-center rounded-full bg-success/15 text-success"
-                      >
-                        <Check className="size-(--size-icon-sm)" strokeWidth={2.5} />
-                      </span>
-                      {row.safepass}
+                    <td className="px-md py-sm text-body font-medium text-text-primary">
+                      <div className="flex items-center gap-xs">
+                        <span
+                          aria-hidden="true"
+                          className="flex size-(--size-icon-sm) shrink-0 items-center justify-center rounded-full bg-success/15 text-success"
+                        >
+                          <Check className="size-(--size-icon-sm)" strokeWidth={2.5} />
+                        </span>
+                        {row.safepass}
+                      </div>
                     </td>
                   </tr>
                 ))}
