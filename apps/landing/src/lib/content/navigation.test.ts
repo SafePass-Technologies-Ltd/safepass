@@ -5,7 +5,7 @@ import {
   FOOTER_EXPLORE,
   FOOTER_LEGAL,
   HOME_LINK,
-  STATIC_NAV,
+  SITE_NAV,
 } from './navigation';
 
 /**
@@ -32,8 +32,10 @@ describe('AUDIENCE_NAV', () => {
 });
 
 describe('navigation link sets', () => {
-  it('routes every audience plus the credibility and about pages in the static nav', () => {
-    expect(STATIC_NAV.map((link) => link.href)).toEqual([
+  // T-037: SITE_NAV is the ONE list the header and drawer render on every
+  // page. Its coverage and order are the client's redesign, verbatim.
+  it('routes Home, every audience, and the credibility and about pages, in order', () => {
+    expect(SITE_NAV.map((link) => link.href)).toEqual([
       '/',
       '/individual',
       '/business',
@@ -43,14 +45,22 @@ describe('navigation link sets', () => {
     ]);
   });
 
-  it('leads the static nav with Home (T-034 client feedback)', () => {
-    expect(STATIC_NAV[0]).toEqual(HOME_LINK);
+  it('leads with Home (T-034 client feedback)', () => {
+    expect(SITE_NAV[0]).toEqual(HOME_LINK);
     expect(HOME_LINK).toEqual({ label: 'Home', href: '/' });
+  });
+
+  it('carries every audience page as a plain link in the one nav', () => {
+    // T-037: the audience destinations must not need a separate selector —
+    // they are ordinary entries in SITE_NAV.
+    for (const { href, label } of AUDIENCE_NAV) {
+      expect(SITE_NAV).toContainEqual({ label, href });
+    }
   });
 
   it('offers a homepage route from the footer exactly once', () => {
     // Home leads the footer explore list; it must not appear again now that
-    // STATIC_NAV itself carries it.
+    // FOOTER_EXPLORE aliases SITE_NAV.
     expect(FOOTER_EXPLORE[0]).toEqual({ label: 'Home', href: '/' });
     expect(FOOTER_EXPLORE.filter((link) => link.href === '/')).toHaveLength(1);
   });

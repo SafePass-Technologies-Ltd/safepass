@@ -5,12 +5,14 @@ import { Navbar } from './navbar';
 import { AudienceProvider } from '@/lib/audience/audience-context';
 
 /**
- * FEAT-001 — Global Navigation & Audience Selector.
+ * FEAT-001 — Global Navigation, as unified in T-037.
  *
- * Each `it` maps to one acceptance criterion in features.md. The persistence
- * criterion is exercised end-to-end through the real AudienceProvider rather
- * than a mock, because the criterion is about the selector and the session
- * store agreeing — mocking the store would assert nothing.
+ * The client's feedback was blunt: the header mixed two treatments (plain
+ * text links vs. a chip AudienceSelector) and the legal pages rendered a third
+ * variant. These tests pin the redesign: ONE nav, ONE treatment, identical on
+ * every page, active state derived from the URL only, and the primary CTA
+ * audience-matched by the session context on pages whose URL carries no
+ * audience.
  */
 
 const mockPathname = vi.hoisted(() => ({ value: '/' }));
@@ -19,12 +21,25 @@ vi.mock('next/navigation', () => ({
   usePathname: () => mockPathname.value,
 }));
 
-function renderNavbar(props: { showAudienceSelector?: boolean } = {}) {
+function renderNavbar() {
   return render(
     <AudienceProvider>
-      <Navbar {...props} />
+      <Navbar />
     </AudienceProvider>
   );
+}
+
+const SITE_LINKS = [
+  'Home',
+  'Individual',
+  'Business',
+  'Transport Partner',
+  'How We Verify',
+  'About',
+];
+
+function getSiteNav() {
+  return screen.getAllByRole('navigation', { name: 'Site' })[0];
 }
 
 beforeEach(() => {
@@ -32,145 +47,52 @@ beforeEach(() => {
   window.sessionStorage.clear();
 });
 
-describe('Navbar — audience-selecting variant', () => {
-  it('displays logo, all three audience options, and a primary CTA', () => {
+describe('Navbar — one unified nav on every page', () => {
+  it('renders all six links in one site nav, in screens.md order', () => {
     renderNavbar();
 
-    expect(screen.getByRole('link', { name: /safepass home/i })).toHaveAttribute('href', '/');
-
-    const selector = screen.getByRole('navigation', { name: /choose your audience/i });
-    expect(within(selector).getByRole('link', { name: 'Individual' })).toBeInTheDocument();
-    expect(within(selector).getByRole('link', { name: 'Business' })).toBeInTheDocument();
-    expect(within(selector).getByRole('link', { name: 'Transport Partner' })).toBeInTheDocument();
-
-    // Default audience is 'individual', so the header CTA is the app download.
-    expect(screen.getAllByRole('link', { name: 'Get the App' }).length).toBeGreaterThan(0);
+    const links = within(getSiteNav()).getAllByRole('link');
+    expect(links.map((link) => link.textContent)).toEqual(SITE_LINKS);
   });
 
-  it("routes each audience option to that audience's dedicated page", () => {
+  it('routes every link to its real href — URL-native navigation, no onClick routing', () => {
     renderNavbar();
-    const selector = screen.getByRole('navigation', { name: /choose your audience/i });
 
-    expect(within(selector).getByRole('link', { name: 'Individual' })).toHaveAttribute(
-      'href',
-      '/individual'
-    );
-    expect(within(selector).getByRole('link', { name: 'Business' })).toHaveAttribute(
-      'href',
-      '/business'
-    );
-    expect(within(selector).getByRole('link', { name: 'Transport Partner' })).toHaveAttribute(
-      'href',
-      '/transport-partners'
-    );
-  });
-
-  it('shows no audience pre-selected on the homepage', () => {
-    // The homepage is the neutral entry point (client feedback): it must not
-    // render "Individual" as selected by default, nor carry a stale session
-    // selection back onto it. Each audience page highlights its own option.
-    renderNavbar();
-    const selector = screen.getByRole('navigation', { name: /choose your audience/i });
-
-    within(selector)
+    const expected = ['/', '/individual', '/business', '/transport-partners', '/how-we-verify', '/about'];
+    within(getSiteNav())
       .getAllByRole('link')
-      .forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
+      .forEach((link, index) => expect(link).toHaveAttribute('href', expected[index]));
   });
 
-  it('marks the active audience with aria-current on its own page, not colour alone', () => {
-    mockPathname.value = '/individual';
+  it('gives all six links the SAME treatment — no chip group, no two-class split', () => {
+    // T-037's core complaint. On a page where nothing is active and no
+    // floating state applies, every link resolves to the IDENTICAL class
+    // string — the only differences elsewhere are the active/floating state
+    // tokens, never a per-item treatment. The old audience chips' bordered/
+    // filled classes must not appear on any link.
+    mockPathname.value = '/privacy';
     renderNavbar();
-    const selector = screen.getByRole('navigation', { name: /choose your audience/i });
 
-    expect(within(selector).getByRole('link', { name: 'Individual' })).toHaveAttribute(
-      'aria-current',
-      'page'
-    );
-    expect(within(selector).getByRole('link', { name: 'Business' })).not.toHaveAttribute(
-      'aria-current'
-    );
+    const links = within(getSiteNav()).getAllByRole('link');
+    const baseClasses = links[0].className;
+    for (const link of links.slice(1)) {
+      expect(link.className).toBe(baseClasses);
+    }
+    for (const link of links) {
+      expect(link.className).not.toContain('border-border');
+      expect(link.className).not.toContain('bg-surface-secondary');
+    }
   });
 
-  it('persists the selected audience across navigation within the session', async () => {
-    const user = userEvent.setup();
-    const { unmount } = renderNavbar();
-
-    await user.click(
-      within(screen.getByRole('navigation', { name: /choose your audience/i })).getByRole('link', {
-        name: 'Business',
-      })
-    );
-
-    // Simulate landing on a page that is not itself an audience page. The
-    // stored selection still carries the state: the header CTA stays
-    // audience-matched (that behaviour is documented and kept). The chip
-    // highlight, however, is page-scoped (T-034) — /how-we-verify must NOT
-    // present "Business" as if the visitor were on /business.
-    unmount();
-    mockPathname.value = '/how-we-verify';
+  it('keeps the audience pages reachable without any separate selector', () => {
+    // The old component was <nav aria-label="Choose your audience">; its
+    // absence is the point — but the destinations must still be one click away.
     renderNavbar();
 
-    const selector = screen.getByRole('navigation', { name: /choose your audience/i });
-    within(selector)
-      .getAllByRole('link')
-      .forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
-    expect(screen.getAllByRole('link', { name: 'Request a Demo' }).length).toBeGreaterThan(0);
-  });
-
-  it('marks How We Verify active only on its own page, with aria-current (T-034)', () => {
-    mockPathname.value = '/how-we-verify';
-    renderNavbar();
-
-    const siteNav = screen.getAllByRole('navigation', { name: 'Site' })[0];
-    expect(within(siteNav).getByRole('link', { name: 'How We Verify' })).toHaveAttribute(
-      'aria-current',
-      'page'
-    );
-    expect(within(siteNav).getByRole('link', { name: 'About' })).not.toHaveAttribute(
-      'aria-current'
-    );
-    // Not colour alone, and not the persisted context either: while the
-    // highlight flips, background/border tokens (bg-primary-light,
-    // border-primary) stay exactly the audience selector's Active treatment.
-    expect(within(siteNav).getByRole('link', { name: 'How We Verify' })).toHaveClass(
-      'bg-primary-light',
-      'border-primary'
-    );
-  });
-
-  it('places an explicit Home link before the audience selector (T-034)', () => {
-    renderNavbar();
-    const header = screen.getByRole('banner');
-    const all = within(header).getAllByRole('link');
-    const logo = within(header).getByRole('link', { name: /safepass home/i });
-
-    expect(within(header).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
-    // Home must sit BEFORE the selector's first link in reading order.
-    expect(all.indexOf(within(header).getByRole('link', { name: 'Home' }))).toBeLessThan(
-      all.indexOf(within(header).getByRole('link', { name: 'Individual' }))
-    );
-    // The logo still links home — unchanged alongside the new link.
-    expect(logo).toHaveAttribute('href', '/');
-  });
-
-  it('marks Home active on the homepage', () => {
-    renderNavbar();
-    expect(within(screen.getByRole('banner')).getByRole('link', { name: 'Home' })).toHaveAttribute(
-      'aria-current',
-      'page'
-    );
-  });
-
-  it('matches the audience set by a deep link rather than defaulting to Individual', () => {
-    mockPathname.value = '/transport-partners';
-    renderNavbar();
-
-    const selector = screen.getByRole('navigation', { name: /choose your audience/i });
-    expect(within(selector).getByRole('link', { name: 'Transport Partner' })).toHaveAttribute(
-      'aria-current',
-      'page'
-    );
-    expect(screen.getAllByRole('link', { name: 'Partner With Us' }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('navigation', { name: /choose your audience/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Individual' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Business' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Transport Partner' })).toBeInTheDocument();
   });
 
   it('stays fixed and above page content so scroll motion never obscures it', () => {
@@ -182,58 +104,139 @@ describe('Navbar — audience-selecting variant', () => {
   });
 });
 
-describe('Navbar — non-audience-selecting variant (legal pages)', () => {
-  beforeEach(() => {
+describe('Navbar — URL-derived active states', () => {
+  it.each([
+    ['/', 'Home'],
+    ['/individual', 'Individual'],
+    ['/business', 'Business'],
+    ['/transport-partners', 'Transport Partner'],
+    ['/how-we-verify', 'How We Verify'],
+    ['/about', 'About'],
+  ])('marks exactly %s active on %s with aria-current', (pathname, label) => {
+    mockPathname.value = pathname;
+    renderNavbar();
+
+    const links = within(getSiteNav()).getAllByRole('link');
+    const current = links.filter((link) => link.getAttribute('aria-current') === 'page');
+    expect(current.map((link) => link.textContent)).toEqual([label]);
+  });
+
+  it('marks nothing active on /privacy — no item IS that page', () => {
     mockPathname.value = '/privacy';
-  });
+    renderNavbar();
 
-  it('renders no audience selector but keeps the logo, nav links, and a CTA', () => {
-    renderNavbar({ showAudienceSelector: false });
-
-    expect(
-      screen.queryByRole('navigation', { name: /choose your audience/i })
-    ).not.toBeInTheDocument();
-
-    expect(screen.getByRole('link', { name: /safepass home/i })).toBeInTheDocument();
-
-    const siteNav = screen.getAllByRole('navigation', { name: 'Site' })[0];
-    expect(within(siteNav).getByRole('link', { name: 'Individual' })).toHaveAttribute(
-      'href',
-      '/individual'
-    );
-    expect(within(siteNav).getByRole('link', { name: 'How We Verify' })).toHaveAttribute(
-      'href',
-      '/how-we-verify'
-    );
-
-    expect(screen.getAllByRole('link', { name: 'Get the App' }).length).toBeGreaterThan(0);
-  });
-
-  it('applies no active audience state to any nav link on the privacy page', () => {
-    // The static variant carries Home + audiences + How We Verify + About, but
-    // none of them IS /privacy — nothing may read as current (T-034).
-    renderNavbar({ showAudienceSelector: false });
-    const siteNav = screen.getAllByRole('navigation', { name: 'Site' })[0];
-
-    within(siteNav)
+    within(getSiteNav())
       .getAllByRole('link')
       .forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
   });
 
-  it('leads its nav with the explicit Home link (T-034)', () => {
-    renderNavbar({ showAudienceSelector: false });
-    const siteNav = screen.getAllByRole('navigation', { name: 'Site' })[0];
+  it('marks nothing active on /terms', () => {
+    mockPathname.value = '/terms';
+    renderNavbar();
 
-    expect(within(siteNav).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
-    const links = within(siteNav).getAllByRole('link');
-    expect(links[0]).toBe(within(siteNav).getByRole('link', { name: 'Home' }));
-    expect(links.map((link) => link.textContent)).toEqual([
-      'Home',
-      'Individual',
-      'Business',
-      'Transport Partner',
-      'How We Verify',
-      'About',
-    ]);
+    within(getSiteNav())
+      .getAllByRole('link')
+      .forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
+  });
+
+  it('highlights nothing from the persisted audience — only the URL (T-034 regression)', () => {
+    // The client's earlier bug: Business stayed lit on /how-we-verify because
+    // the highlight followed the session audience. The context may still drive
+    // the CTA, but it must never drive the highlight. On /how-we-verify the
+    // How We Verify link IS current (it is the page); the assertion is that
+    // no AUDIENCE link carries the state.
+    window.sessionStorage.setItem('safepass:audience', 'business');
+    mockPathname.value = '/how-we-verify';
+    renderNavbar();
+
+    const links = within(getSiteNav()).getAllByRole('link');
+    for (const label of ['Home', 'Individual', 'Business', 'Transport Partner', 'About']) {
+      expect(within(getSiteNav()).getByRole('link', { name: label })).not.toHaveAttribute(
+        'aria-current'
+      );
+    }
+    // Exactly one link is current, and it is the page's own.
+    const current = links.filter((link) => link.getAttribute('aria-current') === 'page');
+    expect(current.map((link) => link.textContent)).toEqual(['How We Verify']);
+  });
+
+  it('applies the active visual treatment to exactly the current page', () => {
+    mockPathname.value = '/how-we-verify';
+    renderNavbar();
+
+    const active = within(getSiteNav()).getByRole('link', { name: 'How We Verify' });
+    const inactive = within(getSiteNav()).getByRole('link', { name: 'About' });
+
+    // Active: accent text colour + visible underline. Inactive: quiet text,
+    // underline rail present but transparent (so no layout shift on toggle).
+    expect(active.className).not.toBe(inactive.className);
+    expect(active.className).toContain('text-text-primary');
+    expect(inactive.className).toContain('text-text-secondary');
+    expect(active.className).toContain('after:opacity-100');
+    expect(inactive.className).toContain('after:opacity-0');
+  });
+});
+
+describe('Navbar — the primary CTA', () => {
+  it('renders the primary CTA after the nav links, as the only button-like element', () => {
+    renderNavbar();
+
+    const header = screen.getByRole('banner');
+    const cta = within(header).getByRole('link', { name: 'Get the App' });
+
+    // Default session audience is individual: the consumer app download.
+    expect(cta).toHaveAttribute('href', '/individual');
+    // Filled treatment, distinct from the ghost nav links.
+    expect(cta).toHaveClass('bg-primary');
+  });
+
+  it('keeps the CTA audience-matched after the visitor chose an audience (session continuity)', async () => {
+    // user_flow.md's persistence global flow: a Business visitor must keep
+    // seeing "Request a Demo" on pages whose URL carries no audience.
+    const user = userEvent.setup();
+    const { unmount } = renderNavbar();
+
+    // Choose Business by visiting its page (the URL is the only writer now).
+    mockPathname.value = '/business';
+    unmount();
+    renderNavbar();
+
+    // Move on to a page with no audience in the URL. The stored choice —
+    // adopted from the /business pathname — keeps the CTA matched.
+    unmount();
+    mockPathname.value = '/how-we-verify';
+    renderNavbar();
+
+    await user.tab(); // interaction sanity: nothing routes on click handlers
+    expect(screen.getAllByRole('link', { name: 'Request a Demo' }).length).toBeGreaterThan(0);
+  });
+
+  it('lets a deep link override the stored audience for the CTA', () => {
+    // The URL is the more recent, more explicit signal of intent.
+    window.sessionStorage.setItem('safepass:audience', 'individual');
+    mockPathname.value = '/transport-partners';
+    renderNavbar();
+
+    expect(screen.getAllByRole('link', { name: 'Partner With Us' }).length).toBeGreaterThan(0);
+  });
+});
+
+describe('Navbar — floating-over-hero state', () => {
+  it('switches the nav links to the on-dark treatment while floating', () => {
+    renderNavbar(); // homepage, unscrolled
+
+    const inactive = within(getSiteNav()).getByRole('link', { name: 'About' });
+    // White text over the always-dark hero — text-text-secondary is dark
+    // slate in light mode and would vanish.
+    expect(inactive.className).toContain('text-white/80');
+  });
+
+  it('renders the normal treatment on pages without a dark hero band', () => {
+    mockPathname.value = '/privacy';
+    renderNavbar();
+
+    const inactive = within(getSiteNav()).getByRole('link', { name: 'About' });
+    expect(inactive.className).toContain('text-text-secondary');
+    expect(inactive.className).not.toContain('text-white/80');
   });
 });

@@ -7,13 +7,13 @@ import { Container } from '@/components/ui/container';
  *
  * Deliberately NOT Creative-tier: screens.md states plainly that "a legal
  * disclosure page has no experience worth applying motion to". These pages get
- * the non-audience-selecting Navbar and a single ~800px prose column, and no
- * scroll-driven motion at all.
+ * the same unified Navbar every other page carries (T-037) and a single ~800px
+ * prose column, and no scroll-driven motion at all.
  */
 export default function LegalLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
-      <Navbar showAudienceSelector={false} />
+      <Navbar />
       <main id="main">
         <Container width="prose">{children}</Container>
       </main>

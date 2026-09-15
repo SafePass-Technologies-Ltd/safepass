@@ -13,6 +13,11 @@ import { clientEnv } from '@/lib/env';
  * restated them here to dodge a `'use client'` boundary problem; that boundary
  * has since been fixed properly by splitting the data out of the context
  * module, so there is exactly one definition of where "Business" goes.
+ *
+ * T-037 (unified nav): the header renders exactly ONE link set on every page —
+ * `SITE_NAV` below. The old split (a chip AudienceSelector on five pages,
+ * `STATIC_NAV` plain links on the legal/about pages) existed only to serve the
+ * two-variant Navbar and was deleted with it.
  */
 
 export interface NavLink {
@@ -34,10 +39,9 @@ export interface AudienceNavLink extends NavLink {
 
 /**
  * The homepage link. Client feedback (T-034): the logo links here, but visitors
- * do not know that, so "Home" is now an explicit nav link — first in the
- * desktop header (before the Audience Selector), first in STATIC_NAV (the
- * legal-page header variant and the drawer's Explore section), and the footer
- * Explore list.
+ * do not know that, so "Home" is an explicit nav link — it leads SITE_NAV (and
+ * therefore the header and the drawer), and it also leads the footer's Explore
+ * list.
  */
 export const HOME_LINK: NavLink = { label: 'Home', href: '/' };
 
@@ -50,37 +54,38 @@ export const AUDIENCE_NAV: ReadonlyArray<AudienceNavLink> = AUDIENCE_LIST.map(
 );
 
 /**
- * Non-audience navigation shown in both Navbar variants.
- *
- * Two cross-cutting destinations: `/how-we-verify` (the credibility page) and
- * `/about`. About was added to the header (client feedback) so visitors arriving
- * to evaluate the company — investors, partners, government, media — can reach
- * it in one click rather than hunting through the footer. screens.md's
- * navigation map still scopes the header's job as audience routing, so these
- * stay a deliberately short list.
+ * The credibility and company pages that close the header.
  */
-export const PRIMARY_NAV: ReadonlyArray<NavLink> = [
+export const SECONDARY_NAV: ReadonlyArray<NavLink> = [
   { label: 'How We Verify', href: '/how-we-verify' },
   { label: 'About', href: '/about' },
 ];
 
 /**
- * Full link set used by the non-audience-selecting Navbar variant (legal/about
- * pages) and by the mobile drawer: there the three audience destinations are
- * plain links, since screens.md specifies that variant shows "logo + primary
- * nav, no active audience state".
+ * The ONE nav the site renders — T-037.
+ *
+ * Every page's header (and the mobile drawer) maps exactly this list: Home,
+ * the three audience destinations as ordinary links, then How We Verify and
+ * About. The client's T-037 feedback was that the header previously mixed two
+ * treatments — plain text links for some destinations and a bordered chip
+ * group (the AudienceSelector) for the three audience pages — and that the
+ * legal pages rendered a third variant with a different link set. One list,
+ * one treatment, URL-derived active states; nothing else satisfies that.
+ *
+ * Order is screens.md's Navigation Shell order: Home, the audiences, How We
+ * Verify, About, with the primary CTA rendered after them by the Navbar.
  */
-export const STATIC_NAV: ReadonlyArray<NavLink> = [
+export const SITE_NAV: ReadonlyArray<NavLink> = [
   HOME_LINK,
   ...AUDIENCE_NAV.map(({ label, href }) => ({ label, href })),
-  ...PRIMARY_NAV,
+  ...SECONDARY_NAV,
 ];
 
 /**
- * The footer's Explore column. STATIC_NAV now leads with Home, so this is
- * STATIC_NAV verbatim — a separate prepend would print the homepage twice.
+ * The footer's Explore column. SITE_NAV now leads with Home, so this is
+ * SITE_NAV verbatim — a separate prepend would print the homepage twice.
  */
-export const FOOTER_EXPLORE: ReadonlyArray<NavLink> = STATIC_NAV;
+export const FOOTER_EXPLORE: ReadonlyArray<NavLink> = SITE_NAV;
 
 /**
  * Legal links. FEAT-015 requires all three be reachable within two clicks from
