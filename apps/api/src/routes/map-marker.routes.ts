@@ -265,7 +265,12 @@ adminMarkerRoutes.post('/bulk-import', async (c) => {
     }
   }
 
-  const result = await bulkImportMarkers(parsedRows, skipRows, user.sub, file.name);
+  // skipRows is only meaningful on the duplicate-confirmation call (see the
+  // endpoint doc above). A skipRows sent without confirmDuplicates must not
+  // silently drop rows the admin never reviewed, so ignore it entirely.
+  const effectiveSkipRows = confirmDuplicates ? skipRows : new Set<number>();
+
+  const result = await bulkImportMarkers(parsedRows, effectiveSkipRows, user.sub, file.name);
   return c.json(
     { status: 'imported', created: result.created, skipped: result.skipped, total: parsedRows.length },
     201

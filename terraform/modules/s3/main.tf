@@ -1,4 +1,13 @@
-# SafePass — S3 Evidence Bucket Module
+# SafePass — S3 Buckets Module (evidence + documents)
+#
+# Provisions BOTH private S3 buckets the API writes to:
+#   1. `<project>-<environment>-evidence`  — Object-Lock (WORM) emergency
+#      audio/video recordings (EVIDENCE_BUCKET_NAME).
+#   2. `<project>-<environment>-documents` — transport compliance documents
+#      (DOCUMENTS_BUCKET_NAME), uploaded by document.service.ts.
+# Both share the same privacy posture (SSE-KMS, versioning, full public-access
+# block); the documents bucket deliberately does NOT enable Object Lock — see
+# the note on `aws_s3_bucket.documents` below.
 #
 # Per architecture.md "Evidence Chain of Custody": emergency recordings are
 # hashed on-device before upload; S3 Object Lock (WORM) preserves evidence
@@ -103,4 +112,58 @@ output "bucket_name" {
 
 output "bucket_arn" {
   value = aws_s3_bucket.evidence.arn
+}
+
+# --- Documents bucket (transport compliance documents) ---
+#
+# Mirrors the evidence bucket's privacy posture — SSE-KMS encryption at rest,
+# versioning, and a full public-access block — so compliance documents
+# (licences, vehicle papers, etc.) are private and only reachable through the
+# API. Object Lock is intentionally NOT enabled here, unlike the evidence
+# bucket: documents are mutable verification artifacts that an admin reviews
+# and a partner can delete (DELETE /v1/documents/:id), so a WORM retention
+# rule would block legitimate deletes and is the wrong tool for this data
+# class. There is likewise no Glacier archival lifecycle — documents are
+# actively read during verification, not write-once-read-rarely evidence.
+resource "aws_s3_bucket" "documents" {
+  bucket = "${var.project}-${var.environment}-documents"
+
+  tags = {
+    Name        = "${var.project}-${var.environment}-documents"
+    Environment = var.environment
+    Purpose     = "transport-compliance-documents"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "documents" {
+  bucket = aws_s3_bucket.documents.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "documents" {
+  bucket = aws_s3_bucket.documents.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms" # same at-rest encryption posture as the evidence bucket
+    }
+    bucket_key_enabled = true
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "documents" {
+  bucket                  = aws_s3_bucket.documents.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+output "documents_bucket_name" {
+  value = aws_s3_bucket.documents.bucket
+}
+
+output "documents_bucket_arn" {
+  value = aws_s3_bucket.documents.arn
 }

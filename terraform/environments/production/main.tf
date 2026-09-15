@@ -119,9 +119,10 @@ module "iam" {
   project     = var.project
   environment = var.environment
 
-  secret_arns         = [module.secrets.secret_arn]
-  evidence_bucket_arn = module.s3_evidence.bucket_arn
-  dynamodb_table_arn  = module.dynamodb.table_arn
+  secret_arns          = [module.secrets.secret_arn]
+  evidence_bucket_arn  = module.s3_evidence.bucket_arn
+  documents_bucket_arn = module.s3_evidence.documents_bucket_arn
+  dynamodb_table_arn   = module.dynamodb.table_arn
 }
 
 # --- RDS PostgreSQL ---
@@ -221,6 +222,13 @@ module "ecs" {
     # back to ephemeral container-local disk storage, which is why this is
     # wired through rather than left unset in production.
     EVIDENCE_BUCKET_NAME = module.s3_evidence.bucket_name
+    # Private documents bucket for transport compliance documents
+    # (FEAT-017) -- apps/api/src/services/document.service.ts reads this
+    # instead of hardcoding a bucket name. Without it, document.routes.ts
+    # falls back to local disk in development and fails closed (500) in
+    # production rather than writing uploads to ephemeral container disk,
+    # which is why it is wired through here.
+    DOCUMENTS_BUCKET_NAME = module.s3_evidence.documents_bucket_name
     # Plain (non-secret) URL -- unlike the above, this isn't a credential,
     # so it's just a Terraform var rather than a Secrets Manager entry (see
     # variables.tf's admin_dashboard_url). Without this, the app's zod

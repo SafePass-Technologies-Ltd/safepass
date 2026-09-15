@@ -171,16 +171,20 @@ export default function TripRouteMap({
           )}
         </Map>
 
-        {/* Legend */}
-        <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
+        {/* Legend — spec tokens (tailwind.config.ts, branding.md light
+            column). Swatches mirror the markers above: origin = grey-500,
+            destination = error, live position = primary-700 (same value as
+            the stroke/pin token, not the semantically close `info`; noted
+            for the token map). */}
+        <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 px-4 py-2 text-xs text-grey-500">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-slate-500" /> Origin
+            <span className="h-2.5 w-2.5 rounded-full bg-grey-500" /> Origin
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-red-500" /> Destination
+            <span className="h-2.5 w-2.5 rounded-full bg-error" /> Destination
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-blue-500" /> Current position
+            <span className="h-2.5 w-2.5 rounded-full bg-primary-700" /> Current position
           </span>
         </div>
       </div>

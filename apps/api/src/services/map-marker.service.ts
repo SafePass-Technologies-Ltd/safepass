@@ -641,6 +641,12 @@ export async function bulkImportMarkers(
 ): Promise<{ created: number; skipped: number }> {
   const toCreate = rows.filter((r) => !skipRows.has(r.row));
 
+  // Count what was ACTUALLY skipped, not the size of the client-supplied set.
+  // A skipRows entry that matches no row in the file (or a duplicate number)
+  // must not inflate the count, otherwise the response and the audit row can
+  // report created + skipped > total and misstate the trail (FEAT-038 AC #7).
+  const skipped = rows.length - toCreate.length;
+
   await db.transaction(async (tx) => {
     if (toCreate.length > 0) {
       await tx.insert(mapMarkers).values(
@@ -671,9 +677,9 @@ export async function bulkImportMarkers(
       fileName,
       rowCount: rows.length,
       createdCount: toCreate.length,
-      skippedDuplicateCount: skipRows.size,
+      skippedDuplicateCount: skipped,
     });
   });
 
-  return { created: toCreate.length, skipped: skipRows.size };
+  return { created: toCreate.length, skipped };
 }
