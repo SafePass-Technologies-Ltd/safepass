@@ -3,9 +3,9 @@
 # Provisions ONLY:
 #   1. The ECS task execution role (pulls image from ECR, writes logs).
 #   2. The ECS task role (the running container's own runtime permissions:
-#      Secrets Manager read, S3 evidence bucket read/write, DynamoDB
-#      read/write) — least privilege, scoped only to the resources this
-#      environment provisions.
+#      Secrets Manager read, S3 evidence + documents bucket read/write,
+#      DynamoDB read/write) — least privilege, scoped only to the resources
+#      this environment provisions.
 #
 # DELIBERATELY NOT MANAGED HERE: GitHub Actions OIDC.
 #
@@ -99,8 +99,8 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution_managed" {
 
 # --- ECS task role (the running API container's own runtime permissions) ---
 # Least privilege: Secrets Manager read (for DB/JWT/Firebase/payment
-# secrets) + S3 evidence bucket read/write + DynamoDB read/write on the
-# realtime-state table only. No blanket access to other AWS resources.
+# secrets) + S3 evidence and documents bucket read/write + DynamoDB read/write
+# on the realtime-state table only. No blanket access to other AWS resources.
 resource "aws_iam_role" "ecs_task" {
   name               = "${var.project}-${var.environment}-ecs-task"
   assume_role_policy = data.aws_iam_policy_document.ecs_task_trust.json
@@ -115,6 +115,12 @@ variable "secret_arns" {
 variable "evidence_bucket_arn" {
   type    = string
   default = ""
+}
+
+variable "documents_bucket_arn" {
+  description = "ARN of the transport-compliance documents bucket (modules/s3's aws_s3_bucket.documents). Grants the task role the same object read/write grant as the evidence bucket."
+  type        = string
+  default     = ""
 }
 
 variable "dynamodb_table_arn" {
@@ -138,6 +144,24 @@ data "aws_iam_policy_document" "ecs_task_runtime" {
       sid       = "EvidenceBucketAccess"
       actions   = ["s3:GetObject", "s3:PutObject", "s3:PutObjectRetention"]
       resources = ["${var.evidence_bucket_arn}/*"]
+    }
+  }
+
+  # Transport compliance documents bucket (modules/s3's
+  # aws_s3_bucket.documents) -- the same object read/write grant as the
+  # evidence bucket above, so the upload path in
+  # apps/api/src/services/document.service.ts (PutObject) and the future
+  # presigned-GET retrieval path both work without a second IAM change.
+  # s3:PutObjectRetention is included only to keep this grant byte-for-byte
+  # identical to EvidenceBucketAccess: it is inert here because the documents
+  # bucket has no Object Lock (see modules/s3/main.tf), so it grants no
+  # capability the app can actually exercise.
+  dynamic "statement" {
+    for_each = var.documents_bucket_arn != "" ? [1] : []
+    content {
+      sid       = "DocumentsBucketAccess"
+      actions   = ["s3:GetObject", "s3:PutObject", "s3:PutObjectRetention"]
+      resources = ["${var.documents_bucket_arn}/*"]
     }
   }
 

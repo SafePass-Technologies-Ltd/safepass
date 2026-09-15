@@ -55,6 +55,11 @@ output "evidence_bucket_name" {
   value = module.s3_evidence.bucket_name
 }
 
+output "documents_bucket_name" {
+  description = "Private bucket holding transport compliance documents (FEAT-017), wired into the API container as DOCUMENTS_BUCKET_NAME."
+  value       = module.s3_evidence.documents_bucket_name
+}
+
 output "ecs_task_execution_role_arn" {
   value = module.iam.ecs_task_execution_role_arn
 }
