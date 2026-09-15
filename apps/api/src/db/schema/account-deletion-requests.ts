@@ -1,15 +1,14 @@
 /**
- * Account Deletion Requests — M-38 "Account Deletion" / A-27 "Account
- * Deletion Oversight & Legal Holds".
+ * Account Deletion Requests — FEAT-004 "Account Deletion" / FEAT-048
+ * "Account Deletion Oversight & Legal Holds".
  *
- * See docs/SafePass/schema.md's AccountDeletionRequest entity and Account
- * Deletion Data Retention Matrix, docs/SafePass/user_flow.md's Flow 10, and
- * docs/SafePass/risk_log.md R-013/R-014.
+ * See docs/SafePass/schema.md's AccountDeletionRequest entity,
+ * docs/SafePass/user_flow.md, and docs/SafePass/risk_log.md.
  *
  * One row per deletion attempt (not one row per user) -- a user who cancels
  * and later re-requests deletion gets a new row; historical
  * cancelled/completed rows are retained as the permanent audit trail (see
- * schema.md's retention matrix: "AccountDeletionRequest ... Retained").
+ * schema.md's AccountDeletionRequest entity: "Retained").
  */
 import { pgTable, uuid, jsonb, text, timestamp, index } from 'drizzle-orm/pg-core';
 import { accountDeletionStatusEnum } from './enums';
@@ -42,7 +41,7 @@ export const accountDeletionRequests = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     forceDeletedBy: uuid('force_deleted_by').references(() => users.id),
     forceDeleteReason: text('force_delete_reason'),
-    // Legal-hold override (A-27, super_admin only) is a distinct action from
+    // Legal-hold override (FEAT-048, super_admin only) is a distinct action from
     // force-delete (which bypasses the cooling-off period entirely) -- track
     // it separately so the audit trail distinguishes "held then overridden"
     // from "force-deleted before the window even elapsed".

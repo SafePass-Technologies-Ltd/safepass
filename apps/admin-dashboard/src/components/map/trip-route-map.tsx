@@ -107,7 +107,7 @@ export default function TripRouteMap({
     return [origin, destination];
   }, [routePolyline, origin, destination]);
 
-  // Note: the "safe zone" corridor (still described in screens.md/A-28) is
+  // Note: the "safe zone" corridor (still described in screens.md/FEAT-043) is
   // deliberately no longer rendered -- per product decision this map shows
   // only the fixed route, origin/destination pins, and the live/last-known
   // position marker.
@@ -138,10 +138,12 @@ export default function TripRouteMap({
           <FitToRoute route={routePath} currentLocation={currentLocation} />
 
           {/* Layer 1 (bottom): the trip's fixed route, or a straight
-              origin-destination fallback when no polyline was computed. */}
+              origin-destination fallback when no polyline was computed.
+              Stroke: spec primary-700 (branding.md light column) — screens.md
+              routes the trip polyline in the primary blue. */}
           <Polyline
             path={routePathLiteral}
-            strokeColor="#1D4ED8"
+            strokeColor="#0369A1"
             strokeOpacity={0.9}
             strokeWeight={4}
             zIndex={2}
@@ -149,11 +151,13 @@ export default function TripRouteMap({
 
           {/* Layer 2 (top): origin / destination / live-position markers. */}
           <AdvancedMarker position={{ lat: origin.latitude, lng: origin.longitude }} zIndex={3}>
-            <Pin background="#6B7280" borderColor="#4B5563" glyphColor="#FFFFFF" />
+            {/* Spec grey-600/700 (branding.md light column) for the origin pin. */}
+            <Pin background="#64748B" borderColor="#475569" glyphColor="#FFFFFF" />
           </AdvancedMarker>
 
           <AdvancedMarker position={{ lat: destination.latitude, lng: destination.longitude }} zIndex={3}>
-            <Pin background="#EF4444" borderColor="#DC2626" glyphColor="#FFFFFF" />
+            {/* Destination pin: spec error-500/700 (branding.md light column). */}
+            <Pin background="#D93025" borderColor="#B0261D" glyphColor="#FFFFFF" />
           </AdvancedMarker>
 
           {currentLocation && (
@@ -161,7 +165,8 @@ export default function TripRouteMap({
               position={{ lat: currentLocation.latitude, lng: currentLocation.longitude }}
               zIndex={4}
             >
-              <Pin background="#3B82F6" borderColor="#2563EB" glyphColor="#FFFFFF" scale={1.1} />
+              {/* Live position: spec primary-700/800 for the moving pin. */}
+              <Pin background="#0369A1" borderColor="#075985" glyphColor="#FFFFFF" scale={1.1} />
             </AdvancedMarker>
           )}
         </Map>

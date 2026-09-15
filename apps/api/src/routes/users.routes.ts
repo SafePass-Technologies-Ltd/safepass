@@ -205,7 +205,7 @@ userRoutes.delete(
 );
 
 // =============================================================================
-// Account Deletion (M-38) — see Flow 10 in docs/SafePass/user_flow.md
+// Account Deletion (FEAT-004) — see docs/SafePass/user_flow.md
 // =============================================================================
 
 /**
@@ -214,9 +214,9 @@ userRoutes.delete(
  * typed-confirmation UI live entirely client-side (Firebase reauth + the
  * mobile confirmation screen) -- this endpoint's `confirmation` field is a
  * server-side belt-and-braces check that the exact string was submitted,
- * and runs the pre-flight checks (active trip / wallet balance / sole org
- * admin) documented in Flow 10a.
- */
+* and runs the pre-flight checks (active trip / wallet balance / sole org
+  * admin) documented in docs/SafePass/user_flow.md.
+  */
 userRoutes.post(
   '/me/deletion-request',
   zValidator('json', CreateDeletionRequestSchema),

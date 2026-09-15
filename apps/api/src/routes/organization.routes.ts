@@ -141,7 +141,7 @@ orgRoutes.patch('/:id', zValidator('json', OrgUpdateSchema), async (c) => {
 });
 
 // ────────────────────────────────────────────────────────────
-// Staff Management (C-02)
+// Staff Management (FEAT-010)
 // ────────────────────────────────────────────────────────────
 
 /**

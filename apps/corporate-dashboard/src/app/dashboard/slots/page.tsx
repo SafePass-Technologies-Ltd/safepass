@@ -1,4 +1,4 @@
-/// Corporate Dashboard — Slot Management (C-02, C-03 / Screen 19b)
+/// Corporate Dashboard — Slot Management (FEAT-010, FEAT-011 / Screen 19b)
 ///
 /// Org admins manage member slots: generate invite tokens, revoke members,
 /// and bulk-generate tokens with CSV export. Members join via token redemption

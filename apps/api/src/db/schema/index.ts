@@ -41,7 +41,7 @@ export { mapMarkers, mapMarkerInteractions, mapMarkerImports } from './map-marke
 export { emergencyEvents, escalations, checkIns } from './emergency';
 export { transportVehicles, drivers, documents } from './transport';
 
-// Subscription plan requests (C-20, T-20)
+// Subscription plan requests (FEAT-009)
 export { subscriptionRequests } from './subscription-requests';
 export { subscriptionRequestStatusEnum } from './enums';
 
@@ -60,11 +60,11 @@ export {
   tripTagInviteStatusEnum,
 } from './org-membership';
 
-// Trip archival (A-26): trip summary + sampled route breadcrumb history
+// Trip archival (FEAT-049): trip summary + sampled route breadcrumb history
 export { tripSummaries, tripLocationHistory } from './trip-archive';
 export { tripSummaryFinalStatusEnum } from './enums';
 
-// Account deletion (M-38 / A-27)
+// Account deletion (FEAT-004 / FEAT-048)
 export { accountDeletionRequests } from './account-deletion-requests';
 export type { DeletionPreFlightChecks } from './account-deletion-requests';
 export { accountDeletionStatusEnum } from './enums';

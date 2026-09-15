@@ -1,5 +1,5 @@
 /**
- * Subscription Service — org subscription plan management (C-20, T-20).
+ * Subscription Service — org subscription plan management (FEAT-009).
  *
  * Two flows exist:
  *
@@ -205,7 +205,7 @@ export function getPlanPrice(
   };
 }
 
-// ── Self-serve wallet activation (new, C-20 / T-20) ──────────────────────────
+// ── Self-serve wallet activation (new, FEAT-009) ─────────────────────────────
 
 export interface ActivateSubscriptionInput {
   orgId: string;

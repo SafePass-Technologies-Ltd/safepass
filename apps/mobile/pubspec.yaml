@@ -52,6 +52,10 @@ dev_dependencies:
   bloc_test: ^10.0.0
   mockito: ^5.4.0
   firebase_auth_mocks: ^0.14.0
+  # Test-only: the host-API mocks (pigeon) that let Firebase.initializeApp() run
+  # in the Dart VM without device channels. Version must track firebase_core's
+  # resolved platform interface (5.4.1 for firebase_core 3.15.x).
+  firebase_core_platform_interface: 5.4.1
   build_runner: ^2.4.0
   json_serializable: ^6.9.0
   freezed: ^3.0.0

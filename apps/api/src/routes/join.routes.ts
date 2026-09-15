@@ -26,24 +26,34 @@ import { inviteTokens, organizations } from '../db/schema';
 
 export const joinRoutes = new Hono();
 
+// Tokenized light-column palette from docs/SafePass/branding.md:
+//   primary #0EA5E9 · success #0D904F · warning #F5A623 · error #D93025
+//   ink/text #1E293B · background #F8FAFC · border #E2E8F0
+// Tints are rgba() derivations of the same tokens (never new hues).
 const PAGE_STYLES = `
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         background: #0f172a; color: #e2e8f0; margin: 0; min-height: 100vh;
+         background: #F8FAFC; color: #1E293B; margin: 0; min-height: 100vh;
          display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .card { max-width: 420px; width: 100%; background: #1e293b; border-radius: 16px;
-          padding: 32px 28px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); text-align: center; }
-  .logo { font-size: 20px; font-weight: 700; color: #22c55e; margin-bottom: 8px; }
-  h1 { font-size: 18px; margin: 0 0 8px; color: #f1f5f9; }
-  p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 16px; }
-  .org-name { color: #f1f5f9; font-weight: 600; }
-  .token-box { background: #0f172a; border: 1px solid #334155; border-radius: 10px;
+  .card { max-width: 420px; width: 100%; background: #FFFFFF; border: 1px solid #E2E8F0;
+          border-radius: 16px; padding: 32px 28px; box-shadow: 0 10px 40px rgba(15,23,42,0.08); text-align: center; }
+  .logo { display: inline-flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 700;
+          color: #0EA5E9; margin-bottom: 8px; }
+  h1 { font-size: 18px; margin: 0 0 8px; color: #1E293B; }
+  p { font-size: 14px; line-height: 1.6; color: rgba(30,41,59,0.75); margin: 0 0 16px; }
+  .org-name { color: #1E293B; font-weight: 600; }
+  .token-box { background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px;
                padding: 14px; margin: 16px 0; font-family: ui-monospace, monospace;
-               font-size: 18px; letter-spacing: 2px; color: #22c55e; word-break: break-all;
+               font-size: 18px; letter-spacing: 2px; color: #0EA5E9; word-break: break-all;
                cursor: pointer; }
-  .steps { text-align: left; font-size: 13px; color: #cbd5e1; margin: 16px 0; padding-left: 20px; }
+  .steps { text-align: left; font-size: 13px; color: rgba(30,41,59,0.8); margin: 16px 0; padding-left: 20px; }
   .steps li { margin-bottom: 6px; }
-  .error-icon { font-size: 32px; margin-bottom: 8px; }
+  .error-icon { margin-bottom: 8px; }
 `;
+
+// Tiny dependency-free inline SVG markers replacing the previous emoji
+// glyphs (shield, warning triangle). Colours are branding tokens.
+const SHIELD_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2 4 5v6c0 5.25 3.4 10.15 8 11 4.6-.85 8-5.75 8-11V5l-8-3Z" fill="#0EA5E9"/><path d="m9 11.5 2 2 4-4.5" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
+const ERROR_ICON = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="rgba(217,48,37,0.10)"/><path d="M12 7v6" stroke="#D93025" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.2" fill="#D93025"/></svg>`;
 
 function renderPage(title: string, bodyHtml: string): string {
   return `<!DOCTYPE html>
@@ -56,7 +66,7 @@ function renderPage(title: string, bodyHtml: string): string {
 </head>
 <body>
   <div class="card">
-    <div class="logo">🛡️ SafePass</div>
+    <div class="logo">${SHIELD_ICON}<span>SafePass</span></div>
     ${bodyHtml}
   </div>
 </body>
@@ -66,7 +76,7 @@ function renderPage(title: string, bodyHtml: string): string {
 function errorPage(message: string): string {
   return renderPage(
     'Invite',
-    `<div class="error-icon">⚠️</div><h1>${message}</h1><p>Ask whoever shared this link for a new one.</p>`
+    `<div class="error-icon">${ERROR_ICON}</div><h1>${message}</h1><p>Ask whoever shared this link for a new one.</p>`
   );
 }
 

@@ -1,4 +1,4 @@
-/// Bulk Import Markers Modal (A-09 CSV bulk import)
+/// Bulk Import Markers Modal (FEAT-038 CSV bulk import)
 ///
 /// Implements the exact state machine from screens.md's Screen 14 "Bulk
 /// Import" row: idle (dropzone + template download) -> validating ->

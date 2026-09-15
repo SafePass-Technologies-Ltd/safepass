@@ -13,8 +13,21 @@
  * records the admin review state (pending | verified | rejected).
  */
 import { eq, and, desc } from 'drizzle-orm';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '../db';
 import { documents } from '../db/schema';
+import { env } from '../env';
+
+// ECS injects AWS_REGION directly (see terraform/environments/production/
+// main.tf); DYNAMODB_REGION's default doubles as a sane fallback for local
+// development, matching s3.service.ts's own region resolution.
+const REGION = process.env.AWS_REGION ?? env.DYNAMODB_REGION;
+
+let s3Client: S3Client | null = null;
+function getS3Client(): S3Client {
+  if (!s3Client) s3Client = new S3Client({ region: REGION });
+  return s3Client;
+}
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -42,6 +55,9 @@ export interface Document {
 }
 
 export interface CreateDocumentInput {
+  /** Optional: when supplied, the row is created with this ID (used to keep
+   * the DB row ID aligned with the object-storage key prefix). */
+  id?: string;
   organizationId: string;
   documentName: string;
   documentType?: string | null;
@@ -49,6 +65,9 @@ export interface CreateDocumentInput {
   entityId?: string | null;
   expiryDate?: string | null;
   fileName?: string | null;
+  /** Storage reference returned by uploadDocumentFile (S3 object key) or
+   * the local-disk fallback path (dev-only). */
+  fileUrl?: string | null;
 }
 
 export interface DocumentFilter {
@@ -92,6 +111,48 @@ function toDocumentResponse(row: typeof documents.$inferSelect): Document {
 }
 
 // ────────────────────────────────────────────────────────────
+// Object storage
+// ────────────────────────────────────────────────────────────
+
+/** Whether the documents bucket is configured — false in local dev unless explicitly set. */
+export function isDocumentStorageConfigured(): boolean {
+  return Boolean(env.DOCUMENTS_BUCKET_NAME);
+}
+
+/**
+ * Uploads a document file to the private documents bucket under a
+ * per-document prefix, and returns the S3 object key (NOT a public URL — the
+ * bucket blocks public access, matching the evidence bucket in s3.service.ts).
+ * The key is what gets persisted in `documents.file_url`; retrieval would go
+ * through the same short-lived presigned-GET pattern as
+ * s3.service.ts's getEvidencePlaybackUrl (no such endpoint exists yet).
+ */
+export async function uploadDocumentFile(
+  documentId: string,
+  fileName: string,
+  body: Buffer,
+  contentType: string
+): Promise<string> {
+  if (!env.DOCUMENTS_BUCKET_NAME) {
+    throw new Error('DOCUMENTS_BUCKET_NAME is not configured');
+  }
+
+  const safeFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const key = `documents/${documentId}/${Date.now()}-${safeFileName}`;
+
+  await getS3Client().send(
+    new PutObjectCommand({
+      Bucket: env.DOCUMENTS_BUCKET_NAME,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    })
+  );
+
+  return key;
+}
+
+// ────────────────────────────────────────────────────────────
 // Queries
 // ────────────────────────────────────────────────────────────
 
@@ -124,8 +185,10 @@ export async function listDocuments(
 /**
  * Create a new document record for an organization.
  *
- * File upload is not handled here — a file storage integration (S3 / GCS)
- * should set `fileUrl` once available. For now only metadata is persisted.
+ * `fileUrl` is the storage reference produced by `uploadDocumentFile` (an S3
+ * object key) or by the route's local-disk fallback (a served /uploads/...
+ * path in development). Both are private-by-default references, mirroring the
+ * evidence flow: nothing here ever points at a public URL.
  */
 export async function createDocument(input: CreateDocumentInput): Promise<Document> {
   const status = deriveStatus(input.expiryDate);
@@ -133,11 +196,13 @@ export async function createDocument(input: CreateDocumentInput): Promise<Docume
   const [row] = await db
     .insert(documents)
     .values({
+      id: input.id ?? undefined,
       organizationId: input.organizationId,
       entityType: (input.entityType ?? null) as typeof documents.$inferSelect['entityType'],
       entityId: input.entityId ?? null,
       documentName: input.documentName,
       fileName: input.fileName ?? null,
+      fileUrl: input.fileUrl ?? null,
       expiryDate: input.expiryDate ? new Date(input.expiryDate) : null,
       complianceStatus: status,
     })

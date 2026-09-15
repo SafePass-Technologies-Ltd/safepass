@@ -1,8 +1,8 @@
-/// Scheduled Trips Screen (Screen 21) — calendar view of future trips.
+/// Scheduled Trips Screen — calendar view of future trips.
 ///
 /// Lists the user's scheduled trips with filter tabs (Upcoming / Missed / Past).
 /// Each card shows destination, date/time, status badge, and optional label.
-/// FAB opens the create bottom sheet (Screen 21b).
+/// FAB opens the create bottom sheet.
 /// "Start Trip" on a card pre-fills and navigates to trip registration.
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';

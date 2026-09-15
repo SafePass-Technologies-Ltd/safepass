@@ -94,7 +94,7 @@ export const TripGpsUpdateSchema = z.object({
   speed: z.number().optional(),
   heading: z.number().optional(),
   accuracy: z.number().optional(),
-  // A-26: optional on-device GPS reading time. Not sent by the current
+  // FEAT-049: optional on-device GPS reading time. Not sent by the current
   // mobile client (which relies on server-receive time) -- forward-
   // compatible field for a future mobile release that replays
   // offline-buffered points on reconnect, so trip_location_history

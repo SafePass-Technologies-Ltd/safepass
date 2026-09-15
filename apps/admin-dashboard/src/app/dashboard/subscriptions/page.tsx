@@ -1,4 +1,4 @@
-/// Admin Dashboard — Subscription Request Management (C-20, T-20)
+/// Admin Dashboard — Subscription Request Management (FEAT-009)
 ///
 /// SafePass admins review pending org subscription plan requests and
 /// approve or reject them. Approval writes the plan + slot_count to the

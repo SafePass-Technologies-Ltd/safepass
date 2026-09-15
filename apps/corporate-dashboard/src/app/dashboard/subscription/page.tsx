@@ -1,4 +1,4 @@
-/// Corporate Dashboard — Subscription Management (C-20)
+/// Corporate Dashboard — Subscription Management (FEAT-009)
 ///
 /// Org admin views their current subscription plan and org wallet balance,
 /// browses available named plans plus a Custom plan with live price preview,

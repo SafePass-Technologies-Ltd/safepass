@@ -92,7 +92,7 @@ export default function UsersPage() {
     }
   }
 
-  // M-38/A-27: fetch the full user detail (including deletionRequest, only
+   // FEAT-004/FEAT-048: fetch the full user detail (including deletionRequest, only
   // returned by the single-user GET, not the list endpoint) on demand when
   // a row is expanded, rather than N+1 fetching it for every row up front.
   async function toggleExpand(user: User) {
@@ -275,7 +275,7 @@ export default function UsersPage() {
                       {isExpanded && (
                         <tr className="bg-slate-50">
                           <td colSpan={6} className="px-6 py-4">
-                            {/* M-38/A-27: Deletion Status Note (screens.md Screen 15) */}
+                            {/* FEAT-004/FEAT-048: Deletion Status Note (screens.md Screen 15) */}
                             {deletionRequest &&
                             (deletionRequest.status === 'pending' || deletionRequest.status === 'legal_hold') ? (
                               <p className="text-sm text-slate-600">

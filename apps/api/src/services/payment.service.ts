@@ -10,6 +10,7 @@
  * or Stripe requires only new functions in this service.
  */
 import { v4 as uuidv4 } from 'uuid';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '../db';
 import { payments } from '../db/schema';
@@ -273,6 +274,42 @@ export async function verifyPayment(
 // ────────────────────────────────────────────────────────────
 
 /**
+ * Verify the HMAC-SHA512 signature Paystack sends on every webhook in the
+ * `x-paystack-signature` header.
+ *
+ * SECURITY RATIONALE (fail-closed): the webhook is an unauthenticated public
+ * endpoint that credits wallets, so a forged request that passes this check
+ * would mint money. The signature is computed over the RAW request body with
+ * the gateway secret; we compare with a constant-time equality to avoid
+ * timing oracles. If the secret is missing from the environment, or the
+ * signature header is absent/not hex, the request is rejected — never
+ * processed. This is the enforcement side of risk_log.md's payment-integrity
+ * mitigation (R-004: "gateway webhooks verify HMAC signature before credit").
+ */
+export function verifyPaystackWebhookSignature(
+  rawBody: string,
+  signature: string | undefined | null
+): boolean {
+  const secret = process.env.PAYSTACK_SECRET_KEY;
+  if (!secret || !signature) return false;
+
+  const expectedBuffer = Buffer.from(
+    createHmac('sha512', secret).update(rawBody).digest('hex'),
+    'hex'
+  );
+
+  // Both buffers are guaranteed equal length here (expected is always 64
+  // bytes; signature could theoretically be longer/shorter but
+  // timingSafeEqual requires equal lengths, so length-mismatch is a plain
+  // rejection). Note the length check is against the DECODED buffer, not the
+  // 128-char hex string.
+  const signatureBuffer = Buffer.from(signature, 'hex');
+  if (signatureBuffer.length !== expectedBuffer.length) return false;
+
+  return timingSafeEqual(expectedBuffer, signatureBuffer);
+}
+
+/**
  * Handle a Paystack webhook event.
  *
  * Paystack sends these events:
@@ -280,8 +317,9 @@ export async function verifyPayment(
  *   - charge.failure  → mark payment as failed (no wallet action)
  *   - transfer.success → (future: withdrawals)
  *
- * SECURITY: In production, always validate the webhook signature
- * (x-paystack-signature header with HMAC SHA-512) before processing.
+ * The signature check happens in the route (payment.routes.ts) BEFORE this
+ * handler runs — a request that reaches here has already passed
+ * verifyPaystackWebhookSignature.
  */
 export async function handlePaystackWebhook(
   event: string,

@@ -98,7 +98,7 @@ class _IncidentReportViewState extends State<_IncidentReportView> {
     super.dispose();
   }
 
-  // Matches the 9 incident types in features.md's M-13 (Incident Reporting)
+  // Matches the 9 incident types in features.md's FEAT-036 (Incident Reporting)
   // and the backend's IncidentTypeEnum -- see the enum's own doc comment in
   // incident_cubit.dart for why these specific values.
   static const _typeIcons = <IncidentType, IconData>{

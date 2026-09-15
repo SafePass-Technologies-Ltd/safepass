@@ -1,5 +1,5 @@
 /**
- * Trip Archive Service Tests — A-26 Trip Persistence & Archival.
+ * Trip Archive Service Tests — FEAT-049 Trip Archive & Route Replay.
  *
  * Covers the significant-change sampling filter (pure in-memory logic, no
  * database involved), the batched breadcrumb flush, and TripSummary

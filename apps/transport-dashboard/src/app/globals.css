@@ -1,10 +1,82 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens — spec source: docs/SafePass/branding.md (Design System →
+ * Color Palette), light-column values only; the spec's dark column is not
+ * implemented here.
+ *
+ * Tailwind v4 is CSS-first, so this `@theme` block is the token home (there is
+ * no tailwind.config.ts). Token names deliberately mirror the admin
+ * dashboard's tailwind.config.ts (already synced in T-003):
+ *   - `primary`       → Electric Blue 9-shade scale (+ DEFAULT on 500)
+ *   - `safety-{green,amber,red}` → semantic base status colors
+ *   - `slate-dark`    → spec ink (kept alongside Tailwind's built-in slate,
+ *                       which the existing markup uses for the cool-grey
+ *                       roles and whose values happen to equal the spec scale)
+ *   - `grey-*`        → spec cool-grey 9-shade scale, exposed for new markup
+ *                       (kept separate from Tailwind's slate to make the
+ *                       spec-vs-built-in split explicit)
+ *   - success / warning / error / info / accent → semantic role tokens
+ *
+ * The previous transport-specific purple primary (#7C3AED) was off-spec and
+ * is replaced by the brand Electric Blue like every other SafePass surface.
+ *
+ * Radius and shadow tokens are namespaced under `brand-*` rather than
+ * overriding Tailwind's built-in `rounded-sm|md|lg` and `shadow-sm|md|lg...`
+ * defaults, so existing markup keeps rendering exactly as before until
+ * components adopt the spec values.
+ */
 @theme {
-  --color-primary: #7C3AED;
-  --color-safety-green: #22C55E;
-  --color-safety-red: #EF4444;
+  /* Electric Blue — primary scale; DEFAULT stays the spec base #0EA5E9. */
+  --color-primary: #0EA5E9;
+  --color-primary-50: #F0F9FF;
+  --color-primary-100: #E0F2FE;
+  --color-primary-200: #BAE6FD;
+  --color-primary-300: #7DD3FC;
+  --color-primary-400: #38BDF8;
+  --color-primary-500: #0EA5E9;
+  --color-primary-600: #0284C7;
+  --color-primary-700: #0369A1;
+  --color-primary-800: #075985;
+  --color-primary-900: #0C4A6E;
+
+  /* Semantic base status colors (named `safety-*` for existing markup). */
+  --color-safety-green: #0D904F;
+  --color-safety-amber: #F5A623;
+  --color-safety-red: #D93025;
+
+  /* Spec ink token (structural role). */
   --color-slate-dark: #1E293B;
+
+  /* Cool Grey — spec neutral 9-shade scale (light column). */
+  --color-grey-50: #F8FAFC;
+  --color-grey-100: #F1F5F9;
+  --color-grey-200: #F1F5F9;
+  --color-grey-300: #E2E8F0;
+  --color-grey-400: #CBD5E1;
+  --color-grey-500: #94A3B8;
+  --color-grey-600: #64748B;
+  --color-grey-700: #475569;
+  --color-grey-800: #334155;
+  --color-grey-900: #1E293B;
+
+  /* Semantic roles (500 = base status colors). */
+  --color-success: #0D904F;
+  --color-warning: #F5A623;
+  --color-error: #D93025;
+  --color-info: #0284C7;
+  --color-accent: #E11D48;
+
+  /* Spec radius tokens (namespaced — see header note). */
+  --radius-brand-sm: 8px;
+  --radius-brand-md: 12px;
+  --radius-brand-lg: 16px;
+
+  /* Spec elevation tokens (light column, namespaced — see header note). */
+  --shadow-brand-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-brand-md: 0 4px 6px rgba(15, 23, 42, 0.07);
+  --shadow-brand-lg: 0 10px 25px rgba(15, 23, 42, 0.1);
+  --shadow-brand-xl: 0 24px 50px rgba(15, 23, 42, 0.15);
 }
 
 body {

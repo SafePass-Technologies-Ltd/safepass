@@ -1,4 +1,4 @@
-/// Schedule Trip Sheet (Screen 21b) — create a new scheduled/future trip.
+/// Schedule Trip Sheet — create a new scheduled/future trip.
 ///
 /// Opened as a modal bottom sheet from either:
 ///  - The trip registration screen ("Schedule Trip" button) — destination pre-filled.

@@ -288,9 +288,10 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
   // Scheduled trip sheet
   // ──────────────────────────────────────────────────────────
 
-  /// Open Screen 21b as a modal bottom sheet, pre-filling the destination from
-  /// the current form state. After the sheet closes navigate to Screen 21 so
-  /// the user can see their new scheduled trip.
+  /// Open the schedule-trip sheet as a modal bottom sheet, pre-filling the
+  /// destination from the current form state. After the sheet closes navigate
+  /// to the scheduled-trips screen so the user can see their new scheduled
+  /// trip.
   Future<void> _openScheduleSheet(
     BuildContext context,
     TripRegistrationState state,
@@ -312,7 +313,7 @@ class _TripRegistrationScreenState extends State<TripRegistrationScreen> {
           ),
     );
 
-    // Only navigate to Screen 21 when the sheet was closed via save (result == true).
+    // Only navigate when the sheet was closed via save (result == true).
     // A swipe-down, tap-outside, or back-button dismiss returns null, so we stay put.
     if (saved == true && context.mounted) {
       unawaited(context.push(AppRoutes.scheduledTrips));

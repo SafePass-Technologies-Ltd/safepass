@@ -55,7 +55,7 @@ markerRoutes.get('/nearby', async (c) => {
 
 /**
  * POST /v1/markers/:id/interact
- * Interact with a marker (confirm, dispute, reclassify per M-14).
+ * Interact with a marker (confirm, dispute, reclassify per FEAT-037).
  * Body: { action: 'confirm'|'dispute_not_there'|'reclassify_police'|'reclassify_suspicious', notes? }
  */
 const InteractionSchema = z.object({
@@ -155,7 +155,7 @@ adminMarkerRoutes.post(
 /**
  * GET /v1/admin/markers/csv-template
  * Downloads the CSV template (headers + one worked example row) for bulk
- * import (A-09 AC #1). Registered before the /:id routes below so "csv-
+ * import (FEAT-038 AC #1). Registered before the /:id routes below so "csv-
  * template" is never captured as a marker ID.
  */
 adminMarkerRoutes.get('/csv-template', (c) => {
@@ -168,7 +168,7 @@ adminMarkerRoutes.get('/csv-template', (c) => {
 /**
  * POST /v1/admin/markers/bulk-import  (multipart/form-data)
  *
- * A-09 CSV bulk import. Two-phase, stateless flow (no server-side session
+ * FEAT-038 CSV bulk import. Two-phase, stateless flow (no server-side session
  * needed): the client re-submits the SAME file on the confirmation call.
  *
  * Fields:

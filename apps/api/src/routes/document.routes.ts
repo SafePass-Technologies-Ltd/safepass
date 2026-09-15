@@ -10,13 +10,28 @@
  */
 import { Hono } from 'hono';
 import { z } from 'zod';
+import { v4 as uuidv4 } from 'uuid';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { authMiddleware } from '../middleware/auth';
+import { env } from '../env';
 import {
   listDocuments,
   createDocument,
   deleteDocument,
   getDocumentById,
+  isDocumentStorageConfigured,
+  uploadDocumentFile,
 } from '../services/document.service';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+// Local disk fallback for document files, used only when the documents
+// bucket isn't configured (i.e. local development without AWS credentials —
+// see DOCUMENTS_BUCKET_NAME in env.ts). Mirrors emergency.routes.ts's
+// AUDIO_UPLOAD_DIR pattern; the static /uploads/* route in index.ts serves
+// it in non-production environments.
+const DOCUMENT_UPLOAD_DIR = resolve(__dirname, '../../uploads/documents');
 
 // ────────────────────────────────────────────────────────────
 // Validation
@@ -168,10 +183,40 @@ documentRoutes.post('/', async (c) => {
   }
 
   // ── Persist ───────────────────────────────────────────────
-  // TODO: pipe `file` to a storage backend (S3/GCS/local) and store the
-  // returned URL instead of just the filename once the DB migration lands.
+  // Pipe the file to real storage and persist the returned reference in
+  // `file_url` (previously the upload was discarded and only the filename
+  // was stored). The document ID is minted here so the S3 key prefix and the
+  // DB row ID stay aligned for tracing. In production the file goes to the
+  // private documents bucket (S3 object key — never a public URL); in local
+  // development without DOCUMENTS_BUCKET_NAME it falls back to local disk,
+  // exactly like the emergency-audio path (emergency.routes.ts). Production
+  // fails CLOSED rather than writing to ephemeral container disk.
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
+
+  const documentId = uuidv4();
+  let storedRef: string;
+  if (isDocumentStorageConfigured()) {
+    storedRef = await uploadDocumentFile(
+      documentId,
+      file.name,
+      fileBuffer,
+      file.type || 'application/octet-stream'
+    );
+  } else if (env.NODE_ENV !== 'production') {
+    await mkdir(DOCUMENT_UPLOAD_DIR, { recursive: true });
+    const safeFileName = `${documentId}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const filePath = resolve(DOCUMENT_UPLOAD_DIR, safeFileName);
+    await writeFile(filePath, fileBuffer);
+    storedRef = `/uploads/documents/${safeFileName}`;
+  } else {
+    return c.json(
+      { error: { code: 500, message: 'Document storage is not configured' } },
+      500
+    );
+  }
 
   const doc = await createDocument({
+    id: documentId,
     organizationId,
     documentName,
     documentType,
@@ -179,6 +224,7 @@ documentRoutes.post('/', async (c) => {
     entityId,
     expiryDate,
     fileName: file.name,
+    fileUrl: storedRef,
   });
 
   return c.json(doc, 201);

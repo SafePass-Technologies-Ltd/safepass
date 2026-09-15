@@ -21,22 +21,38 @@ import { transportVehicles, organizations, trips } from '../db/schema';
 
 export const verifyRoutes = new Hono();
 
+// Tokenized light-column palette from docs/SafePass/branding.md:
+//   primary #0EA5E9 · success #0D904F · warning #F5A623 · error #D93025
+//   ink/text #1E293B · background #F8FAFC · border #E2E8F0
+// Tints are rgba() derivations of the same tokens (never new hues).
 const PAGE_STYLES = `
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         background: #0f172a; color: #e2e8f0; margin: 0; min-height: 100vh;
+         background: #F8FAFC; color: #1E293B; margin: 0; min-height: 100vh;
          display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .card { max-width: 420px; width: 100%; background: #1e293b; border-radius: 16px;
-          padding: 32px 28px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); text-align: center; }
-  .logo { font-size: 20px; font-weight: 700; color: #22c55e; margin-bottom: 8px; }
-  h1 { font-size: 20px; margin: 4px 0 4px; color: #f1f5f9; }
-  p { font-size: 14px; line-height: 1.6; color: #94a3b8; margin: 0 0 8px; }
+  .card { max-width: 420px; width: 100%; background: #FFFFFF; border: 1px solid #E2E8F0;
+          border-radius: 16px; padding: 32px 28px; box-shadow: 0 10px 40px rgba(15,23,42,0.08); text-align: center; }
+  .logo { display: inline-flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 700;
+          color: #0EA5E9; margin-bottom: 8px; }
+  h1 { font-size: 20px; margin: 4px 0 4px; color: #1E293B; }
+  p { font-size: 14px; line-height: 1.6; color: rgba(30,41,59,0.75); margin: 0 0 8px; }
   .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
            border-radius: 999px; font-size: 13px; font-weight: 600; margin: 10px 0; }
-  .badge.verified { background: rgba(34,197,94,0.15); color: #22c55e; }
-  .badge.unverified { background: rgba(234,179,8,0.15); color: #eab308; }
-  .badge.live { background: rgba(239,68,68,0.15); color: #ef4444; }
-  .error-icon { font-size: 32px; margin-bottom: 8px; }
+  .badge.verified { background: rgba(13,144,79,0.12); color: #0D904F; }
+  .badge.unverified { background: rgba(245,166,35,0.14); color: #F5A623; }
+  .badge.live { background: rgba(217,48,37,0.10); color: #D93025; }
+  .badge.idle { background: rgba(30,41,59,0.08); color: #1E293B; }
+  .error-icon { margin-bottom: 8px; }
 `;
+
+// Tiny dependency-free inline SVG markers replacing the previous emoji
+// glyphs (shield, warning triangle, filled/outlined status dots). Colours are
+// branding tokens, and every badge keeps a text label alongside the shape per
+// branding.md's color-independence rule.
+const SHIELD_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2 4 5v6c0 5.25 3.4 10.15 8 11 4.6-.85 8-5.75 8-11V5l-8-3Z" fill="#0EA5E9"/><path d="m9 11.5 2 2 4-4.5" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
+const WARNING_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3Z" fill="#F5A623"/><path d="M12 9v4.5" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.4" r="1.2" fill="#FFFFFF"/></svg>`;
+const ERROR_ICON = `<svg width="40" height="40" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="rgba(217,48,37,0.10)"/><path d="M12 7v6" stroke="#D93025" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.2" fill="#D93025"/></svg>`;
+const LIVE_DOT = `<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="#D93025"/></svg>`;
+const IDLE_DOT = `<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="3.5" fill="none" stroke="#1E293B" stroke-width="1.5"/></svg>`;
 
 function renderPage(title: string, bodyHtml: string): string {
   return `<!DOCTYPE html>
@@ -49,7 +65,7 @@ function renderPage(title: string, bodyHtml: string): string {
 </head>
 <body>
   <div class="card">
-    <div class="logo">🛡️ SafePass</div>
+    <div class="logo">${SHIELD_ICON}<span>SafePass</span></div>
     ${bodyHtml}
   </div>
 </body>
@@ -59,7 +75,7 @@ function renderPage(title: string, bodyHtml: string): string {
 function errorPage(message: string): string {
   return renderPage(
     'Vehicle Verification',
-    `<div class="error-icon">⚠️</div><h1>${message}</h1><p>This QR code may be invalid or the vehicle is no longer registered with SafePass.</p>`
+    `<div class="error-icon">${ERROR_ICON}</div><h1>${message}</h1><p>This QR code may be invalid or the vehicle is no longer registered with SafePass.</p>`
   );
 }
 
@@ -97,11 +113,11 @@ verifyRoutes.get('/:token', async (c) => {
     <h1>${escapeHtml(vehicle.plateNumber)}</h1>
     <p>${escapeHtml(org?.name ?? 'Unknown operator')}</p>
     <span class="badge ${vehicle.isVerified ? 'verified' : 'unverified'}">
-      ${vehicle.isVerified ? '✓ Verified vehicle' : '⚠ Not yet verified'}
+      ${vehicle.isVerified ? '✓ Verified vehicle' : `${WARNING_ICON} Not yet verified`}
     </span>
     <br />
-    <span class="badge ${liveTrip ? 'live' : ''}" style="${liveTrip ? '' : 'background:rgba(148,163,184,0.15);color:#94a3b8;'}">
-      ${liveTrip ? '● Currently on a monitored trip' : '○ Not currently on a monitored trip'}
+    <span class="badge ${liveTrip ? 'live' : 'idle'}">
+      ${liveTrip ? `${LIVE_DOT} Currently on a monitored trip` : `${IDLE_DOT} Not currently on a monitored trip`}
     </span>
     <p style="margin-top: 20px;">This vehicle is registered on SafePass. If you feel unsafe, contact local authorities immediately.</p>
     `

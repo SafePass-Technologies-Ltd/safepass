@@ -1,5 +1,5 @@
 /**
- * Admin Account Deletion Routes — A-27 "Account Deletion Oversight &
+ * Admin Account Deletion Routes — FEAT-048 "Account Deletion Oversight &
  * Legal Holds".
  *
  * /v1/admin/account-deletions              — Legal Hold Queue listing
@@ -7,7 +7,7 @@
  *
  * Force-delete (POST /v1/admin/users/:id/force-delete) lives in
  * admin-user.routes.ts alongside the other per-user account actions
- * (suspend/activate), per screens.md Screen 15/17c.
+ * (suspend/activate), per screens.md.
  */
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';

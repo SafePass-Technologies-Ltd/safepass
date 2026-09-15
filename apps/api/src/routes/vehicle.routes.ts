@@ -127,7 +127,7 @@ vehicleRoutes.get('/:id', async (c) => {
 
 /**
  * POST /v1/vehicles/:id/qr
- * Generate (or regenerate) this vehicle's SafePass QR code (T-05).
+ * Generate (or regenerate) this vehicle's SafePass QR code (FEAT-018).
  */
 vehicleRoutes.post('/:id/qr', async (c) => {
   const orgId = requireOrgId(c);

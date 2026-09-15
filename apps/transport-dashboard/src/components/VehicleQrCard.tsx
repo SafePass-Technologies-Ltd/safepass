@@ -1,7 +1,7 @@
 'use client';
 
 /// VehicleQrCard — shared QR generate/render/download UI for a single
-/// vehicle (T-05 / Screen 35's "QR Generation" element). Used by both the
+/// vehicle (FEAT-018 / Screen 35's "QR Generation" element). Used by both the
 /// standalone QR Codes page (dashboard/qr) and the Vehicle Detail view
 /// (dashboard/vehicles/[id]).
 ///

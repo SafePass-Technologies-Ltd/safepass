@@ -1,7 +1,7 @@
-/// Admin Trip Management Page — trip list with filtering (A-03).
+/// Admin Trip Management Page — trip list with filtering (FEAT-042).
 ///
 /// Shows all trips with status filters, search, and quick actions.
-/// Clicking a trip navigates to its detail view (Week 3: A-04).
+/// Clicking a trip navigates to its detail view (Week 3: FEAT-043).
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';

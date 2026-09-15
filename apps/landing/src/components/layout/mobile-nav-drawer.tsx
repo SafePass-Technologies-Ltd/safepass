@@ -78,34 +78,77 @@ export function MobileNavDrawer({
   const { audience, setAudience } = useAudience();
   const cta = AUDIENCE_CONFIG[audience];
 
-  const close = useCallback(() => setOpenedOnPath(null), []);
-
-  /**
-   * Presence state for the open/close TRANSITION.
-   *
-   * `open` is the intent (the drawer should be up); `mounted` is whether the
-   * portal is actually in the DOM; `shown` is whether it sits at its final,
-   * visible position. Keeping the portal mounted through the exit lets the
-   * panel fade/slide OUT instead of vanishing the moment it closes.
-   */
-  const [mounted, setMounted] = useState(false);
+  const [exiting, setExiting] = useState(false);
   const [shown, setShown] = useState(false);
+  /**
+   * Enter/exit choreography state.
+   *
+   * `exiting` keeps the portal mounted through the exit animation so the panel
+   * can fade/slide OUT. It starts in the close() EVENT (synchronous setState
+   * in an event handler is fine — it is effect bodies the lint rule forbids),
+   * and an effect below schedules the unmount only once the exit transition
+   * window (duration-normal) has elapsed. A `shown` timer does the reveal: the
+   * hidden state paints first, so the enter transition runs rather than
+   * jumping.
+   *
+   * The portal is mounted by DERIVING it in render (`open || exiting`), never
+   * from an effect-timer: mount is synchronous with the open event's commit,
+   * so the focus effect below is flushed in the same act boundary as the
+   * click. The earlier `setTimeout`-mounted portal left the focus effect racing
+   * the portal and broke the "focus moves into the panel" behaviour — this is
+   * the T-022 regression this structure addresses.
+   */
+  /** Deferred-only mirror of `open`, used to route closes without an event (browser back/forward) through the same exit choreography. Ref-writes, not setState. */
+  const wasOpenRef = useRef(false);
 
+  // close is the BEGIN of the exit choreography, not merely clearing intent:
+  // collapse the panel first (starts the fade/slide OUT), keep the portal
+  // mounted, and let the unmount effect tear it down after the transition.
+  const close = useCallback(() => {
+    if (!open) return;
+    setOpenedOnPath(null); // clear the open intent
+    setShown(false); // collapse the panel to its hidden transform
+    setExiting(true); // keep the portal mounted through the exit animation
+  }, [open]);
+
+  // Opening cancels an in-flight exit (rapid re-tap) and re-uses the panel;
+  // the reveal effect below re-runs on `open` and re-animates the enter.
+  const openNow = useCallback(() => {
+    if (exiting) setExiting(false);
+    setOpenedOnPath(pathname);
+  }, [exiting, pathname]);
+
+  // Close EVENTS set the exit state synchronously; back/forward closes (no
+  // event) arrive here instead, and the deferred write routes them through the
+  // exact same exit path so both behave identically.
   useEffect(() => {
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = open;
+
     if (open) {
-      setMounted(true);
-      // Defer the reveal to the next tick so the hidden state paints first and
-      // the enter transition actually runs (a same-tick class swap is a jump).
+      // Reveal on the next tick after the portal mount so the hidden state
+      // paints first; a same-tick class swap is a jump, not a transition.
       const timer = window.setTimeout(() => setShown(true), 0);
       return () => window.clearTimeout(timer);
     }
 
-    setShown(false);
-    // The window matches the CSS transition (duration-normal) so the portal
-    // unmounts only after the exit animation has finished.
-    const timer = window.setTimeout(() => setMounted(false), durationMs('normal'));
+    if (!wasOpen) return;
+
+    const timer = window.setTimeout(() => {
+      setExiting(true);
+      setShown(false);
+    }, 0);
     return () => window.clearTimeout(timer);
   }, [open]);
+
+  // Unmount the portal only after the exit animation has finished — the
+  // window matches the CSS transition (duration-normal).
+  useEffect(() => {
+    if (!exiting) return;
+
+    const timer = window.setTimeout(() => setExiting(false), durationMs('normal'));
+    return () => window.clearTimeout(timer);
+  }, [exiting]);
 
   // Keep the header informed of the open state so it can switch to the frosted
   // material for the duration of the overlay (see navbar.tsx). Fired on every
@@ -114,10 +157,13 @@ export function MobileNavDrawer({
     onOpenChange?.(open);
   }, [open, onOpenChange]);
 
-  // Focus management + Escape + focus trap, scoped to the MOUNTED lifecycle so
-  // it stays in force through the exit animation (the panel is still on screen).
+  // Focus management + Escape + focus trap, scoped to the PRESENT lifecycle
+  // (`open || exiting`) so it stays in force through the exit animation (the
+  // panel is still on screen while it animates out and can re-enter).
+  const present = open || exiting;
+
   useEffect(() => {
-    if (!mounted) return;
+    if (!present) return;
 
     const panel = panelRef.current;
     const trigger = triggerRef.current;
@@ -166,14 +212,14 @@ export function MobileNavDrawer({
       // header rather than dumping them at the top of the document.
       trigger?.focus();
     };
-  }, [mounted, close]);
+  }, [present, close]);
 
   return (
     <div className="md:hidden">
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setOpenedOnPath(open ? null : pathname)}
+        onClick={() => (open ? close() : openNow())}
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={open ? 'Close menu' : 'Open menu'}
@@ -212,7 +258,7 @@ export function MobileNavDrawer({
         means fixed to the viewport again. Do not inline this back into the
         header.
       */}
-      {mounted &&
+      {present &&
         createPortal(
           <>
             {/* Scrim. Decorative and pointer-only — Escape and the close button

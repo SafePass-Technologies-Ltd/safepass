@@ -37,8 +37,8 @@ initDynamoTable().catch((err: Error) => {
   );
 });
 
-// A-26 Tier 3: start the periodic breadcrumb batch flush (trip_location_history).
+// FEAT-049 Tier 3: start the periodic breadcrumb batch flush (trip_location_history).
 startBreadcrumbFlushing();
 
-// M-38: start the hourly account-deletion sweep job (see jobs/scheduler.ts).
+// FEAT-004: start the hourly account-deletion sweep job (see jobs/scheduler.ts).
 startScheduledJobs();

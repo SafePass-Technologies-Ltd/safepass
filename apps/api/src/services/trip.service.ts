@@ -38,8 +38,8 @@ export interface TripCreateInput {
   /** Who actually initiated this trip -- defaults to `userId` (self-registered,
    * the normal mobile-app case). Distinct from `userId` when a corporate_admin/
    * transport_partner/platform admin registers a trip on behalf of a staff
-   * member (docs/SafePass/screens.md Screen 31 "Trip Registration
-   * (Corporate)") -- `userId` is the staff member being monitored, this is
+   * member (docs/SafePass/screens.md corporate trip registration) --
+   * `userId` is the staff member being monitored, this is
    * the admin who registered it. */
   registeredBy?: string;
   /** The caller's role from the JWT — used to auto-populate transport_company. */
@@ -63,7 +63,7 @@ export interface GpsUpdateInput {
   speed?: number;
   heading?: number;
   accuracy?: number;
-  /** A-26: optional on-device GPS reading time (ISO 8601). See TripGpsUpdateSchema. */
+  /** FEAT-049: optional on-device GPS reading time (ISO 8601). See TripGpsUpdateSchema. */
   recordedAt?: string;
 }
 
@@ -578,7 +578,7 @@ export async function updateGpsPosition(
     console.warn('[DynamoDB] saveTripLocation failed for trip', tripId, (err as Error)?.message);
   });
 
-  // A-26 Tier 3: queue this point for the significant-change sampling filter.
+  // FEAT-049 Tier 3: queue this point for the significant-change sampling filter.
   // This is a synchronous in-memory buffer append (see trip-archive.service.ts)
   // -- the actual durable PostgreSQL write happens on a periodic batch flush,
   // so this call never blocks or slows down the GPS ingestion path.
@@ -718,7 +718,7 @@ export async function completeTrip(
 
   broadcastTripStatus(tripId, 'completed');
 
-  // A-26 Tier 2: write the durable TripSummary row. Fire-and-forget from the
+  // FEAT-049 Tier 2: write the durable TripSummary row. Fire-and-forget from the
   // caller's perspective (failures are logged, not thrown) -- the
   // user-facing safe-arrival confirmation has already succeeded by this
   // point and must not be blocked or failed by a compliance-log write.
@@ -761,7 +761,7 @@ export async function cancelTrip(
 
   broadcastTripStatus(tripId, 'cancelled');
 
-  // A-26 Tier 2: write the durable TripSummary row (see completeTrip above
+  // FEAT-049 Tier 2: write the durable TripSummary row (see completeTrip above
   // for why this is fire-and-forget from the caller's perspective).
   computeAndWriteTripSummary(tripId, 'cancelled').catch((err: unknown) => {
     console.warn('[trip-archive] failed to write TripSummary for trip', tripId, (err as Error)?.message);
@@ -789,7 +789,7 @@ export async function adminUpdateTripStatus(
     throw Object.assign(new Error('Trip not found'), { statusCode: 404 });
   }
 
-  // A-26: 'delayed' has no dedicated durable table of its own (unlike
+  // FEAT-049: 'delayed' has no dedicated durable table of its own (unlike
   // 'emergency'/'escalated', which are tracked via emergency_events/
   // escalations rows created outside this function -- see
   // emergency.routes.ts and admin-emergency.routes.ts). This is currently

@@ -57,7 +57,7 @@ class ProfileCubit extends Cubit<ProfileState> {
         orgMembership = null;
       }
 
-      // M-38: fetch the caller's latest deletion request, if any. Best-effort
+      // FEAT-004: fetch the caller's latest deletion request, if any. Best-effort
       // — a failure here shouldn't block the rest of the profile from loading.
       DeletionRequestSummary? deletionRequest;
       try {
@@ -114,7 +114,7 @@ class ProfileCubit extends Cubit<ProfileState> {
     }
   }
 
-  /// Cancel a pending/legal_hold deletion request (Flow 10b) via
+  /// Cancel a pending/legal_hold deletion request via
   /// DELETE /v1/users/me/deletion-request.
   Future<void> cancelDeletionRequest() async {
     emit(state.copyWith(status: ProfileStatus.saving));

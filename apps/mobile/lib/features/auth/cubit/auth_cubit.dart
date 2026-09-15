@@ -268,7 +268,7 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   // ---------------------------------------------------------------------------
-  // Phone Authentication (M-19)
+  // Phone Authentication (FEAT-001)
   // ---------------------------------------------------------------------------
 
   /// Begin the phone number sign-in flow.

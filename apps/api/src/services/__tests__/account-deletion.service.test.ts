@@ -1,5 +1,5 @@
 /**
- * Account Deletion Service Tests — M-38 / A-27.
+ * Account Deletion Service Tests — FEAT-004 / FEAT-048.
  *
  * Focuses on the safety-critical logic: pre-flight blocking checks (active
  * trip, wallet balance/forfeiture, sole org admin, generic org membership)

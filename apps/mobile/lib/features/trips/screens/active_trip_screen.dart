@@ -260,9 +260,9 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
       );
     }
 
-    // Safety markers (M-07: "active incidents, checkpoints, hotspots along
+    // Safety markers (FEAT-034: "active incidents, checkpoints, hotspots along
     // route. Colour-coded markers by verification level") -- the same set
-    // driving the M-08 proximity alert banner (state.newHazardAlert), just
+    // driving the FEAT-035 proximity alert banner (state.newHazardAlert), just
     // also drawn on the map itself instead of only interrupting via
     // snackbar. Prefixed MarkerId to avoid colliding with the fixed
     // origin/destination/current_position ids above.
@@ -396,7 +396,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
           context.go('/home');
         }
 
-        // Route safety alert (M-08) — non-blocking banner, dismissed after
+        // Route safety alert (FEAT-035) — non-blocking banner, dismissed after
         // display so the cubit doesn't re-emit it on the next rebuild.
         if (state.newHazardAlert != null) {
           final hazard = state.newHazardAlert!;
@@ -926,7 +926,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen>
         _ => AppColors.darkSlate,
       };
 
-  /// Map marker hue by severity for the M-07 safety-marker layer -- mirrors
+  /// Map marker hue by severity for the FEAT-034 safety-marker layer -- mirrors
   /// _hazardColor's escalation but constrained to BitmapDescriptor's fixed
   /// hue palette (Google Maps' default marker pins only support these
   /// preset colors, not arbitrary Color values).
@@ -1277,7 +1277,7 @@ class _EmergencyActiveBanner extends StatelessWidget {
 }
 
 /// Non-dismissible inline banner shown when vehicle details were copied
-/// from a trip tag invite initiator (M-35).
+/// from a trip tag invite initiator (FEAT-020).
 class _VehicleCopiedBanner extends StatelessWidget {
   final String? initiatorName;
 

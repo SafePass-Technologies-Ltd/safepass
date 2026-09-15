@@ -1,9 +1,8 @@
 /**
- * Trip Archive Service — A-26 "Trip Persistence & Archival (Yearly
- * Compliance Log + Route Replay)".
+ * Trip Archive Service — FEAT-049 "Trip Archive & Route Replay".
  *
  * Implements the two durable PostgreSQL writes described in
- * docs/SafePass/architecture.md's "Trip Data Persistence" section, both
+ * docs/SafePass/architecture.md, both
  * decoupled from the high-frequency GPS ping path:
  *
  *   Tier 2 — trip_summaries: one row per trip, written once at
@@ -66,7 +65,7 @@ export interface GpsSamplePoint {
    * stamps server-receive time). When present (e.g. a future mobile release
    * replaying offline-buffered points on reconnect), it is used instead of
    * server time so breadcrumbs are ordered by actual GPS reading time, not
-   * arrival order -- satisfying A-26 acceptance criterion (3).
+   * arrival order -- satisfying FEAT-049 acceptance criterion (3).
    */
   recordedAt?: Date;
 }
@@ -77,8 +76,8 @@ interface BufferedPoint extends GpsSamplePoint {
 
 // In-process buffer + last-sampled-point cache, keyed by tripId. An
 // in-process buffer (rather than SQS) is the simplest fit for this
-// single-region, always-warm ECS Fargate deployment (see architecture.md's
-// "Cold Starts" note) -- architecture.md explicitly allows either.
+// single-region, always-warm ECS Fargate deployment (see architecture.md) --
+// architecture.md explicitly allows either.
 const pendingBuffer = new Map<string, BufferedPoint[]>();
 const lastSampledPoint = new Map<string, BufferedPoint>();
 
@@ -130,7 +129,7 @@ function isSignificantChange(tripId: string, point: BufferedPoint): boolean {
  * itself never touches the database; it only decides whether to queue the
  * point in memory. The actual durable write happens on the batch flush
  * interval (see startBreadcrumbFlushing), so this call never blocks or
- * slows the live GPS ingestion path (A-26 acceptance criterion 2).
+ * slows the live GPS ingestion path (FEAT-049 acceptance criterion 2).
  */
 export function sampleGpsPoint(tripId: string, point: GpsSamplePoint): void {
   const bufferedPoint: BufferedPoint = {
@@ -210,7 +209,7 @@ export function startBreadcrumbFlushing(): void {
  * Compute and durably write the TripSummary row for a trip, at
  * completion/cancellation. Idempotent: relies on trip_summaries.trip_id's
  * unique constraint via onConflictDoNothing, so re-firing the completion
- * handler (e.g. a retried request) never creates a duplicate row (A-26
+ * handler (e.g. a retried request) never creates a duplicate row (FEAT-049
  * acceptance criterion 1). Returns the existing summary if one was already
  * written.
  *
@@ -387,7 +386,7 @@ export async function getTripSummary(
  * Fetch the full sampled breadcrumb trail for a trip, ordered by recorded
  * time (not insert order -- tolerates offline/reconnect backfilled points).
  *
- * ADMIN-ONLY per schema.md/risk_log.md R-013: callers of this function must
+ * ADMIN-ONLY per schema.md/risk_log.md: callers of this function must
  * already be gated to admin/super_admin at the route layer (see
  * trip.routes.ts's route-history endpoint) -- this function itself performs
  * no role check, matching adminUpdateTripStatus's existing pattern of
@@ -468,7 +467,7 @@ export async function getLatestTripLocations(
 }
 
 // ────────────────────────────────────────────────────────────
-// Retention (R-013, revised): no fixed-duration purge job.
+// Retention (per risk_log.md): no fixed-duration purge job.
 //
 // trip_summaries and trip_location_history are retained indefinitely by
 // default -- there is no scheduled/automatic purge. Retention is instead
@@ -478,7 +477,7 @@ export async function getLatestTripLocations(
 // deleted, which is how they'll be cleaned up if/when a
 // user/account-deletion flow deletes that user's trips). No standalone
 // time-based purge function exists here by design -- see
-// docs/SafePass/risk_log.md R-013 for the retention-policy history.
+// docs/SafePass/risk_log.md for the retention-policy history.
 // ────────────────────────────────────────────────────────────
 
 // Exposed for tests to reset in-memory state between cases.

@@ -12,6 +12,7 @@ import {
   initializePayment,
   verifyPayment,
   handlePaystackWebhook,
+  verifyPaystackWebhookSignature,
 } from '../services/payment.service';
 import { PLACEHOLDER_EMAIL_DOMAIN } from '../services/auth.service';
 
@@ -129,15 +130,30 @@ paymentRoutes.post(
  * POST /v1/payments/webhook
  * Paystack webhook endpoint (unauthenticated — validated by HMAC signature).
  *
- * SECURITY: In production, validate the x-paystack-signature header
- * against the PAYSTACK_SECRET_KEY using HMAC SHA-512.
- * For MVP: we trust the event and verify on our side.
+ * SECURITY: the `x-paystack-signature` header MUST match an HMAC-SHA512 of
+ * the raw request body computed with PAYSTACK_SECRET_KEY. Unverified
+ * requests get 401 and are never processed (fail-closed — this endpoint
+ * credits wallets, so a forged event that passes would mint money). The raw
+ * body is read once as text and parsed here so the exact bytes the gateway
+ * signed are the exact bytes we verify — never a re-serialized JSON object.
  */
 paymentRoutes.post('/webhook', async (c) => {
-  const body = await c.req.json<{
-    event: string;
-    data: { reference: string; status: string; amount: number };
-  }>();
+  const rawBody = await c.req.text();
+  const signature = c.req.header('x-paystack-signature');
+
+  if (!verifyPaystackWebhookSignature(rawBody, signature)) {
+    return c.json({ error: { code: 401, message: 'Invalid webhook signature' } }, 401);
+  }
+
+  let body: { event: string; data: { reference: string; status: string; amount: number } };
+  try {
+    body = JSON.parse(rawBody) as {
+      event: string;
+      data: { reference: string; status: string; amount: number };
+    };
+  } catch {
+    return c.json({ status: 'ignored', reason: 'Invalid payload' }, 400);
+  }
 
   const event = body.event;
   const data = body.data;
