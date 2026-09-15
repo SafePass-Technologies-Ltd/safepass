@@ -148,8 +148,12 @@ Mission 1: reconcile implemented code with the regenerated spec. Mission 2: road
 | T-025 | Document upload: pipe file to storage backend instead of discarding it | backend | Done | none | — | — |
 | T-026 | Payment webhook: validate gateway HMAC signature (security-critical) | backend | Done | none | — | — |
 | T-027 | Tokenize `verify.routes.ts` / `join.routes.ts` page CSS; remove emoji glyphs | backend | Done | none | — | — |
-| T-029 | Infra: provision `DOCUMENTS_BUCKET_NAME` in Terraform + ECS env + IAM `s3:PutObject` | infra | Ready | T-025 | — | — |
-| T-028 | Coverage backlog: FEAT-038 marker bulk-import tests; add test scripts to corporate/transport dashboards; trip-route-map legend token sweep | qa + backend + frontend | Backlog | T-005 | — | — |
+| T-029 | Infra: provision `DOCUMENTS_BUCKET_NAME` in Terraform + ECS env + IAM `s3:PutObject` | infra | Done | T-025 | — | — |
+| T-028a | Coverage: FEAT-038 marker bulk-import route+service tests (53 tests) | backend | Done | T-005 | — | — |
+| T-028b | Coverage: vitest smoke tests for corporate + transport dashboards; trip-route-map legend token sweep | frontend | Done | T-005 | — | — |
+| T-030 | Fix bulk-import audit miscount: `skipped` from actual rows, not client `skipRows` (T-028a finding) | backend | Done | T-028a | — | — |
+| T-031 | QA gate for backlog batch (T-028a/b, T-029, T-030) — suite + DoD before main | qa | In Progress | T-028a/b, T-029, T-030 | — | — |
+| T-032 | Frontend follow-up (backlog): `BulkImportMarkersModal` confirm copy should derive split server-side semantics | frontend | Backlog | T-030 | — | — |
 | T-010 | FEAT-050 Emergency live streaming + dual camera | backend + frontend | Backlog | — | C-010/C-011 | — |
 | T-011 | FEAT-051 Silent/secret emergency triggers | frontend | Backlog | — | C-010 | — |
 | T-012 | FEAT-052 Offline recording + low-battery audio mode | frontend | Backlog | — | C-011 | — |
