@@ -302,8 +302,10 @@ describe('About page', () => {
     const { container } = render(<AboutPage />);
     const why = container.querySelector('#why-safepass-exists');
 
-    expect(why?.textContent).toMatch(/every year, millions of journeys/i);
-    expect(why?.textContent).toMatch(/make every journey safer/i);
+    // Client feedback (T-034): the section is now the single supplied
+    // problem-statement paragraph.
+    expect(why?.textContent).toMatch(/every year, hundreds of thousands of journeys/i);
+    expect(why?.textContent).toMatch(/trained human monitoring/i);
   });
 
   it('explains the Nigeria-first choice as deliberate, not incidental', () => {

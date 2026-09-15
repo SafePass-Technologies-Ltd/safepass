@@ -33,6 +33,15 @@ export interface AudienceNavLink extends NavLink {
 }
 
 /**
+ * The homepage link. Client feedback (T-034): the logo links here, but visitors
+ * do not know that, so "Home" is now an explicit nav link — first in the
+ * desktop header (before the Audience Selector), first in STATIC_NAV (the
+ * legal-page header variant and the drawer's Explore section), and the footer
+ * Explore list.
+ */
+export const HOME_LINK: NavLink = { label: 'Home', href: '/' };
+
+/**
  * The three audience destinations, in the order screens.md's navigation map
  * lists them (Individual → Business → Transport Partner).
  */
@@ -62,14 +71,16 @@ export const PRIMARY_NAV: ReadonlyArray<NavLink> = [
  * nav, no active audience state".
  */
 export const STATIC_NAV: ReadonlyArray<NavLink> = [
+  HOME_LINK,
   ...AUDIENCE_NAV.map(({ label, href }) => ({ label, href })),
   ...PRIMARY_NAV,
 ];
 
-export const FOOTER_EXPLORE: ReadonlyArray<NavLink> = [
-  { label: 'Home', href: '/' },
-  ...STATIC_NAV,
-];
+/**
+ * The footer's Explore column. STATIC_NAV now leads with Home, so this is
+ * STATIC_NAV verbatim — a separate prepend would print the homepage twice.
+ */
+export const FOOTER_EXPLORE: ReadonlyArray<NavLink> = STATIC_NAV;
 
 /**
  * Legal links. FEAT-015 requires all three be reachable within two clicks from

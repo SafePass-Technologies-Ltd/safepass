@@ -6,10 +6,10 @@ import { usePathname } from 'next/navigation';
 import { Container } from '@/components/ui/container';
 import { ButtonLink } from '@/components/ui/button';
 import { Logo } from '@/components/layout/logo';
-import { AudienceSelector } from '@/components/layout/audience-selector';
+import { AudienceSelector, NAV_ACTIVE_CHIP } from '@/components/layout/audience-selector';
 import { MobileNavDrawer } from '@/components/layout/mobile-nav-drawer';
 import { AUDIENCE_CONFIG, useAudience } from '@/lib/audience/audience-context';
-import { PRIMARY_NAV, STATIC_NAV } from '@/lib/content/navigation';
+import { HOME_LINK, PRIMARY_NAV, STATIC_NAV } from '@/lib/content/navigation';
 import { ScrollTrigger } from '@/lib/motion/gsap';
 import { cn } from '@/lib/utils';
 
@@ -17,10 +17,13 @@ import { cn } from '@/lib/utils';
  * Persistent header — FEAT-001.
  *
  * Two variants, per screens.md's Shared Components:
- *  - `showAudienceSelector` (default): logo + Audience Selector + audience-
- *    matched primary CTA. Used on the five Creative-tier pages.
- *  - `showAudienceSelector={false}`: logo + plain primary nav with no active
- *    audience state, used on Privacy / Terms / About.
+ *  - `showAudienceSelector` (default): Home + Audience Selector + audience-
+ *    matched primary CTA + How We Verify / About. Used on the five Creative-tier
+ *    pages. (Home was added as an explicit link on client feedback, T-034 —
+ *    before the Audience Selector, per screens.md's navigation map.)
+ *  - `showAudienceSelector={false}`: logo + STATIC_NAV (Home, the three
+ *    audiences as plain links, How We Verify, About), used on Privacy /
+ *    Terms / About.
  *
  * The CTA tracks the selected audience in BOTH variants — FEAT-001 requires "a
  * primary CTA button on all pages", and a visitor who identified as Business
@@ -42,6 +45,32 @@ export function Navbar({ showAudienceSelector = true }: { showAudienceSelector?:
   // The plain variant surfaces the audience destinations as ordinary links,
   // since it has no selector to reach them through.
   const desktopLinks = showAudienceSelector ? PRIMARY_NAV : STATIC_NAV;
+
+  // "Is this the page the visitor is on" is always page-scoped: the pathname,
+  // never the persisted audience context. The same rule the audience selector
+  // was moved to under T-034 (the /how-we-verify-shows-Business bug), applied
+  // to every header link. On /privacy and /terms no link matches, so nothing
+  // is marked active — as the mission requires.
+  const isCurrent = (href: string) => pathname === href;
+
+  /**
+   * Shared active treatment for the desktop text links: branding.md §3.5's
+   * Active chip tokens (NAV_ACTIVE_CHIP: `primary-light` fill, `primary`
+   * border, `text-text-primary`) — the same pairing the audience selector and
+   * the drawer's Explore rows use, so the header speaks one active-state
+   * language. The transparent border + padding sit on INACTIVE links too so
+   * toggling the classes never shifts layout.
+   */
+  const navLinkClass = (href: string) =>
+    cn(
+      'inline-flex items-center rounded-md border border-transparent px-md',
+      'text-body-small font-semibold transition-colors duration-[var(--duration-normal)] ease-out-smooth',
+      isCurrent(href)
+        ? NAV_ACTIVE_CHIP
+        : floating
+          ? 'text-white/80 hover:text-white'
+          : 'text-text-secondary hover:text-text-primary'
+    );
 
   /**
    * Only the homepage puts a dark band directly beneath the header — the hero's
@@ -117,6 +146,16 @@ export function Navbar({ showAudienceSelector = true }: { showAudienceSelector?:
             drawer takes over — branding.md Section 8 keeps tablet on the full
             creative experience, so the split sits at `md`. */}
         <div className="hidden items-center gap-md md:flex">
+          {/* Home FIRST, before the Audience Selector (client feedback, T-034):
+              the logo links here but visitors did not know to click it. Only
+              the selector variant needs it outside `<nav>` — the static
+              variant's STATIC_NAV already leads with Home. */}
+          {showAudienceSelector && (
+            <Link href={HOME_LINK.href} aria-current={isCurrent(HOME_LINK.href) ? 'page' : undefined} className={navLinkClass(HOME_LINK.href)}>
+              {HOME_LINK.label}
+            </Link>
+          )}
+
           {showAudienceSelector && <AudienceSelector />}
 
           <nav aria-label="Site" className="flex items-center gap-md">
@@ -124,12 +163,8 @@ export function Navbar({ showAudienceSelector = true }: { showAudienceSelector?:
               <Link
                 key={link.href}
                 href={link.href}
-                className={cn(
-                  'text-body-small font-semibold transition-colors duration-[var(--duration-normal)] ease-out-smooth',
-                  floating
-                    ? 'text-white/80 hover:text-white'
-                    : 'text-text-secondary hover:text-text-primary'
-                )}
+                aria-current={isCurrent(link.href) ? 'page' : undefined}
+                className={navLinkClass(link.href)}
               >
                 {link.label}
               </Link>

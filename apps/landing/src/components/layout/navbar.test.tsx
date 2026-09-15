@@ -101,18 +101,64 @@ describe('Navbar — audience-selecting variant', () => {
       })
     );
 
-    // Simulate landing on a page that is not itself an audience page: the
-    // stored selection, not the URL, must carry the state.
+    // Simulate landing on a page that is not itself an audience page. The
+    // stored selection still carries the state: the header CTA stays
+    // audience-matched (that behaviour is documented and kept). The chip
+    // highlight, however, is page-scoped (T-034) — /how-we-verify must NOT
+    // present "Business" as if the visitor were on /business.
     unmount();
     mockPathname.value = '/how-we-verify';
     renderNavbar();
 
     const selector = screen.getByRole('navigation', { name: /choose your audience/i });
-    expect(within(selector).getByRole('link', { name: 'Business' })).toHaveAttribute(
+    within(selector)
+      .getAllByRole('link')
+      .forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
+    expect(screen.getAllByRole('link', { name: 'Request a Demo' }).length).toBeGreaterThan(0);
+  });
+
+  it('marks How We Verify active only on its own page, with aria-current (T-034)', () => {
+    mockPathname.value = '/how-we-verify';
+    renderNavbar();
+
+    const siteNav = screen.getAllByRole('navigation', { name: 'Site' })[0];
+    expect(within(siteNav).getByRole('link', { name: 'How We Verify' })).toHaveAttribute(
       'aria-current',
       'page'
     );
-    expect(screen.getAllByRole('link', { name: 'Request a Demo' }).length).toBeGreaterThan(0);
+    expect(within(siteNav).getByRole('link', { name: 'About' })).not.toHaveAttribute(
+      'aria-current'
+    );
+    // Not colour alone, and not the persisted context either: while the
+    // highlight flips, background/border tokens (bg-primary-light,
+    // border-primary) stay exactly the audience selector's Active treatment.
+    expect(within(siteNav).getByRole('link', { name: 'How We Verify' })).toHaveClass(
+      'bg-primary-light',
+      'border-primary'
+    );
+  });
+
+  it('places an explicit Home link before the audience selector (T-034)', () => {
+    renderNavbar();
+    const header = screen.getByRole('banner');
+    const all = within(header).getAllByRole('link');
+    const logo = within(header).getByRole('link', { name: /safepass home/i });
+
+    expect(within(header).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+    // Home must sit BEFORE the selector's first link in reading order.
+    expect(all.indexOf(within(header).getByRole('link', { name: 'Home' }))).toBeLessThan(
+      all.indexOf(within(header).getByRole('link', { name: 'Individual' }))
+    );
+    // The logo still links home — unchanged alongside the new link.
+    expect(logo).toHaveAttribute('href', '/');
+  });
+
+  it('marks Home active on the homepage', () => {
+    renderNavbar();
+    expect(within(screen.getByRole('banner')).getByRole('link', { name: 'Home' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
   });
 
   it('matches the audience set by a deep link rather than defaulting to Individual', () => {
@@ -163,12 +209,31 @@ describe('Navbar — non-audience-selecting variant (legal pages)', () => {
     expect(screen.getAllByRole('link', { name: 'Get the App' }).length).toBeGreaterThan(0);
   });
 
-  it('applies no active audience state to any nav link', () => {
+  it('applies no active audience state to any nav link on the privacy page', () => {
+    // The static variant carries Home + audiences + How We Verify + About, but
+    // none of them IS /privacy — nothing may read as current (T-034).
     renderNavbar({ showAudienceSelector: false });
     const siteNav = screen.getAllByRole('navigation', { name: 'Site' })[0];
 
     within(siteNav)
       .getAllByRole('link')
       .forEach((link) => expect(link).not.toHaveAttribute('aria-current'));
+  });
+
+  it('leads its nav with the explicit Home link (T-034)', () => {
+    renderNavbar({ showAudienceSelector: false });
+    const siteNav = screen.getAllByRole('navigation', { name: 'Site' })[0];
+
+    expect(within(siteNav).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+    const links = within(siteNav).getAllByRole('link');
+    expect(links[0]).toBe(within(siteNav).getByRole('link', { name: 'Home' }));
+    expect(links.map((link) => link.textContent)).toEqual([
+      'Home',
+      'Individual',
+      'Business',
+      'Transport Partner',
+      'How We Verify',
+      'About',
+    ]);
   });
 });

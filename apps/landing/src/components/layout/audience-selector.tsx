@@ -23,9 +23,16 @@ import { cn } from '@/lib/utils';
  * shareable URL for the deep-link behaviour user_flow.md's Global Flow depends
  * on, and crawlability of all three audience paths.
  *
- * Selection state is written on click as well, so the choice survives
- * navigation away from the audience pages (e.g. onward to /how-we-verify)
- * rather than only lasting as long as the URL matches.
+ * Selection state is written on click as well, so the choice persists across
+ * navigation away from the audience pages (e.g. onward to /how-we-verify) and
+ * keeps driving the header CTA — that part is session CONTEXT, not page state.
+ *
+ * The VISUAL highlight, however, is PAGE-SCOPED (T-034): an option is marked
+ * active only when the current pathname IS that audience's page. Earlier this
+ * derived from the persisted context, which kept the last-clicked chip lit on
+ * every later page — /how-we-verify presented "Business" as if the visitor were
+ * on /business. On /how-we-verify, /about, /privacy, /terms, and the homepage
+ * no chip carries the active state.
  *
  * Styling comes from branding.md Section 3.5's Audience Selector table
  * (Inactive / Active / Hover) — no other component in this app uses that
@@ -50,24 +57,30 @@ const INACTIVE =
 // non-visually, so nothing is lost but the failing contrast.
 const ACTIVE = 'bg-primary-light text-text-primary border-primary';
 
+/**
+ * branding.md §3.5's Active treatment, exported for the desktop nav links and
+ * the drawer's Explore rows (T-034) so every header active state uses the SAME
+ * token pairing — `primary-light` fill, `primary` border, `text-text-primary`
+ * (the contrast-safe pairing noted above) — and no call site has to restate it.
+ */
+export const NAV_ACTIVE_CHIP = ACTIVE;
+
 export function AudienceSelector({ className }: { className?: string }) {
-  const { audience, setAudience } = useAudience();
+  const { setAudience } = useAudience();
   const pathname = usePathname();
 
-  // The homepage is the neutral hub — no audience is pre-selected there, whether
-  // by the default (Individual) or by a persisted session selection. Each
-  // audience page highlights its own option instead. The audience context still
-  // carries a value so the header CTA resolves, but the selector stays neutral
-  // on the entry page.
-  const isHome = pathname === '/';
-
+  // Page-scoped highlight: an option is current only while the visitor IS on
+  // that audience's page. The persisted audience context is still written on
+  // click (via setAudience) and still drives the header CTA elsewhere — only
+  // the highlight is URL-derived, matching the drawer's audience rows and the
+  // desktop nav links' active treatments.
   return (
     <nav
       aria-label="Choose your audience"
       className={cn('flex items-center gap-xs rounded-md p-xs shadow-md', className)}
     >
       {AUDIENCE_NAV.map((option) => {
-        const isActive = !isHome && option.audience === audience;
+        const isActive = pathname === option.href;
 
         return (
           <Link

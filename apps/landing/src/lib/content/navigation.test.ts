@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { AUDIENCES, AUDIENCE_CONFIG } from '@/lib/audience/audience-config';
-import { AUDIENCE_NAV, FOOTER_EXPLORE, FOOTER_LEGAL, STATIC_NAV } from './navigation';
+import {
+  AUDIENCE_NAV,
+  FOOTER_EXPLORE,
+  FOOTER_LEGAL,
+  HOME_LINK,
+  STATIC_NAV,
+} from './navigation';
 
 /**
  * `AUDIENCE_NAV` is derived from AUDIENCE_CONFIG, so label/href/CTA drift is no
@@ -28,6 +34,7 @@ describe('AUDIENCE_NAV', () => {
 describe('navigation link sets', () => {
   it('routes every audience plus the credibility and about pages in the static nav', () => {
     expect(STATIC_NAV.map((link) => link.href)).toEqual([
+      '/',
       '/individual',
       '/business',
       '/transport-partners',
@@ -36,8 +43,16 @@ describe('navigation link sets', () => {
     ]);
   });
 
-  it('offers a homepage route from the footer', () => {
+  it('leads the static nav with Home (T-034 client feedback)', () => {
+    expect(STATIC_NAV[0]).toEqual(HOME_LINK);
+    expect(HOME_LINK).toEqual({ label: 'Home', href: '/' });
+  });
+
+  it('offers a homepage route from the footer exactly once', () => {
+    // Home leads the footer explore list; it must not appear again now that
+    // STATIC_NAV itself carries it.
     expect(FOOTER_EXPLORE[0]).toEqual({ label: 'Home', href: '/' });
+    expect(FOOTER_EXPLORE.filter((link) => link.href === '/')).toHaveLength(1);
   });
 
   // FEAT-015 / risk_log R-011: all three must stay reachable from every page.
