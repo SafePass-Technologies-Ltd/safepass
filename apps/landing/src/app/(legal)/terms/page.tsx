@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Container } from '@/components/ui/container';
 import { LegalArticle } from '@/lib/content/legal/legal-article';
 import { termsOfService } from '@/lib/content/legal/terms-of-service';
 
@@ -18,5 +19,10 @@ export const metadata: Metadata = {
 };
 
 export default function TermsPage() {
-  return <LegalArticle document={termsOfService} />;
+  // Narrow prose column, matching the Privacy Policy.
+  return (
+    <Container width="prose">
+      <LegalArticle document={termsOfService} />
+    </Container>
+  );
 }
