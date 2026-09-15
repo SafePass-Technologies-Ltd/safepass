@@ -62,7 +62,3 @@ override.tf.json
 # core product's folder and silently let `docs/SafePassLanding` through.
 docs/
 .claude
-
-# Parallel git worktrees (DELIVERY.md D-009) -- engineer scratch checkouts
-# under .worktrees/ must never be committed from the main working tree.
-.worktrees/

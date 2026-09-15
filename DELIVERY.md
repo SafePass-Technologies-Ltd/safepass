@@ -184,6 +184,8 @@ Status: Backlog / Ready / In Progress / Blocked / Done.
 | D-007 | First mission: reconcile code to spec, then roadmap Phase 6 backlog | Code predates the regenerated spec | 2026-09-14 |
 | D-008 | `AGENTS.md` is a general agent file referencing ASSETS/CONTRACTS/DELIVERY, not oriented to a single-agent build flow | Agents read coordination files, not implementation-specific conventions | 2026-09-14 |
 | D-009 | Parallel engineers get separate git worktrees, never a shared checkout | Shared checkout caused staging/commit interference in Mission 1 | 2026-09-14 |
+| D-010 | Worktrees are NOT the default. Single-engineer work runs directly in the project root on a normal branch; a worktree is used only when two engineers genuinely run in parallel, and only with the user's prior approval | Worktrees confused the owner and added folder overhead for sequential work; the root checkout is the normal, expected place to work | 2026-09-15 |
+| D-011 | Navigation is URL-native: real anchors + `usePathname()` for the active state. No routing state is invented. The only client state is the audience choice (sessionStorage) and it exists solely so the header CTA stays audience-matched on pages whose URL carries no audience | The web already provides navigation; complexity is only justified by the documented cross-page CTA requirement | 2026-09-15 |
 
 ## Definition of Done
 
