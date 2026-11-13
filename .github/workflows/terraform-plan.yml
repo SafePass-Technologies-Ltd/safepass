@@ -119,6 +119,13 @@ jobs:
           TF_VAR_vercel_cname_target_console: ${{ vars.VERCEL_CNAME_CONSOLE }}
           TF_VAR_vercel_cname_target_corporate: ${{ vars.VERCEL_CNAME_CORPORATE }}
           TF_VAR_vercel_cname_target_transport: ${{ vars.VERCEL_CNAME_TRANSPORT }}
+          # On-call recipients for module.monitoring's readiness alarm (T-052),
+          # comma-separated. A repository VARIABLE, not a secret: an address is
+          # not a credential. Each one must click the AWS confirmation email
+          # before it receives anything (the subscription otherwise stays in
+          # PendingConfirmation). Empty is allowed and plans cleanly, but the
+          # module's check block then warns that the alarm has no reader.
+          TF_VAR_oncall_emails: ${{ vars.ONCALL_EMAILS }}
         run: |
           terraform plan -no-color -input=false -out=tfplan | tee plan_output.txt
           echo "exitcode=$?" >> "$GITHUB_OUTPUT"

@@ -210,6 +210,11 @@ jobs:
           TF_VAR_vercel_cname_target_console: ${{ vars.VERCEL_CNAME_CONSOLE }}
           TF_VAR_vercel_cname_target_corporate: ${{ vars.VERCEL_CNAME_CORPORATE }}
           TF_VAR_vercel_cname_target_transport: ${{ vars.VERCEL_CNAME_TRANSPORT }}
+          # On-call recipients for module.monitoring's readiness alarm (T-052),
+          # comma-separated. Repo variable (not a secret). Each address has to
+          # confirm AWS's subscription email before it is delivered to; see
+          # terraform/modules/monitoring's header.
+          TF_VAR_oncall_emails: ${{ vars.ONCALL_EMAILS }}
         run: terraform apply -auto-approve -input=false
 
       # modules/ecs's aws_ecs_service has `ignore_changes = [task_definition]`

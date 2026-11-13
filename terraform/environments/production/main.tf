@@ -24,6 +24,15 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Second AWS provider, pinned to US East (N. Virginia). Used ONLY by
+# module.monitoring below: Route53 health-check metrics are published solely in
+# us-east-1, and a CloudWatch alarm action can only target an SNS topic in the
+# alarm's own region. The rest of the stack stays in var.aws_region.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+}
+
 # Authenticates with an Upstash account email + API key (Upstash console >
 # Account > API Keys) -- a separate managed service, not an AWS credential.
 # See module "upstash" below.
@@ -298,4 +307,29 @@ module "dns" {
     "corporate.${var.root_domain}" = var.vercel_cname_target_corporate
     "transport.${var.root_domain}" = var.vercel_cname_target_transport
   }
+}
+
+# --- Monitoring: readiness alerting (T-052) ---
+# Actively probes GET /health/ready and pages on-call when the API cannot reach
+# PostgreSQL. This is the reader the 2026-11-13 outage was missing.
+#
+# The `providers` mapping is not cosmetic -- see the provider alias above and
+# modules/monitoring's header: the health check's CloudWatch metric only exists
+# in us-east-1, and the alarm's SNS action must live in the same region as the
+# alarm. Leaking the default eu-west-2 provider into this module would leave the
+# alarm watching a metric that never arrives.
+#
+# The ALB target group deliberately stays on /health (D-013/T-044). Readiness is
+# an alerting signal, not a load-balancer signal.
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  providers = {
+    aws = aws.us_east_1
+  }
+
+  project         = var.project
+  environment     = var.environment
+  api_domain_name = module.acm.api_domain_name
+  oncall_emails   = var.oncall_emails
 }

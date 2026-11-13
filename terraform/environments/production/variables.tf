@@ -120,6 +120,14 @@ variable "upstash_api_key" {
   sensitive   = true
 }
 
+# --- Monitoring (T-052) ---
+
+variable "oncall_emails" {
+  description = "Comma-separated email addresses subscribed to the production on-call SNS topic that the API readiness alarm publishes to (module.monitoring). Set the ONCALL_EMAILS repository variable in CI, or pass TF_VAR_oncall_emails directly. Each address receives an AWS confirmation email and stays in PendingConfirmation -- delivering nothing -- until someone clicks that link; the alarm is inert for that recipient until then. Also note the topic and its subscription live in us-east-1 (where Route53 health-check metrics and the alarm live), not in var.aws_region. Blank is permitted so an unrelated apply is never blocked, but module.monitoring's check block then warns on every full plan/apply that the alarm has no reader (targeted -target plans skip check evaluation)."
+  type        = string
+  default     = ""
+}
+
 variable "root_domain" {
   description = "Root domain name, already registered and hosted in Route53 with an existing apex record serving a separate website (not managed by this Terraform stack). Used to derive the API and dashboard subdomains."
   type        = string

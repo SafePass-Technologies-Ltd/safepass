@@ -207,6 +207,13 @@ resource "aws_lb_target_group" "api" {
     matcher             = "200"
   }
 
+  # DO NOT move this to /health/ready (D-013, T-044). /health is static liveness
+  # and stays 200 even when PostgreSQL is gone -- that is why it is the correct
+  # target-group probe: a database fault must not drain every task and turn a
+  # partial outage into a total one on an emergency-response platform. The
+  # database-aware /health/ready output is monitored for ALERTING instead; see
+  # terraform/modules/monitoring (T-052).
+
   # Deregistration delay tuned down from the 300s default so that during a
   # rolling deploy, in-flight WebSocket connections get a bounded grace
   # period to drain/reconnect without holding capacity indefinitely — still

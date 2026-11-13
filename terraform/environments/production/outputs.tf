@@ -72,3 +72,22 @@ output "upstash_database_id" {
   description = "Upstash console database ID for module.upstash's Redis database (cross-task WebSocket broadcast relay)."
   value       = module.upstash.database_id
 }
+
+# --- Monitoring (T-052) ---
+# The readiness health check is alerting-only and is intentionally NOT attached
+# to the API's Route53 record.
+
+output "readiness_health_check_id" {
+  description = "Route53 health check ID probing GET https://<api>/health/ready. Useful for `aws route53 get-health-check-status` and for finding the AWS/Route53 HealthCheckStatus metric."
+  value       = module.monitoring.readiness_health_check_id
+}
+
+output "oncall_sns_topic_arn" {
+  description = "On-call SNS topic (us-east-1) the readiness alarm publishes to. Email subscriptions deliver nothing until each recipient confirms the AWS email."
+  value       = module.monitoring.oncall_sns_topic_arn
+}
+
+output "readiness_alarm_arn" {
+  description = "CloudWatch alarm (us-east-1) on the readiness health check. ALARM means the API cannot reach PostgreSQL."
+  value       = module.monitoring.readiness_alarm_arn
+}
