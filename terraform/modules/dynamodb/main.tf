@@ -68,6 +68,15 @@ resource "aws_dynamodb_table" "realtime_state" {
     enabled = true
   }
 
+  # SAFETY — mirrors `deletion_protection = true` on the RDS instance. This
+  # table holds live trip/GPS state, and losing it is silent: apps/api's
+  # saveTripLocation failure is swallowed to a console.warn, so nothing pages
+  # and nothing errors. An accidental `terraform destroy`, a stale plan, or a
+  # manual delete should therefore fail loudly instead of wiping the table.
+  # Turning it off is a deliberate, separate act — and it MUST be done before
+  # any planned teardown, which is exactly the pause this is meant to force.
+  deletion_protection_enabled = true
+
   tags = {
     Name        = "${var.project}-${var.environment}-realtime-state"
     Environment = var.environment
