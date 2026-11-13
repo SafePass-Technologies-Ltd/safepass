@@ -13,8 +13,10 @@ import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
 import '../../../app/router.dart';
 import '../../../app/theme.dart';
+import '../../auth/cubit/auth_cubit.dart';
 import '../../profile/cubit/profile_cubit.dart';
 import '../../trips/cubit/trip_monitoring_cubit.dart';
+import '../widgets/connection_banner.dart';
 
 /// Explicit background for the bottom [NavigationBar], shared with the OS
 /// system navigation bar via [AnnotatedRegion] below so the two visually
@@ -54,6 +56,11 @@ class _HomeShellState extends State<HomeShell> {
     final tripActive = tripState.status == TripMonitorStatus.active ||
         tripState.status == TripMonitorStatus.gpsUpdating;
 
+    // C-002 r2: while the API is degraded the user stays signed in; the shell
+    // surfaces a transient connection notice instead of ejecting to sign-in.
+    final connectionDegraded =
+        context.watch<AuthCubit>().state.isConnectionDegraded;
+
     // Keep the OS system navigation bar (the gesture-bar/button strip at the
     // very bottom of the screen, outside Flutter's own widget tree) in sync
     // with this shell's NavigationBar background instead of the platform
@@ -73,6 +80,7 @@ class _HomeShellState extends State<HomeShell> {
         bottomNavigationBar: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (connectionDegraded) const ConnectionDegradedBanner(),
             if (tripActive) _ActiveTripBanner(tripState: tripState),
             NavigationBar(
               backgroundColor: _kNavBarBackground,

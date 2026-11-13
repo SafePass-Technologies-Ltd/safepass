@@ -34,6 +34,10 @@ class AuthCubit extends Cubit<AuthState> {
   StreamSubscription<RemoteMessage>? _foregroundSub;
   StreamSubscription<RemoteMessage>? _openedAppSub;
 
+  /// Session-health events published by the API client's auth interceptor
+  /// (see AuthClientEvent in core/api/api_client.dart) — cancelled on close().
+  StreamSubscription<AuthClientEvent>? _authEventSub;
+
   /// Stored verification ID for Firebase Phone Auth OTP verification.
   /// Set by the `codeSent` callback and consumed by [verifyPhoneOtp].
   String? _phoneVerificationId;
@@ -60,6 +64,35 @@ class AuthCubit extends Cubit<AuthState> {
         _secureStorage = secureStorage ?? const FlutterSecureStorage(),
         super(const AuthState.initial()) {
     _initFcmHandlers();
+    _listenForSessionHealth();
+  }
+
+  /// Bridge the API client's refresh outcomes into auth state (C-002 r2):
+  ///
+  ///   * sessionInvalidated — the refresh token is unusable; the interceptor
+  ///     has already discarded the stored tokens, so emit the logged-out state
+  ///     and let the router send the user to sign-in.
+  ///   * refreshDegraded — infrastructure failure; the session is KEPT. Mark
+  ///     the state degraded (user stays signed in) so the shell can show a
+  ///     transient connection notice instead of ejecting to sign-in.
+  ///   * refreshRecovered — a refresh succeeded again; clear the notice.
+  void _listenForSessionHealth() {
+    _authEventSub = ApiClient.instance.authEvents.listen((event) {
+      switch (event) {
+        case AuthClientEvent.sessionInvalidated:
+          _phoneVerificationId = null;
+          emit(const AuthState.initial());
+        case AuthClientEvent.refreshDegraded:
+          if (state.status == AuthStatus.authenticated ||
+              state.status == AuthStatus.onboardingRequired) {
+            emit(state.copyWith(isConnectionDegraded: true));
+          }
+        case AuthClientEvent.refreshRecovered:
+          if (state.isConnectionDegraded) {
+            emit(state.copyWith(isConnectionDegraded: false));
+          }
+      }
+    });
   }
 
   /// Wire up FCM foreground and tap handlers once at construction.
@@ -127,6 +160,7 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> close() {
     _foregroundSub?.cancel();
     _openedAppSub?.cancel();
+    _authEventSub?.cancel();
     return super.close();
   }
 
@@ -426,7 +460,16 @@ class AuthCubit extends Cubit<AuthState> {
   ///
   /// Called during app startup — reads the stored access token and validates
   /// it by hitting `GET /v1/users/me`. On success, emits [AuthStatus.authenticated]
-  /// with the user payload. On missing token or 401, emits initial (logged-out) state.
+  /// with the user payload.
+  ///
+  /// C-002 r2: only evidence that the SESSION is dead may clear it. The
+  /// interceptor's refresh run has already classified any 401:
+  ///   * refresh 401 → tokens were discarded → `getAccessToken()` returns null
+  ///     → emit the logged-out state.
+  ///   * refresh 5xx/network → tokens were KEPT → the user stays signed in;
+  ///     emit authenticated with [AuthState.isConnectionDegraded] so the shell
+  ///     shows a transient connection notice. Never clear tokens on an
+  ///     infrastructure fault.
   Future<void> restoreSession() async {
     final token = await ApiClient.instance.getAccessToken();
     if (token == null) {
@@ -445,9 +488,21 @@ class AuthCubit extends Cubit<AuthState> {
 
       emit(state.copyWith(status: AuthStatus.authenticated));
     } catch (e) {
-      // 401 or network failure — treat as logged out. Clear stale token.
-      await ApiClient.instance.clearTokens();
-      emit(state.copyWith(status: AuthStatus.initial));
+      // A network failure is not an authentication verdict. What survives on
+      // disk is the discriminator: the interceptor only removed tokens when
+      // the refresh token itself was rejected (401).
+      final sessionToken = await ApiClient.instance.getAccessToken();
+      if (sessionToken == null) {
+        // Session discarded by the refresh path — genuinely logged out.
+        emit(state.copyWith(status: AuthStatus.initial));
+      } else {
+        // Server unreachable or failing (5xx) — the session is intact.
+        // Stay signed in and flag the degraded connection for the shell.
+        emit(state.copyWith(
+          status: AuthStatus.authenticated,
+          isConnectionDegraded: true,
+        ));
+      }
     }
   }
 
