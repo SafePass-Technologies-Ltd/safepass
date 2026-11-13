@@ -48,7 +48,13 @@ test-error.txt
 *.tfstate
 *.tfstate.*
 *.tfplan
-tfplan
+# A saved plan is a binary archive of the entire planned change set, with
+# resolved variable values baked in -- it must never reach the repo. `tfplan*`
+# (not just `tfplan`) is deliberate: a hand-named plan such as `tfplan-hotfix`
+# slipped past the old exact-match pattern and was only saved by being
+# untracked rather than ignored, so a single `git add -A` would have committed
+# it.
+tfplan*
 plan_output.txt
 crash.log
 crash.*.log
