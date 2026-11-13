@@ -167,19 +167,22 @@ Mission 1: reconcile implemented code with the regenerated spec. Mission 2: road
 | T-019 | FEAT-065 Passenger safety reports | backend + frontend | Backlog | — | — | — |
 | T-020 | FEAT-066 Custom alert rules | backend + frontend | Backlog | — | — | — |
 | T-021 | FEAT-067/068 Simulation & training (dev/staging) | backend + frontend | Backlog | — | — | — |
-| T-040 | DB credential cache: invalidate + one forced refresh on 28P01 (stale fallback masked rotation) | backend | Done (pending QA) | — | — | — |
-| T-041 | `GET /health/ready` DB-aware readiness (503 on DB fault); `/health` stays static liveness | backend | Done (pending QA) | — | H-001 | — |
-| T-042 | Token-exchange: stage-tagged failure logging + real `FirebaseAuthError` classification | backend | Done (pending QA) | — | C-001 | — |
+| T-040 | DB credential cache: invalidate + one forced refresh on 28P01 (stale fallback masked rotation) | backend | Done | — | — | 2026-11-13 PASS |
+| T-041 | `GET /health/ready` DB-aware readiness (503 on DB fault); `/health` stays static liveness | backend | Done | — | H-001 | 2026-11-13 PASS |
+| T-042 | Token-exchange: stage-tagged failure logging + real `FirebaseAuthError` classification | backend | Done | — | C-001 | 2026-11-13 PASS |
 | T-043 | Post-account-closure infra: reconcile Terraform state with restored RDS; fix Upstash provider 401 blocking Apply | infra | In Progress | — | — | — |
 | T-044 | Decide whether the ALB target group moves to `/health/ready` (currently static `/health`) | infra | Backlog | T-041 | — | — |
 | T-045 | Source spec-declared assets (empty states, hero) | image-artist | Backlog | ASSETS.md | — | — |
-| T-046 | `POST /v1/auth/refresh` still maps every failure to 401 — same blindness T-042 removed for token-exchange | backend | Backlog | T-042 | C-002 | — |
+| T-046 | `POST /v1/auth/refresh` maps every failure to 401; mobile `api_client` then wipes the session on any refresh failure, so a DB blip logs every user out permanently | backend + frontend | Backlog | T-042 | C-002 | — |
 | T-047 | No correlation-id middleware; `requestId` in auth logs falls back to `x-request-id`/`x-amzn-trace-id` or null | backend | Backlog | T-042 | — | — |
-| T-048 | Restore DynamoDB `safepass-production-realtime-state` (live status **ARCHIVED**; `GetItem` → ResourceNotFoundException) and re-point `DYNAMODB_TABLE_NAME`; enable PITR | infra | Blocked | T-043 | — | — |
-| T-049 | Re-scope T-029: create `safepass-production-documents` and inject `DOCUMENTS_BUCKET_NAME` — absent from task def :77, so document uploads fail closed with 500 | infra | Blocked | T-043 | — | — |
+| T-048 | Restore DynamoDB `safepass-production-realtime-state` (live status **ARCHIVED**; `GetItem` → ResourceNotFoundException) and re-point `DYNAMODB_TABLE_NAME`; enable PITR | infra | Done (Verified via targeted apply) | T-043 | — | 2026-11-13 |
+| T-049 | Re-scope T-029: create `safepass-production-documents` and inject `DOCUMENTS_BUCKET_NAME` — bucket and hardening now exist; the task-def env and `DocumentsBucketAccess` IAM statement still need `module.ecs`/`module.iam` | infra | Blocked (partially landed) | T-043 | — | — |
 | T-050 | Live-position writes to DynamoDB are swallowed to a `console.warn`, so live tracking degrades silently | backend | Backlog | — | — | — |
 | T-051 | Assert `GET /health/ready` after each deploy in `deploy-api.yml` | infra | Backlog | T-041, T-043 | — | — |
-| T-052 | Alarm on `/health/ready` (Route53 health check or Synthetics canary → on-call); no ALB drain | infra | Backlog | T-041 | — | — |
+| T-052 | **No consumer for `/health/ready`** — no `aws_cloudwatch_metric_alarm` exists anywhere in `terraform/`, so a repeat of 2026-11-13 stays invisible. Alarm or canary → on-call; do not drain the ALB | infra | Backlog | T-041 | — | — |
+| T-053 | CI starts no database, so the live-PostgreSQL tests (highest-risk coverage for T-040) skip with a warning instead of running | infra | Backlog | T-040 | — | — |
+| T-054 | Readiness probe shares the 20-slot app pool; a timed-out probe holds a connect slot for the driver timeout and can starve recovery | backend | Backlog | T-041 | H-001 | — |
+| T-055 | Firebase classification holes: `auth/invalid-credential` (server misconfiguration) returns 401 → sign-in loop; a JWKS fetch failure maps to `auth/argument-error` → 401, which is the Google-outage case the set exists to prevent | backend | Backlog | T-042 | C-001 | — |
 
 Status: Backlog / Ready / In Progress / Blocked / Done.
 
@@ -198,6 +201,7 @@ Status: Backlog / Ready / In Progress / Blocked / Done.
 | D-012 | Production RDS restored from the 2026-11-05 final snapshot after the AWS account closure deleted the instance; restored single-AZ | That snapshot is the only restore point available — data written after 2026-11-05 19:11Z is unrecoverable. Single-AZ controls cost until the Multi-AZ posture is revisited | 2026-11-13 |
 | D-013 | `/health` remains a static liveness probe; the DB-aware check is a separate `/health/ready` and is not wired to the ALB until explicitly decided | Pointing the target group at a DB probe would drain every task during a database fault, converting a partial failure into a total API outage on an emergency-response platform | 2026-11-13 |
 | D-014 | RDS master-password management is pinned: `lifecycle.ignore_changes = [manage_master_user_password]` plus a committed `.terraform.lock.hcl`, and `rds_master_user_secret_arn` is supplied explicitly | A snapshot restore drops the instance's managed-secret association, so any apply that acts on that drift would mint a new secret and rotate the password while ECS still points at the old one. Re-enabling AWS-managed rotation must be one coordinated change with `DB_SECRET_ARN` | 2026-11-13 |
+| D-015 | Blocked modules may be recovered with a targeted apply scoped to modules that cannot reach the blocked provider (`-target=module.dynamodb -target=module.s3_evidence`) | The Upstash credential failure makes the full graph unappliable; a reduced graph never reads the RDS/ECS/secrets resources, so the master-password invariants cannot be reached. Reaching `module.secrets` or `module.ecs` was verified to drag in the failing provider, so the target set must stay exactly those two modules | 2026-11-13 |
 
 ## Definition of Done
 
