@@ -148,7 +148,7 @@ Mission 1: reconcile implemented code with the regenerated spec. Mission 2: road
 | T-025 | Document upload: pipe file to storage backend instead of discarding it | backend | Done | none | — | — |
 | T-026 | Payment webhook: validate gateway HMAC signature (security-critical) | backend | Done | none | — | — |
 | T-027 | Tokenize `verify.routes.ts` / `join.routes.ts` page CSS; remove emoji glyphs | backend | Done | none | — | — |
-| T-029 | Infra: provision `DOCUMENTS_BUCKET_NAME` in Terraform + ECS env + IAM `s3:PutObject` | infra | Done (Verified via T-031) | T-025 | — | 2026-09-15 |
+| T-029 | Infra: provision `DOCUMENTS_BUCKET_NAME` in Terraform + ECS env + IAM `s3:PutObject` | infra | **Blocked — never applied** | T-025 | — | — |
 | T-028a | Coverage: FEAT-038 marker bulk-import route+service tests (53 tests) | backend | Done (Verified via T-031) | T-005 | — | 2026-09-15 |
 | T-028b | Coverage: vitest smoke tests for corporate + transport dashboards; trip-route-map legend token sweep | frontend | Done (Verified via T-031) | T-005 | — | 2026-09-15 |
 | T-030 | Fix bulk-import audit miscount: `skipped` from actual rows, not client `skipRows` (T-028a finding) | backend | Done (Verified via T-031) | T-028a | — | 2026-09-15 |
@@ -175,6 +175,11 @@ Mission 1: reconcile implemented code with the regenerated spec. Mission 2: road
 | T-045 | Source spec-declared assets (empty states, hero) | image-artist | Backlog | ASSETS.md | — | — |
 | T-046 | `POST /v1/auth/refresh` still maps every failure to 401 — same blindness T-042 removed for token-exchange | backend | Backlog | T-042 | C-002 | — |
 | T-047 | No correlation-id middleware; `requestId` in auth logs falls back to `x-request-id`/`x-amzn-trace-id` or null | backend | Backlog | T-042 | — | — |
+| T-048 | Restore DynamoDB `safepass-production-realtime-state` (live status **ARCHIVED**; `GetItem` → ResourceNotFoundException) and re-point `DYNAMODB_TABLE_NAME`; enable PITR | infra | Blocked | T-043 | — | — |
+| T-049 | Re-scope T-029: create `safepass-production-documents` and inject `DOCUMENTS_BUCKET_NAME` — absent from task def :77, so document uploads fail closed with 500 | infra | Blocked | T-043 | — | — |
+| T-050 | Live-position writes to DynamoDB are swallowed to a `console.warn`, so live tracking degrades silently | backend | Backlog | — | — | — |
+| T-051 | Assert `GET /health/ready` after each deploy in `deploy-api.yml` | infra | Backlog | T-041, T-043 | — | — |
+| T-052 | Alarm on `/health/ready` (Route53 health check or Synthetics canary → on-call); no ALB drain | infra | Backlog | T-041 | — | — |
 
 Status: Backlog / Ready / In Progress / Blocked / Done.
 
@@ -192,6 +197,7 @@ Status: Backlog / Ready / In Progress / Blocked / Done.
 | D-008 | `AGENTS.md` is a general agent file referencing ASSETS/CONTRACTS/DELIVERY, not oriented to a single-agent build flow | Agents read coordination files, not implementation-specific conventions | 2026-09-14 |
 | D-012 | Production RDS restored from the 2026-11-05 final snapshot after the AWS account closure deleted the instance; restored single-AZ | That snapshot is the only restore point available — data written after 2026-11-05 19:11Z is unrecoverable. Single-AZ controls cost until the Multi-AZ posture is revisited | 2026-11-13 |
 | D-013 | `/health` remains a static liveness probe; the DB-aware check is a separate `/health/ready` and is not wired to the ALB until explicitly decided | Pointing the target group at a DB probe would drain every task during a database fault, converting a partial failure into a total API outage on an emergency-response platform | 2026-11-13 |
+| D-014 | RDS master-password management is pinned: `lifecycle.ignore_changes = [manage_master_user_password]` plus a committed `.terraform.lock.hcl`, and `rds_master_user_secret_arn` is supplied explicitly | A snapshot restore drops the instance's managed-secret association, so any apply that acts on that drift would mint a new secret and rotate the password while ECS still points at the old one. Re-enabling AWS-managed rotation must be one coordinated change with `DB_SECRET_ARN` | 2026-11-13 |
 
 ## Definition of Done
 
