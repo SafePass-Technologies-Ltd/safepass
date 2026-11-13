@@ -21,6 +21,7 @@ This file freezes the API surface the SafePass team builds against. It was deriv
 | Method | Path | Contract | Purpose |
 |---|---|---|---|
 | GET | `/health` | Frozen | Health check |
+| GET | `/health/ready` | H-001 | Readiness: process up **and** database reachable |
 | GET | `/join/:token` | Frozen | Resolve an org invite token (deep link) |
 | GET | `/verify/v/:token` | Frozen | Public vehicle QR verification |
 | GET | `/.well-known/apple-app-site-association` | Frozen | iOS universal link file |
@@ -173,6 +174,22 @@ This file freezes the API surface the SafePass team builds against. It was deriv
 | PATCH | `/v1/admin/leads/:id` | admin+ | Frozen | Triage a lead |
 
 ## Core contract details
+
+### H-001 — GET /health/ready
+Status: Frozen
+Description: Readiness probe. Answers whether this task can actually reach PostgreSQL, not merely whether the process is alive. Added after the 2026-11-13 incident, when `GET /health` returned 200 for hours while every sign-in failed because the database instance no longer existed.
+Auth: none. Subject to the global 100 req/min IP limiter.
+
+Response 200 (database reachable):
+```json
+{ "status": "ready", "checks": { "database": { "ok": true, "latencyMs": 45 } } }
+```
+Response 503 (database unreachable or probe exceeded its 2s deadline):
+```json
+{ "status": "not_ready", "checks": { "database": { "ok": false, "error": "database_unreachable" } } }
+```
+Notes: `latencyMs` is an integer. `error` is a fixed token — SQLSTATE, host, user, and stack trace are written to a structured log line only and never returned. The probe is `SELECT 1` with a hard 2s deadline, so a hung pool reports not-ready rather than hanging.
+`GET /health` is unchanged and remains the static liveness answer the ALB target group probes: pointing the target group at this endpoint would drain every task during a database fault, so that change is a separate, explicit decision (DELIVERY.md D-013 / T-044).
 
 ### C-001 — POST /v1/auth/token-exchange
 Status: Frozen
