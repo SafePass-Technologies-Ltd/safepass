@@ -11,7 +11,13 @@
  *
  * So: a token the caller cannot use answers 401 with the contract's unchanged
  * body, and everything else is tagged with the stage that broke and logged as
- * one structured line (T-042). The stage never reaches the client.
+ * one structured line (T-042, T-046). The stage never reaches the client.
+ *
+ * The stakes are higher on refresh than on sign-in. Both clients react to a 401
+ * by discarding the stored session, so a server fault reported as 401 does not
+ * merely fail a request -- it deletes every user's session and forces them back
+ * through sign-in (mobile `api_client`). C-002 revision 2 therefore splits the
+ * classes explicitly, and the 401 path here is deliberately narrow.
  */
 import { Hono } from 'hono';
 import type { Context } from 'hono';
@@ -21,6 +27,7 @@ import { FirebaseAuthError } from 'firebase-admin/auth';
 import {
   exchangeFirebaseToken,
   refreshAccessToken,
+  SessionRefreshError,
   TokenExchangeError,
 } from '../services/auth.service';
 
@@ -37,15 +44,111 @@ const authRoutes = new Hono();
  */
 const FIREBASE_SIDE_CODES = new Set([
   'auth/internal-error',
-  'auth/network-request-failed',
   'auth/insufficient-permission',
+  // Raised by `ensureProjectId` when the SDK cannot resolve a project id at all
+  // -- i.e. our service-account configuration is wrong. `verifyIdToken` cannot
+  // resolve one for any user, so a 401 here put the whole user base into a
+  // permanent sign-in loop against a server that would never accept them
+  // (T-055).
+  'auth/invalid-credential',
+  // Not produced by the server SDK's `verifyIdToken` (it is a client-SDK code)
+  // and kept only as a defensive entry: the real Google-side key-fetch failure
+  // arrives as `auth/argument-error`, handled by
+  // `isKeyFetchFailure` below.
+  'auth/network-request-failed',
 ]);
+
+/**
+ * Phrases firebase-admin's key-fetch layer puts into an `auth/argument-error`.
+ *
+ * WHY THIS IS HERE, AND WHY IT IS NOT A GUESS (T-055)
+ *
+ * A JWKS/certificate fetch failure used to look exactly like a malformed token:
+ * `verifyIdToken` maps it to `auth/argument-error`, which is a 401, so a Google
+ * key-endpoint outage told every user to sign in again -- the precise failure
+ * this classification exists to prevent.
+ *
+ * The cause survives the mapping, but only in the message. `mapJwtErrorToAuthError`
+ * replaces the underlying `JwtError` with a fresh `FirebaseAuthError`, so
+ * `error.code` is `auth/argument-error` for both classes, `error.cause` is never
+ * set, and the JWT error code (`key-fetch-error`) is gone. The message is not:
+ * the fallback branch passes the key-fetch reason through verbatim, and both
+ * ways a key fetch can fail have a stable prefix of their own --
+ *
+ *   - an HTTP error or error payload from Google is wrapped by
+ *     `UrlKeyFetcher` as "Error fetching public keys for Google certs: ...";
+ *   - a DNS/socket/timeout failure is wrapped by firebase-admin's `HttpClient`
+ *     as "Error while making request: ... Error code: <code>".
+ *
+ * Both were verified against firebase-admin 13.4.0 by driving the library's own
+ * verifier and mapping function, not inferred from the types: a 503 from the
+ * cert endpoint maps to `auth/argument-error` with the first message, an
+ * unresolvable cert host maps to `auth/argument-error` with the second, and a
+ * genuinely bad signature maps to `auth/argument-error` with "Firebase ID token
+ * has invalid signature...".
+ *
+ * So the split is by message prefix, and the prefix is what makes it safe: every
+ * key-fetch reason *is* the whole message, while firebase-admin's own
+ * token-defect messages start with "Firebase ID token ..." / "Decoding Firebase
+ * ID token failed ...". (They may *echo* a claim value later in the text, which
+ * is why the match is anchored to the start -- see `isKeyFetchFailure`.)
+ *
+ * If a future firebase-admin renames either phrase, the match simply stops
+ * firing and the behaviour returns to today's 401 -- the old behaviour, not a
+ * new failure mode. That is the one direction a text match is allowed to
+ * degrade in.
+ */
+const KEY_FETCH_FAILURE_MARKERS = [
+  'Error fetching public keys for Google certs',
+  'Error while making request',
+];
 
 /** Reads an error's `code`, if it has a string one. */
 function errorCodeOf(error: unknown): string | null {
   if (typeof error !== 'object' || error === null) return null;
   const code = (error as { code?: unknown }).code;
   return typeof code === 'string' ? code : null;
+}
+
+/** Reads an error's `message`, if it has a string one. */
+function errorMessageOf(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const message = (error as { message?: unknown }).message;
+  return typeof message === 'string' ? message : null;
+}
+
+/**
+ * True when an `auth/argument-error` is really a failure to fetch Google's
+ * signing keys, not a bad token.
+ *
+ * Matched at the START of the message, not anywhere in it, and that detail
+ * matters: firebase-admin echoes decoded claim values into its token-defect
+ * messages ("... Expected "x" but got "<payload.aud>""), so a crafted token
+ * could otherwise smuggle one of these phrases into a 401-shaped message and
+ * have it read as a service outage. A key-fetch reason is the whole message and
+ * always begins with the marker; an echoed claim never does.
+ *
+ * If a future firebase-admin renames either phrase the match stops firing and
+ * the behaviour returns to today's 401 -- the old behaviour, not a new failure
+ * mode. That is the direction a text match is allowed to degrade in.
+ */
+function isKeyFetchFailure(error: unknown): boolean {
+  const message = errorMessageOf(error);
+  if (message === null) return false;
+
+  return KEY_FETCH_FAILURE_MARKERS.some((marker) => message.startsWith(marker));
+}
+
+/**
+ * True when the failure is Firebase-side (ours): a Google/transport problem or
+ * a local SDK misconfiguration, never the caller's token.
+ */
+function isFirebaseSideFailure(error: unknown): boolean {
+  const code = errorCodeOf(error);
+  if (code === null) return false;
+  if (FIREBASE_SIDE_CODES.has(code)) return true;
+
+  return code === 'auth/argument-error' && isKeyFetchFailure(error);
 }
 
 /**
@@ -60,12 +163,11 @@ function errorCodeOf(error: unknown): string | null {
  * an error that crossed a module boundary (e.g. a mock or a future SDK build).
  */
 function isRejectedFirebaseToken(error: unknown): boolean {
-  if (error instanceof FirebaseAuthError) {
-    return !FIREBASE_SIDE_CODES.has(error.code);
-  }
-
   const code = errorCodeOf(error);
-  return code !== null && code.startsWith('auth/') && !FIREBASE_SIDE_CODES.has(code);
+  const looksLikeAuthError =
+    error instanceof FirebaseAuthError || (code !== null && code.startsWith('auth/'));
+
+  return looksLikeAuthError && !isFirebaseSideFailure(error);
 }
 
 /**
@@ -99,6 +201,35 @@ function logTokenExchangeFailure(c: Context, error: unknown): void {
     JSON.stringify({
       level: 'error',
       event: 'token_exchange_failed',
+      stage,
+      requestId,
+      code: errorCodeOf(underlying),
+      name: error instanceof Error ? error.name : typeof error,
+      message:
+        error instanceof Error
+          ? error.message.slice(0, 300)
+          : String(error).slice(0, 300),
+    })
+  );
+}
+
+/**
+ * One structured line carrying the stage that failed a refresh (C-002 rev 2).
+ *
+ * Same shape as the token-exchange line so a single CloudWatch query covers
+ * both auth endpoints. The refresh token -- a long-lived credential -- is never
+ * logged, and the stage never reaches the response body.
+ */
+function logRefreshFailure(c: Context, error: unknown): void {
+  const stage = error instanceof SessionRefreshError ? error.stage : 'unclassified';
+  const requestId = c.req.header('x-request-id') ?? c.req.header('x-amzn-trace-id') ?? null;
+
+  const underlying = error instanceof SessionRefreshError ? error.cause : error;
+
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      event: 'refresh_failed',
       stage,
       requestId,
       code: errorCodeOf(underlying),
@@ -167,11 +298,24 @@ authRoutes.post(
     try {
       const result = await refreshAccessToken(refreshToken);
       return c.json(result, 200);
-    } catch {
-      return c.json(
-        { error: { code: 401, message: 'Invalid or expired refresh token' } },
-        401
-      );
+    } catch (err) {
+      // C-002 revision 2: 401 ONLY for a dead session. The body is unchanged
+      // from revision 1 -- clients key off the status, and the mobile client
+      // wipes stored tokens on a 401, so this branch must stay narrow.
+      if (err instanceof SessionRefreshError && err.sessionDead) {
+        return c.json(
+          { error: { code: 401, message: 'Invalid or expired refresh token' } },
+          401
+        );
+      }
+
+      // Infrastructure: database unreachable, signing secret unavailable, a
+      // decode failure caused by configuration -- or an error we cannot place
+      // at all. The session may still be valid, so it is a 500 and the client
+      // keeps its tokens. Log the stage, then let errorHandler answer the
+      // opaque body.
+      logRefreshFailure(c, err);
+      throw err;
     }
   }
 );

@@ -1,5 +1,6 @@
 import { admin } from './firebase';
 import type { DecodedIdToken } from 'firebase-admin/auth';
+import { HTTPException } from 'hono/http-exception';
 import { db } from '../db';
 import { users } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -224,21 +225,167 @@ export async function exchangeFirebaseToken(
 }
 
 /**
+ * Where a session refresh failed (C-002 revision 2).
+ *
+ * The three stages fail for reasons that look identical to a client and are
+ * completely different to an operator: a refresh token we cannot verify is the
+ * caller's session being over, while a database or signing failure says nothing
+ * about the session at all. Before revision 2 every one of them answered
+ * `401 "Invalid or expired refresh token"`, and the mobile client reacts to any
+ * refresh failure by clearing stored tokens -- so a database blip logged every
+ * user out permanently, from a server fault they could not have retried their
+ * way out of.
+ */
+export type RefreshStage = 'token_verify' | 'user_lookup' | 'token_issue';
+
+/**
+ * jose failures that positively mean the token itself is unusable.
+ *
+ * Allow-list, not deny-list, on purpose: the contract says `401` ONLY for a
+ * token the caller cannot use, so an error we cannot place stays a `500` (the
+ * session may still be valid) instead of logging the user out. That is why
+ * `ERR_JOSE_NOT_SUPPORTED` and `ERR_JOSE_ALG_NOT_ALLOWED` are absent -- both
+ * can be caused by a misconfigured signing secret, and a misconfiguration is by
+ * definition not one user's session.
+ *
+ * @see jose `errors` module for the codes themselves.
+ */
+const UNUSABLE_REFRESH_TOKEN_CODES = new Set([
+  'ERR_JWT_EXPIRED',
+  'ERR_JWT_INVALID',
+  'ERR_JWT_CLAIM_VALIDATION_FAILED',
+  'ERR_JWS_INVALID',
+  'ERR_JWS_SIGNATURE_VERIFICATION_FAILED',
+]);
+
+/** Reads a string `code` off an error, if it has one. */
+function refreshErrorCodeOf(error: unknown): string | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? code : null;
+}
+
+/**
+ * True only when the refresh token itself is unusable.
+ *
+ * `verifyRefreshToken` throws two kinds of error: a jose verification failure
+ * (bad signature, expired, malformed -- all the token's fault) and an
+ * `HTTPException(401)` of its own for a token whose `type` claim is not
+ * `refresh`. Anything else reaching here -- a key/secret problem surfacing as a
+ * `TypeError` from jose, an unexpected runtime fault -- is not evidence the
+ * session is dead, so it must not be answered with a 401.
+ */
+function isUnusableRefreshToken(error: unknown): boolean {
+  // `verifyRefreshToken` owns this one: a signed token of the wrong type.
+  if (error instanceof HTTPException) {
+    return error.status >= 400 && error.status < 500;
+  }
+
+  const code = refreshErrorCodeOf(error);
+  return code !== null && UNUSABLE_REFRESH_TOKEN_CODES.has(code);
+}
+
+/**
+ * A refresh failure tagged with the stage that produced it.
+ *
+ * The original error stays reachable as `cause` and its message is preserved,
+ * so the route's structured log line still carries the driver's code. The stage
+ * never reaches the response body (C-002).
+ */
+export class SessionRefreshError extends Error {
+  readonly stage: RefreshStage;
+
+  /**
+   * True when the session is genuinely over (401): the token cannot be
+   * verified, or the user it names is missing or inactive. False means we broke
+   * (500) and the client must keep its tokens.
+   */
+  readonly sessionDead: boolean;
+
+  constructor(
+    stage: RefreshStage,
+    message: string,
+    options: { cause?: unknown; sessionDead?: boolean } = {}
+  ) {
+    super(message, { cause: options.cause });
+    this.name = 'SessionRefreshError';
+    this.stage = stage;
+    this.sessionDead = options.sessionDead ?? false;
+  }
+}
+
+/**
+ * Wraps a stage failure, keeping the original message and error as the cause.
+ */
+function refreshStageFailure(
+  stage: RefreshStage,
+  error: unknown,
+  fallbackMessage: string,
+  sessionDead = false
+): SessionRefreshError {
+  const message = error instanceof Error && error.message ? error.message : fallbackMessage;
+  return new SessionRefreshError(stage, message, { cause: error, sessionDead });
+}
+
+/**
+ * A failure that genuinely ends the session: the token cannot identify a user,
+ * or the user it identifies is gone. Nothing the client can retry.
+ */
+function deadSession(stage: RefreshStage, message: string): SessionRefreshError {
+  return new SessionRefreshError(stage, message, { sessionDead: true });
+}
+
+/**
  * Refresh an access token using a valid refresh token.
+ *
+ * Every failure is thrown as a `SessionRefreshError` carrying the stage it came
+ * from and whether the session is actually dead (C-002 revision 2). The success
+ * shape is unchanged -- `{ accessToken, refreshToken }` is a frozen contract;
+ * only the failure detail is richer, and it never reaches the client.
  */
 export async function refreshAccessToken(
   refreshToken: string
 ): Promise<{ accessToken: string; refreshToken: string }> {
-  const sub = await verifyRefreshToken(refreshToken);
+  // 1. Verify the token. Only failures jose attributes to the token are the
+  //    caller's; a key or configuration fault is ours.
+  let sub: string;
 
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, sub),
-  });
-
-  if (!user || !user.isActive) {
-    throw new Error('User not found or inactive');
+  try {
+    sub = await verifyRefreshToken(refreshToken);
+  } catch (err) {
+    throw refreshStageFailure(
+      'token_verify',
+      err,
+      'Refresh token verification failed',
+      isUnusableRefreshToken(err)
+    );
   }
 
+  // A verified token with no subject can never name a user, so no retry can
+  // rescue it -- but it is checked structurally rather than schema-shaped:
+  // anything stranger than this goes to the database and surfaces as
+  // `user_lookup` (500), never as a mass logout.
+  if (typeof sub !== 'string' || sub.length === 0) {
+    throw deadSession('token_verify', 'Refresh token has no subject (sub) claim');
+  }
+
+  // 2. Load the user. A database fault here says nothing about the session.
+  let user: typeof users.$inferSelect | undefined;
+
+  try {
+    user = await db.query.users.findFirst({
+      where: eq(users.id, sub),
+    });
+  } catch (err) {
+    throw refreshStageFailure('user_lookup', err, 'Failed to load the user for this refresh token');
+  }
+
+  if (!user || !user.isActive) {
+    // The one user_lookup outcome that IS the session: deleted or suspended.
+    throw deadSession('user_lookup', 'User not found or inactive');
+  }
+
+  // 3. Issue a fresh pair. A signing failure is infrastructure, not a logout.
   const jwtPayload: JwtPayload = {
     sub: user.id,
     email: user.email,
@@ -246,12 +393,16 @@ export async function refreshAccessToken(
     orgId: user.organizationId ?? undefined,
   };
 
-  const [newAccessToken, newRefreshToken] = await Promise.all([
-    issueAccessToken(jwtPayload),
-    issueRefreshToken({ sub: user.id }),
-  ]);
+  try {
+    const [newAccessToken, newRefreshToken] = await Promise.all([
+      issueAccessToken(jwtPayload),
+      issueRefreshToken({ sub: user.id }),
+    ]);
 
-  return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+  } catch (err) {
+    throw refreshStageFailure('token_issue', err, 'Failed to issue a refreshed SafePass session');
+  }
 }
 
 /**

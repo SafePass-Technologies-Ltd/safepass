@@ -15,7 +15,8 @@ import {
   broadcastGpsUpdate,
   broadcastTripStatus,
 } from './websocket.service';
-import { saveTripLocation } from './dynamo.service';
+import { saveTripLocation, REALTIME_STATE_TABLE_NAME } from './dynamo.service';
+import { trackTripLocationWrite } from './live-tracking-monitor';
 import { createWallet } from './wallet.service';
 import { sampleGpsPoint, computeAndWriteTripSummary } from './trip-archive.service';
 import { computeFixedRoutePolyline } from './directions.service';
@@ -565,18 +566,26 @@ export async function updateGpsPosition(
     .set({ updatedAt: new Date() })
     .where(eq(trips.id, tripId));
 
-  // Persist to DynamoDB (24-hour TTL) for WebSocket snapshot delivery and
+  // Persist to DynamoDB (60-second TTL) for WebSocket snapshot delivery and
   // admin /active page-load enrichment.
-  // Fire-and-forget: a DynamoDB hiccup must never block the GPS update flow.
-  saveTripLocation(tripId, {
-    latitude: data.latitude,
-    longitude: data.longitude,
-    speed: data.speed ?? null,
-    heading: data.heading ?? null,
-    timestamp: new Date().toISOString(),
-  }).catch((err: unknown) => {
-    console.warn('[DynamoDB] saveTripLocation failed for trip', tripId, (err as Error)?.message);
-  });
+  //
+  // Fire-and-forget, and that is deliberate: the traveller's position is
+  // already durable in PostgreSQL above, so a DynamoDB hiccup must never block
+  // or fail GPS ingestion. The failure is NOT swallowed, though -- it emits a
+  // structured log line and a CloudWatch metric (T-050), because when the
+  // realtime-state table was archived, live positions vanished from the
+  // operations map and nothing in the platform said so.
+  trackTripLocationWrite(
+    tripId,
+    REALTIME_STATE_TABLE_NAME,
+    saveTripLocation(tripId, {
+      latitude: data.latitude,
+      longitude: data.longitude,
+      speed: data.speed ?? null,
+      heading: data.heading ?? null,
+      timestamp: new Date().toISOString(),
+    })
+  );
 
   // FEAT-049 Tier 3: queue this point for the significant-change sampling filter.
   // This is a synchronous in-memory buffer append (see trip-archive.service.ts)

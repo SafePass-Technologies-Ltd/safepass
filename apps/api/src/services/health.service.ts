@@ -1,5 +1,5 @@
 /**
- * Readiness probing (T-041).
+ * Readiness probing (T-041, hardened by T-054).
  *
  * WHY THIS EXISTS
  *
@@ -11,12 +11,27 @@
  * database?"
  *
  * `probeDatabase` asks it with the cheapest possible query (`SELECT 1`) and a
- * hard deadline, so a hung pool reports "not ready" instead of hanging the
- * probe. It is deliberately NOT wired into `/health`: the ALB probes that path
- * and changing what it means is a separate decision.
+ * hard deadline, so a hung connection reports "not ready" instead of hanging
+ * the probe. It is deliberately NOT wired into `/health`: the ALB probes that
+ * path and changing what it means is a separate decision.
+ *
+ * WHY THE PROBE HAS ITS OWN CONNECTION (T-054)
+ *
+ * The probe originally ran through the shared 20-slot application pool. A probe
+ * that loses its 2s race leaves its connect attempt in flight, and the driver
+ * holds that slot until its own connect timeout (~30s) -- so a fast probe
+ * interval against a dead database fills the pool with dead connects and
+ * recovery waits behind the check that was supposed to detect the outage.
+ *
+ * Now every probe opens its own `max: 1` client (`createProbeClient`) with a
+ * short `connect_timeout`, and destroys it in a `finally` whatever happens.
+ * The cost is one TCP/TLS handshake per probe -- far cheaper than starving the
+ * application of connections during exactly the incident this endpoint exists
+ * to report. `latencyMs` therefore includes connection setup: it is the
+ * honest "time to reach the database", not "time to reuse a warm socket".
  */
-import { sql } from 'drizzle-orm';
-import { db } from '../db';
+import type { PostgresClient } from '../db/retrying-client';
+import { createProbeClient } from '../db';
 
 /**
  * Deadline for the probe.
@@ -82,7 +97,46 @@ function errorCode(error: unknown): string | null {
 }
 
 /**
- * Runs `SELECT 1` against the live pool.
+ * One structured line per failed probe.
+ *
+ * Single line on purpose: CloudWatch groups by line, and a multi-line object
+ * breaks that. Writes the driver's detail, never the response body.
+ */
+function logProbeFailure(error: unknown, durationMs: number): void {
+  console.warn(
+    JSON.stringify({
+      level: 'warn',
+      event: 'db_readiness_probe_failed',
+      error: DB_UNREACHABLE,
+      code: errorCode(error),
+      detail: describeError(error),
+      durationMs,
+    })
+  );
+}
+
+/**
+ * Destroys the probe client without ever letting the close become a second
+ * failure.
+ *
+ * `timeout: 0` tells postgres.js to stop waiting for in-flight work and destroy
+ * the socket now. That matters on the timeout path: the probe lost the race, so
+ * its connect attempt is still in flight and waiting for it to settle is the
+ * piled-up-connections bug T-054 removes. The rejection (when a destroyed
+ * connection fails its pending query) is swallowed here; the query's own
+ * rejection is swallowed next to where it is created.
+ */
+function closeProbeClient(client: PostgresClient): void {
+  try {
+    void client.end({ timeout: 0 }).catch(() => undefined);
+  } catch {
+    // `end` is not expected to throw synchronously. If it ever does, the probe
+    // result is already decided and there is nothing useful left to report.
+  }
+}
+
+/**
+ * Runs `SELECT 1` on a connection of its own.
  *
  * Never throws: a readiness probe reports, it does not fail. Failure is
  * reported on one structured log line as well, so CloudWatch shows the database
@@ -90,27 +144,37 @@ function errorCode(error: unknown): string | null {
  */
 export async function probeDatabase(): Promise<DatabaseProbeResult> {
   const startedAt = performance.now();
-  const probe = db.execute(sql`select 1`);
+
+  let client: PostgresClient;
+  try {
+    client = createProbeClient();
+  } catch (error) {
+    // A client that cannot even be constructed (bad connection options) is a
+    // configuration fault, not a live database: report, never throw.
+    logProbeFailure(error, 0);
+    return { ok: false, error: DB_UNREACHABLE };
+  }
+
+  // Wrapped so a thenable from the driver becomes a real promise, and so the
+  // query's settlement has exactly one consumer we control.
+  const probe = (async () => {
+    await client.unsafe('select 1', []);
+  })();
 
   // The probe can lose the race and settle later. Consume that settlement so a
-  // hung pool cannot turn into an unhandled rejection on top of a failed check.
+  // hung connection cannot turn into an unhandled rejection on top of a failed
+  // check.
   probe.catch(() => undefined);
 
   try {
     await withTimeout(probe, DB_PROBE_TIMEOUT_MS);
     return { ok: true, latencyMs: Math.round(performance.now() - startedAt) };
   } catch (error) {
-    console.warn(
-      JSON.stringify({
-        level: 'warn',
-        event: 'db_readiness_probe_failed',
-        error: DB_UNREACHABLE,
-        code: errorCode(error),
-        detail: describeError(error),
-        durationMs: Math.round(performance.now() - startedAt),
-      })
-    );
-
+    logProbeFailure(error, Math.round(performance.now() - startedAt));
     return { ok: false, error: DB_UNREACHABLE };
+  } finally {
+    // Every probe closes its own client -- success, failure or deadline -- so
+    // repeated probes cannot accumulate connections.
+    closeProbeClient(client);
   }
 }
