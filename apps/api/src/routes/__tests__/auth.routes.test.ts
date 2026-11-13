@@ -44,8 +44,25 @@ vi.mock('../../services/auth.service', () => {
     }
   }
 
+  class SessionRefreshError extends Error {
+    readonly stage: string;
+    readonly sessionDead: boolean;
+
+    constructor(
+      stage: string,
+      message: string,
+      options: { cause?: unknown; sessionDead?: boolean } = {}
+    ) {
+      super(message, { cause: options.cause });
+      this.name = 'SessionRefreshError';
+      this.stage = stage;
+      this.sessionDead = options.sessionDead ?? false;
+    }
+  }
+
   return {
     TokenExchangeError,
+    SessionRefreshError,
     exchangeFirebaseToken: hoisted.mockExchange,
     refreshAccessToken: hoisted.mockRefresh,
   };

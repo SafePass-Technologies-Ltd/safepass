@@ -31,6 +31,15 @@ import { env } from '../env';
 
 const TABLE_NAME = env.DYNAMODB_TABLE_NAME;
 
+/**
+ * The realtime-state table this service writes to.
+ *
+ * Exported for failure reporting only (T-050): the CloudWatch metric for a
+ * failed live-position write is dimensioned by table name, and a stalled or
+ * re-pointed table is exactly what an operator needs to see on the alarm.
+ */
+export const REALTIME_STATE_TABLE_NAME = TABLE_NAME;
+
 // Sort key value namespacing GPS location records within the shared
 // entity_id/record_type table (see module-level doc comment above).
 const RECORD_TYPE_LOCATION = 'location';
