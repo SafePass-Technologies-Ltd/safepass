@@ -34,6 +34,26 @@ jobs:
   lint-test-build:
     name: Lint, Test, Build
     runs-on: ubuntu-latest
+    # Ephemeral PostgreSQL 16 for the live-database integration suite at the
+    # bottom of this job (T-053). Credentials match docker-compose.yml so the
+    # suite's built-in default DSN and `db:migrate` agree without extra
+    # plumbing. This container exists only for the duration of the job.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: safepass
+          POSTGRES_PASSWORD: safepass_dev
+          POSTGRES_DB: safepass
+        ports:
+          - 5432:5432
+        # GitHub waits for this health check before running any step, so the
+        # migration step can never race the server's first accepts.
+        options: >-
+          --health-cmd "pg_isready -U safepass -d safepass"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,3 +85,59 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      # -----------------------------------------------------------------------
+      # Live-database integration tests (T-053)
+      # -----------------------------------------------------------------------
+      # `pnpm test` above deliberately EXCLUDES *.integration.test.ts (see
+      # apps/api/vitest.config.ts). Those files exercise real infrastructure:
+      # they import the real application and src/env.ts, which validates the
+      # whole environment at import time and calls process.exit(1) when
+      # anything required is missing — CI has no .env, so a single import
+      # kills the worker before any per-test skip guard can run. That is why
+      # the exclusion lives in config and why the environment below must be
+      # complete rather than partially filled.
+      #
+      # The coverage this adds is the 28P01 password-rotation retry path
+      # (T-040), which only ever breaks against a real PostgreSQL and which
+      # no CI job tested before. The service container above provides that
+      # PostgreSQL; these two steps migrate it and run the suite.
+      #
+      # EVERY value written below is a DUMMY TEST FIXTURE, not a credential:
+      #   * DATABASE_URL / TEST_DATABASE_URL point at the throwaway service
+      #     container. Both are needed: the app reads DATABASE_URL, while the
+      #     integration suite probes TEST_DATABASE_URL (falling back to its
+      #     docker-compose default).
+      #   * JWT_ACCESS_SECRET / JWT_REFRESH_SECRET are arbitrary strings over
+      #     env.ts's 32-character minimum. They sign nothing that outlives
+      #     this job.
+      #   * FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL are placeholders.
+      #     FIREBASE_PRIVATE_KEY is generated fresh on every run because
+      #     firebase-admin's credential.cert() (services/firebase.ts) parses
+      #     the PEM at import time and rejects a fake string — the generated
+      #     key signs nothing and belongs to no Firebase project.
+      # No production value is used or stored here.
+      - name: Prepare live-database test environment (dummy values only)
+        run: |
+          {
+            echo "NODE_ENV=test"
+            echo "DATABASE_URL=postgresql://safepass:safepass_dev@127.0.0.1:5432/safepass"
+            echo "TEST_DATABASE_URL=postgresql://safepass:safepass_dev@127.0.0.1:5432/safepass"
+            echo "JWT_ACCESS_SECRET=ci-dummy-access-secret-not-a-real-credential-0001"
+            echo "JWT_REFRESH_SECRET=ci-dummy-refresh-secret-not-a-real-credential-0001"
+            echo "FIREBASE_PROJECT_ID=safepass-ci"
+            echo "FIREBASE_CLIENT_EMAIL=ci-runner@safepass-ci.iam.gserviceaccount.com"
+            echo "FIREBASE_PRIVATE_KEY<<__SAFEPASS_CI_DUMMY_KEY__"
+            node -e "process.stdout.write(require('node:crypto').generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }))"
+            echo "__SAFEPASS_CI_DUMMY_KEY__"
+          } >> "$GITHUB_ENV"
+          echo "Dummy integration-test environment prepared (no secrets)."
+
+      - name: Migrate the ephemeral database
+        # The suite writes to real tables (users, wallets, …), so the schema
+        # has to exist before it runs. Against a fresh container this also
+        # proves the migration chain applies cleanly from zero.
+        run: pnpm --filter @safepass/api db:migrate
+
+      - name: Live-database integration tests
+        run: pnpm --filter @safepass/api test:integration
