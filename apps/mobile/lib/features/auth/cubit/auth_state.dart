@@ -44,6 +44,11 @@ class AuthState extends Equatable {
   final AuthStatus status;
   final String? errorMessage;
 
+  /// True while SafePass's backend is unreachable or failing (C-002 r2):
+  /// the session stays on disk and the user stays signed in, but the shell
+  /// shows a transient connection notice instead of ejecting to sign-in.
+  final bool isConnectionDegraded;
+
   // --- Phone auth fields ---
   final PhoneAuthStep phoneAuthStep;
   final String? phoneNumber;
@@ -53,6 +58,7 @@ class AuthState extends Equatable {
   const AuthState({
     required this.status,
     this.errorMessage,
+    this.isConnectionDegraded = false,
     this.phoneAuthStep = PhoneAuthStep.none,
     this.phoneNumber,
     this.verificationId,
@@ -63,6 +69,7 @@ class AuthState extends Equatable {
   const AuthState.initial()
       : status = AuthStatus.initial,
         errorMessage = null,
+        isConnectionDegraded = false,
         phoneAuthStep = PhoneAuthStep.none,
         phoneNumber = null,
         verificationId = null,
@@ -72,6 +79,7 @@ class AuthState extends Equatable {
   AuthState copyWith({
     AuthStatus? status,
     String? errorMessage,
+    bool? isConnectionDegraded,
     PhoneAuthStep? phoneAuthStep,
     String? phoneNumber,
     String? verificationId,
@@ -81,6 +89,7 @@ class AuthState extends Equatable {
     return AuthState(
       status: status ?? this.status,
       errorMessage: errorMessage,
+      isConnectionDegraded: isConnectionDegraded ?? this.isConnectionDegraded,
       phoneAuthStep: clearPhoneAuth
           ? PhoneAuthStep.none
           : (phoneAuthStep ?? this.phoneAuthStep),
@@ -96,6 +105,7 @@ class AuthState extends Equatable {
   List<Object?> get props => [
         status,
         errorMessage,
+        isConnectionDegraded,
         phoneAuthStep,
         phoneNumber,
         verificationId,
