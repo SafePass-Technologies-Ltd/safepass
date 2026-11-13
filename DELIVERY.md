@@ -167,9 +167,9 @@ Mission 1: reconcile implemented code with the regenerated spec. Mission 2: road
 | T-019 | FEAT-065 Passenger safety reports | backend + frontend | Backlog | — | — | — |
 | T-020 | FEAT-066 Custom alert rules | backend + frontend | Backlog | — | — | — |
 | T-021 | FEAT-067/068 Simulation & training (dev/staging) | backend + frontend | Backlog | — | — | — |
-| T-040 | DB credential cache: invalidate + one forced refresh on 28P01 (stale fallback masked rotation) | backend | Done | — | — | 2026-11-13 PASS |
-| T-041 | `GET /health/ready` DB-aware readiness (503 on DB fault); `/health` stays static liveness | backend | Done | — | H-001 | 2026-11-13 PASS |
-| T-042 | Token-exchange: stage-tagged failure logging + real `FirebaseAuthError` classification | backend | Done | — | C-001 | 2026-11-13 PASS |
+| T-040 | DB credential cache: invalidate + one forced refresh on 28P01 (stale fallback masked rotation) | backend | Done | — | — | 2026-11-13 PASS, live :79 |
+| T-041 | `GET /health/ready` DB-aware readiness (503 on DB fault); `/health` stays static liveness | backend | Done | — | H-001 | 2026-11-13 PASS, live :79 |
+| T-042 | Token-exchange: stage-tagged failure logging + real `FirebaseAuthError` classification | backend | Done | — | C-001 | 2026-11-13 PASS, live :79 |
 | T-043 | Post-account-closure infra: reconcile Terraform state with restored RDS; fix Upstash provider 401 blocking Apply | infra | In Progress | — | — | — |
 | T-044 | Decide whether the ALB target group moves to `/health/ready` (currently static `/health`) | infra | Backlog | T-041 | — | — |
 | T-045 | Source spec-declared assets (empty states, hero) | image-artist | Backlog | ASSETS.md | — | — |
