@@ -200,8 +200,10 @@ resource "aws_cloudwatch_metric_alarm" "api_readiness" {
 }
 
 # Non-fatal by design: an empty recipient list must not block an unrelated
-# production apply, but every plan and apply prints the warning so the gap is
-# never silent. This is the "monitor with no reader" check.
+# production apply, but every full plan and apply prints the warning so the gap
+# is never silent. (Plans scoped with -target skip check evaluation, so a
+# targeted recovery plan will not show it.) This is the "monitor with no
+# reader" check.
 check "oncall_subscription_configured" {
   assert {
     condition     = length(local.oncall_emails) > 0
