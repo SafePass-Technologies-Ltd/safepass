@@ -43,6 +43,8 @@ const ORIGINAL_ENV = { ...process.env };
 beforeEach(async () => {
   send.mockReset();
   vi.useFakeTimers();
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  vi.spyOn(console, 'error').mockImplementation(() => undefined);
   process.env.DB_SECRET_ARN = 'arn:aws:secretsmanager:eu-west-2:123:secret:rds!db-test';
   process.env.DB_HOST = 'db.example.com';
   process.env.DB_PORT = '5432';
@@ -56,6 +58,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   process.env = { ...ORIGINAL_ENV };
 });
 
@@ -140,6 +143,146 @@ describe('getDatabasePassword', () => {
     // Percent-encoded characters must survive the round trip.
     await expect(getDatabasePassword()).resolves.toBe('l0cal@pass');
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('28P01 credential recovery (T-040)', () => {
+  it('recognises 28P01 directly and through the Drizzle cause chain', async () => {
+    const { isPasswordAuthFailure } = await import('../credentials');
+
+    expect(isPasswordAuthFailure({ code: '28P01' })).toBe(true);
+    // Drizzle wraps the driver error, so the SQLSTATE sits under `cause`.
+    expect(isPasswordAuthFailure(new Error('Failed query', { cause: { code: '28P01' } }))).toBe(true);
+
+    // Not every connection error is a credential problem; retrying those would
+    // hide the real fault behind a second identical failure.
+    expect(isPasswordAuthFailure({ code: '57P01' })).toBe(false);
+    expect(isPasswordAuthFailure(new Error('boom'))).toBe(false);
+    expect(isPasswordAuthFailure(null)).toBe(false);
+    expect(isPasswordAuthFailure('28P01')).toBe(false);
+  });
+
+  it('drops the cached password and retries once with a freshly read one', async () => {
+    send.mockResolvedValueOnce(secretResponse('dead-password'));
+    const { getDatabasePassword, withPasswordAuthRetry } = await import('../credentials');
+
+    // No time passes (fake timers), so the cache is still well inside its TTL
+    // when the rotation is rejected -- without invalidation the retry would
+    // present the same dead password forever.
+    await expect(getDatabasePassword()).resolves.toBe('dead-password');
+
+    send.mockResolvedValueOnce(secretResponse('rotated-password'));
+
+    const passwordsUsed: string[] = [];
+    const operation = vi.fn(async () => {
+      const password = await getDatabasePassword();
+      passwordsUsed.push(password);
+      if (passwordsUsed.length === 1) {
+        throw Object.assign(new Error('password authentication failed for user "safepass_admin"'), {
+          code: '28P01',
+        });
+      }
+      return 'connected';
+    });
+
+    await expect(withPasswordAuthRetry(operation)).resolves.toBe('connected');
+
+    expect(passwordsUsed).toEqual(['dead-password', 'rotated-password']);
+    expect(operation).toHaveBeenCalledTimes(2);
+    expect(send).toHaveBeenCalledTimes(2);
+
+    // The recovery must be visible in CloudWatch on its own.
+    const warn = vi.mocked(console.warn).mock.calls.map(([line]) => String(line));
+    expect(warn.some((line) => line.includes('28P01'))).toBe(true);
+  });
+
+  it('never retries more than once', async () => {
+    send.mockResolvedValue(secretResponse('always-dead'));
+    const { getDatabasePassword, withPasswordAuthRetry } = await import('../credentials');
+
+    const operation = vi.fn(async () => {
+      await getDatabasePassword();
+      throw Object.assign(new Error('password authentication failed'), { code: '28P01' });
+    });
+
+    await expect(withPasswordAuthRetry(operation)).rejects.toMatchObject({ code: '28P01' });
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it('surfaces the error instead of retrying a dead password when Secrets Manager is also down', async () => {
+    send.mockResolvedValueOnce(secretResponse('dead-password'));
+    const { getDatabasePassword, withPasswordAuthRetry } = await import('../credentials');
+    await getDatabasePassword();
+
+    // The cache still holds the rejected password, and the refresh cannot read
+    // the secret. Falling back to the cache here is what turned a single
+    // rotation into a permanent outage.
+    send.mockRejectedValueOnce(new Error('ThrottlingException'));
+
+    const operation = vi.fn(async () => {
+      await getDatabasePassword();
+      throw Object.assign(new Error('password authentication failed'), { code: '28P01' });
+    });
+
+    await expect(withPasswordAuthRetry(operation)).rejects.toThrow('ThrottlingException');
+    expect(operation).toHaveBeenCalledTimes(2);
+  });
+
+  it('still collapses concurrent refreshes after an invalidation', async () => {
+    send.mockResolvedValueOnce(secretResponse('dead-password'));
+    const { getDatabasePassword, invalidateDatabasePassword } = await import('../credentials');
+    await getDatabasePassword();
+
+    invalidateDatabasePassword();
+
+    let resolveSecret: (value: unknown) => void = () => undefined;
+    send.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSecret = resolve;
+        })
+    );
+
+    const all = Promise.all([
+      getDatabasePassword(),
+      getDatabasePassword(),
+      getDatabasePassword(),
+    ]);
+    resolveSecret(secretResponse('rotated-password'));
+
+    await expect(all).resolves.toEqual([
+      'rotated-password',
+      'rotated-password',
+      'rotated-password',
+    ]);
+    // One for the initial read, one for the collapsed refresh.
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a refresh started before an invalidation re-cache the dead password', async () => {
+    send.mockResolvedValueOnce(secretResponse('dead-password'));
+    const { getDatabasePassword, invalidateDatabasePassword } = await import('../credentials');
+    await getDatabasePassword();
+
+    // A refresh is in flight when the rotation is rejected.
+    let resolveStale: (value: unknown) => void = () => undefined;
+    send.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStale = resolve;
+        })
+    );
+    vi.advanceTimersByTime(6 * 60 * 1000);
+    const staleRefresh = getDatabasePassword();
+
+    invalidateDatabasePassword();
+    resolveStale(secretResponse('dead-password'));
+    await staleRefresh;
+
+    // The next connection must read the secret again rather than inherit the
+    // password the server has already rejected.
+    send.mockResolvedValueOnce(secretResponse('rotated-password'));
+    await expect(getDatabasePassword()).resolves.toBe('rotated-password');
   });
 });
 

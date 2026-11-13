@@ -22,6 +22,7 @@ const hoisted = vi.hoisted(() => ({
   mockIssueAccessToken: vi.fn(),
   mockIssueRefreshToken: vi.fn(),
   mockVerifyRefreshToken: vi.fn(),
+  mockCreateWallet: vi.fn(),
 }));
 
 // ────────────────────────────────────────────────────────────
@@ -55,6 +56,15 @@ vi.mock('../../db', () => ({
 }));
 
 // ────────────────────────────────────────────────────────────
+// Mock wallet provisioning
+//   Mocked so a wallet failure can be simulated without touching
+//   wallet.service's own database reads.
+// ────────────────────────────────────────────────────────────
+vi.mock('../../services/wallet.service', () => ({
+  createWallet: hoisted.mockCreateWallet,
+}));
+
+// ────────────────────────────────────────────────────────────
 // Mock JWT middleware
 // ────────────────────────────────────────────────────────────
 vi.mock('../../middleware/auth', () => ({
@@ -69,6 +79,7 @@ vi.mock('../../middleware/auth', () => ({
 import {
   exchangeFirebaseToken,
   refreshAccessToken,
+  TokenExchangeError,
 } from '../auth.service';
 
 // ────────────────────────────────────────────────────────────
@@ -127,6 +138,7 @@ beforeEach(() => {
   // No pre-existing wallet by default — createWallet() proceeds to insert one
   // via the same db.insert(...).values(...).returning() chain used above.
   hoisted.mockWalletFindFirst.mockResolvedValue(null);
+  hoisted.mockCreateWallet.mockResolvedValue({ id: 'wallet-1', balance: 0 });
 });
 
 // ────────────────────────────────────────────────────────────
@@ -216,6 +228,89 @@ describe('exchangeFirebaseToken', () => {
 
     const insertedRow = hoisted.mockValues.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(insertedRow.authProvider).toBe('facebook');
+  });
+});
+
+// ────────────────────────────────────────────────────────────
+// Stage tagging (T-042)
+//   Token exchange has four stages that fail for very different
+//   reasons. These tests pin the tag on each one, because the route
+//   turns "the caller's token is bad" into a 401 and everything else
+//   into a 500 -- and during the 2026-11-13 outage a dead database
+//   was indistinguishable from a bad token in the logs.
+// ────────────────────────────────────────────────────────────
+describe('exchangeFirebaseToken failure staging', () => {
+  /** Asserts the thrown error is a TokenExchangeError for `stage`. */
+  async function expectStage(promise: Promise<unknown>, stage: string): Promise<TokenExchangeError> {
+    const error = await promise.then(
+      () => {
+        throw new Error('expected the exchange to fail');
+      },
+      (err: unknown) => err
+    );
+
+    expect(error).toBeInstanceOf(TokenExchangeError);
+    expect((error as TokenExchangeError).stage).toBe(stage);
+    return error as TokenExchangeError;
+  }
+
+  it('tags token verification failures as firebase and keeps the cause', async () => {
+    const original = new Error('Invalid token');
+    hoisted.mockVerifyIdToken.mockRejectedValue(original);
+
+    const error = await expectStage(exchangeFirebaseToken('bad-token'), 'firebase');
+
+    // The route needs the firebase-admin error to classify 401 vs 500.
+    expect(error.cause).toBe(original);
+    expect(error.tokenRejected).toBe(false);
+  });
+
+  it('marks a token with no usable email as rejected', async () => {
+    hoisted.mockVerifyIdToken.mockResolvedValue({
+      uid: 'uid-1',
+      email: null,
+      firebase: { sign_in_provider: 'google.com' },
+    });
+
+    const error = await expectStage(exchangeFirebaseToken('token'), 'firebase');
+
+    expect(error.tokenRejected).toBe(true);
+  });
+
+  it('tags a user lookup failure as user_lookup, not firebase', async () => {
+    hoisted.mockVerifyIdToken.mockResolvedValue(mockGoogleToken());
+    const dbError = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+    hoisted.mockFindFirst.mockRejectedValue(dbError);
+
+    const error = await expectStage(exchangeFirebaseToken('token'), 'user_lookup');
+
+    expect(error.cause).toBe(dbError);
+    expect(error.tokenRejected).toBe(false);
+  });
+
+  it('tags a user insert failure as user_lookup', async () => {
+    hoisted.mockVerifyIdToken.mockResolvedValue(mockGoogleToken());
+    hoisted.mockFindFirst.mockResolvedValue(null);
+    hoisted.mockReturning.mockRejectedValue(new Error('duplicate key value'));
+
+    await expectStage(exchangeFirebaseToken('token'), 'user_lookup');
+  });
+
+  it('tags a wallet provisioning failure as wallet_provision', async () => {
+    hoisted.mockVerifyIdToken.mockResolvedValue(mockGoogleToken());
+    hoisted.mockFindFirst.mockResolvedValue(null);
+    hoisted.mockReturning.mockResolvedValue([stubUser()]);
+    hoisted.mockCreateWallet.mockRejectedValue(new Error('wallet insert failed'));
+
+    await expectStage(exchangeFirebaseToken('token'), 'wallet_provision');
+  });
+
+  it('tags a token signing failure as token_issue', async () => {
+    hoisted.mockVerifyIdToken.mockResolvedValue(mockGoogleToken());
+    hoisted.mockFindFirst.mockResolvedValue(stubUser());
+    hoisted.mockIssueAccessToken.mockRejectedValue(new Error('JWT secret missing'));
+
+    await expectStage(exchangeFirebaseToken('token'), 'token_issue');
   });
 });
 

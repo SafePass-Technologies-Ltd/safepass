@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { env } from '../env';
 import { getDatabaseConnection, getDatabasePassword } from './credentials';
+import { withConnectionPasswordRetry } from './retrying-client';
 import * as schema from './schema/index';
 
 /**
@@ -53,9 +54,14 @@ const managedOptions = connection
   : null;
 
 function createClient(max: number) {
-  return managedOptions
+  const client = managedOptions
     ? postgres({ ...managedOptions, max })
     : postgres(env.DATABASE_URL, { max });
+
+  // A connection rejected with 28P01 is retried once with a freshly read
+  // password; see ./retrying-client.ts for why the retry sits above the driver
+  // rather than inside the `password` resolver.
+  return withConnectionPasswordRetry(client);
 }
 
 // For query purposes

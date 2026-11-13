@@ -26,7 +26,7 @@ import { documentRoutes } from './routes/document.routes';
 import { scheduledTripRoutes } from './routes/scheduled-trip.routes';
 import { orgSubscriptionRoutes, adminSubscriptionRoutes } from './routes/subscription.routes';
 import { joinRoutes } from './routes/join.routes';
-import { verifyRoutes } from './routes/verify.routes';
+import { healthRoutes } from './routes/health.routes';import { verifyRoutes } from './routes/verify.routes';
 import { wellKnownRoutes } from './routes/well-known.routes';
 import { leadRoutes, adminLeadRoutes } from './routes/lead.routes';
 import { env } from './env';
@@ -154,6 +154,15 @@ app.get('/health', (c) => {
     environment: env.NODE_ENV,
   });
 });
+
+// Readiness (T-041). Distinct from /health on purpose: /health above is static
+// liveness and is what the ALB target group probes, while /health/ready runs a
+// real `SELECT 1` against PostgreSQL and returns 503 when the database is
+// unreachable. On 2026-11-13 every login failed for hours while /health kept
+// answering 200 to the ALB, so nothing ever pulled the task out of rotation --
+// this is the endpoint that reports that condition. It does not replace
+// /health: moving the target group onto it is a separate infra decision.
+app.route('/health', healthRoutes);
 
 // Org invite deep-link landing page (FEAT-010) -- mounted at the site root
 // (not under /v1) so it matches APP_DEEP_LINK_BASE_URL exactly:

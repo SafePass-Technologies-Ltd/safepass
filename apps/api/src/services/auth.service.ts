@@ -1,4 +1,5 @@
 import { admin } from './firebase';
+import type { DecodedIdToken } from 'firebase-admin/auth';
 import { db } from '../db';
 import { users } from '../db/schema';
 import { eq, and } from 'drizzle-orm';
@@ -20,6 +21,58 @@ import { createWallet } from './wallet.service';
 // it's syntactically well-formed but Paystack refuses it ("Invalid Email
 // Address Passed") for having no real, resolvable domain.
 export const PLACEHOLDER_EMAIL_DOMAIN = '@user.safepass';
+
+/**
+ * Where a token exchange failed.
+ *
+ * Token exchange is the one endpoint every sign-in goes through, and its four
+ * stages fail for completely different reasons with completely different
+ * urgency: a bad token is the caller's problem (401), while a database or
+ * signing failure is ours (500 and someone should look at it). Collapsing them
+ * into one anonymous "something broke" made a database outage look exactly like
+ * a wrong password in the logs (T-042).
+ */
+export type TokenExchangeStage = 'firebase' | 'user_lookup' | 'wallet_provision' | 'token_issue';
+
+/**
+ * A token-exchange failure tagged with the stage that produced it.
+ *
+ * The original error stays reachable as `cause`, and the message is preserved
+ * from it, so the route can still recognise a firebase-admin error underneath
+ * and the dev-mode response stays as readable as it was.
+ */
+export class TokenExchangeError extends Error {
+  readonly stage: TokenExchangeStage;
+
+  /**
+   * True when the caller's Firebase token itself is unusable (expired, wrong
+   * audience, missing a claim we need) -- the only case that deserves a 401.
+   */
+  readonly tokenRejected: boolean;
+
+  constructor(
+    stage: TokenExchangeStage,
+    message: string,
+    options: { cause?: unknown; tokenRejected?: boolean } = {}
+  ) {
+    super(message, { cause: options.cause });
+    this.name = 'TokenExchangeError';
+    this.stage = stage;
+    this.tokenRejected = options.tokenRejected ?? false;
+  }
+}
+
+/**
+ * Wraps a stage failure, keeping the original message and error as the cause.
+ */
+function stageFailure(
+  stage: TokenExchangeStage,
+  error: unknown,
+  fallbackMessage: string
+): TokenExchangeError {
+  const message = error instanceof Error && error.message ? error.message : fallbackMessage;
+  return new TokenExchangeError(stage, message, { cause: error });
+}
 
 export interface TokenExchangeResult {
   accessToken: string;
@@ -43,12 +96,26 @@ export interface TokenExchangeResult {
  *   email is a generated placeholder (phone auth provides no email).
  *
  * If the user doesn't exist in PostgreSQL, creates a new user record.
+ *
+ * Every failure is thrown as a `TokenExchangeError` carrying the stage it came
+ * from (see `TokenExchangeStage`). The signature and the success result are
+ * unchanged -- C-001 is a frozen contract; only the failure detail is richer,
+ * and it never reaches the client.
  */
 export async function exchangeFirebaseToken(
   firebaseIdToken: string
 ): Promise<TokenExchangeResult> {
   // 1. Verify Firebase ID token (single path for all providers)
-  const decodedToken = await admin.auth().verifyIdToken(firebaseIdToken);
+  let decodedToken: DecodedIdToken;
+
+  try {
+    decodedToken = await admin.auth().verifyIdToken(firebaseIdToken);
+  } catch (err) {
+    // Only what firebase-admin reports as an `auth/...` failure is the token's
+    // fault; a credential or transport failure from Google is an outage on our
+    // side and must not be dressed up as "sign in again".
+    throw stageFailure('firebase', err, 'Firebase ID token verification failed');
+  }
 
   const authProviderId = decodedToken.uid;
   const provider = mapFirebaseProvider(decodedToken.firebase?.sign_in_provider);
@@ -60,7 +127,13 @@ export async function exchangeFirebaseToken(
     decodedToken.email ?? (isPhoneAuth ? `phone_${authProviderId}${PLACEHOLDER_EMAIL_DOMAIN}` : null);
 
   if (!email) {
-    throw new Error('Firebase token missing email claim and is not a phone auth token');
+    // A token we cannot build an account from is still a token problem: no
+    // amount of retrying fixes it, the app has to sign in again.
+    throw new TokenExchangeError(
+      'firebase',
+      'Firebase token missing email claim and is not a phone auth token',
+      { tokenRejected: true }
+    );
   }
 
   // Extract phone from phone auth token (Firebase ID token includes `phone_number` claim)
@@ -69,12 +142,18 @@ export async function exchangeFirebaseToken(
   const fullName = decodedToken.name ?? (isPhoneAuth ? 'User' : email.split('@')[0]);
 
   // 2. Find or create user in PostgreSQL
-  let existingUser = await db.query.users.findFirst({
-    where: and(
-      eq(users.authProvider, provider),
-      eq(users.authProviderId, authProviderId)
-    ),
-  });
+  let existingUser: typeof users.$inferSelect | undefined;
+
+  try {
+    existingUser = await db.query.users.findFirst({
+      where: and(
+        eq(users.authProvider, provider),
+        eq(users.authProviderId, authProviderId)
+      ),
+    });
+  } catch (err) {
+    throw stageFailure('user_lookup', err, 'Failed to look up the user for this Firebase token');
+  }
 
   let isNew = false;
 
@@ -91,11 +170,23 @@ export async function exchangeFirebaseToken(
       isVerified: true,
     };
 
-    const [created] = await db.insert(users).values(newUser).returning();
+    let created: typeof users.$inferSelect;
+
+    try {
+      [created] = await db.insert(users).values(newUser).returning();
+    } catch (err) {
+      throw stageFailure('user_lookup', err, 'Failed to create the user for this Firebase token');
+    }
+
     existingUser = created;
     isNew = true;
-    // Auto-provision wallet for new users (balance starts at 0).
-    await createWallet({ ownerType: 'user', ownerId: existingUser.id });
+
+    try {
+      // Auto-provision wallet for new users (balance starts at 0).
+      await createWallet({ ownerType: 'user', ownerId: existingUser.id });
+    } catch (err) {
+      throw stageFailure('wallet_provision', err, 'Failed to provision the wallet for a new user');
+    }
   }
 
   // 3. Issue JWT tokens
@@ -106,10 +197,17 @@ export async function exchangeFirebaseToken(
     orgId: existingUser.organizationId ?? undefined,
   };
 
-  const [accessToken, refreshToken] = await Promise.all([
-    issueAccessToken(jwtPayload),
-    issueRefreshToken({ sub: existingUser.id }),
-  ]);
+  let accessToken: string;
+  let refreshToken: string;
+
+  try {
+    [accessToken, refreshToken] = await Promise.all([
+      issueAccessToken(jwtPayload),
+      issueRefreshToken({ sub: existingUser.id }),
+    ]);
+  } catch (err) {
+    throw stageFailure('token_issue', err, 'Failed to issue a SafePass session token');
+  }
 
   return {
     accessToken,
