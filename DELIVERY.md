@@ -167,7 +167,12 @@ Mission 1: reconcile implemented code with the regenerated spec. Mission 2: road
 | T-019 | FEAT-065 Passenger safety reports | backend + frontend | Backlog | — | — | — |
 | T-020 | FEAT-066 Custom alert rules | backend + frontend | Backlog | — | — | — |
 | T-021 | FEAT-067/068 Simulation & training (dev/staging) | backend + frontend | Backlog | — | — | — |
-| T-030 | Source spec-declared assets (empty states, hero) | image-artist | Backlog | ASSETS.md | — | — |
+| T-040 | DB credential cache: invalidate + one forced refresh on 28P01 (stale fallback masked rotation) | backend | In Progress | — | — | — |
+| T-041 | `GET /health/ready` DB-aware readiness (503 on DB fault); `/health` stays static liveness | backend | In Progress | — | — | — |
+| T-042 | Token-exchange: stage-tagged failure logging + real `FirebaseAuthError` classification | backend | In Progress | — | — | — |
+| T-043 | Post-account-closure infra: reconcile Terraform state with restored RDS; fix Upstash provider 401 blocking Apply | infra | In Progress | — | — | — |
+| T-044 | Decide whether the ALB target group moves to `/health/ready` (currently static `/health`) | infra | Backlog | T-041 | — | — |
+| T-045 | Source spec-declared assets (empty states, hero) | image-artist | Backlog | ASSETS.md | — | — |
 
 Status: Backlog / Ready / In Progress / Blocked / Done.
 
@@ -183,6 +188,8 @@ Status: Backlog / Ready / In Progress / Blocked / Done.
 | D-006 | CONTRACTS.md frozen from implemented code, not spec-only | The real API surface is the contract | 2026-09-14 |
 | D-007 | First mission: reconcile code to spec, then roadmap Phase 6 backlog | Code predates the regenerated spec | 2026-09-14 |
 | D-008 | `AGENTS.md` is a general agent file referencing ASSETS/CONTRACTS/DELIVERY, not oriented to a single-agent build flow | Agents read coordination files, not implementation-specific conventions | 2026-09-14 |
+| D-012 | Production RDS restored from the 2026-11-05 final snapshot after the AWS account closure deleted the instance; restored single-AZ | That snapshot is the only restore point available — data written after 2026-11-05 19:11Z is unrecoverable. Single-AZ controls cost until the Multi-AZ posture is revisited | 2026-11-13 |
+| D-013 | `/health` remains a static liveness probe; the DB-aware check is a separate `/health/ready` and is not wired to the ALB until explicitly decided | Pointing the target group at a DB probe would drain every task during a database fault, converting a partial failure into a total API outage on an emergency-response platform | 2026-11-13 |
 
 ## Definition of Done
 
