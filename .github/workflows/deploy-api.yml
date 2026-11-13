@@ -6,7 +6,10 @@
 # image, pushes it to ECR, registers a new ECS task definition revision with
 # the new image, runs pending drizzle-orm migrations as a one-off ECS task
 # on that same revision (aborting the deploy if they fail), and only then
-# forces a new rolling deployment of the actual service.
+# forces a new rolling deployment of the actual service. Once the service is
+# stable it asserts GET /health/ready returns 200 before the commit is marked
+# deployed (T-051) — the check that was missing on 2026-11-13, when /health
+# stayed green for hours while every sign-in returned 500.
 #
 # CHANGE DETECTION: workflow_run doesn't support path filters directly, so
 # relevance is checked explicitly against a moving "deployed-api" git tag
@@ -227,6 +230,71 @@ jobs:
           service: ${{ env.ECS_SERVICE }}
           wait-for-service-stability: true
           force-new-deployment: true
+
+      # -----------------------------------------------------------------------
+      # Readiness gate (T-051)
+      # -----------------------------------------------------------------------
+      # The deploy above only proves the ALB's static /health probe passed.
+      # On 2026-11-13 that probe kept answering 200 for hours while every
+      # sign-in returned 500, because /health never touches PostgreSQL. This
+      # step asks the database-aware question (GET /health/ready, contract
+      # H-001: 200 + {"database":{"ok":true,...}} when healthy, 503 when the
+      # database is unreachable) and FAILS the workflow on anything but 200.
+      #
+      # Placement is deliberate: it runs after the service is stable but
+      # BEFORE "Mark this commit as deployed", so a red readiness check leaves
+      # the deployed-api marker where it was and the next run re-checks the
+      # same commit instead of silently moving on.
+      #
+      # Retry window: up to 90 seconds, one attempt every 5 seconds. The
+      # rolling deployment has already stabilised before this step (the action
+      # above waits for ECS service stability), so the retries only absorb DNS/
+      # listener propagation and any brief pool warm-up -- they are NOT here to
+      # wait out a genuine database outage. A real outage must fail the deploy
+      # gate loudly, which the bounded window guarantees: this step can never
+      # report success by giving up.
+      #
+      # 503 (database unreachable) and 000 (connection refused/TLS failure) are
+      # both hard failures for the same reason: the deploy is not verified.
+      - name: Verify readiness after deploy
+        if: steps.changes.outputs.relevant == 'true'
+        env:
+          READINESS_URL: https://api.safepass-tech.com/health/ready
+          READINESS_TIMEOUT_SECONDS: "90"
+          READINESS_INTERVAL_SECONDS: "5"
+        run: |
+          set -u
+          START=$SECONDS
+          ATTEMPT=0
+          BODY_FILE="$(mktemp)"
+
+          while :; do
+            ATTEMPT=$((ATTEMPT + 1))
+            ELAPSED=$((SECONDS - START))
+
+            STATUS=$(curl --silent --show-error --location \
+              --max-time 10 \
+              --output "$BODY_FILE" \
+              --write-out '%{http_code}' \
+              "$READINESS_URL" || echo '000')
+
+            echo "readiness attempt ${ATTEMPT} (${ELAPSED}s elapsed): HTTP ${STATUS}"
+            if [ -s "$BODY_FILE" ]; then
+              echo "body: $(head -c 500 "$BODY_FILE")"
+            fi
+
+            if [ "$STATUS" = "200" ]; then
+              echo "::notice::GET ${READINESS_URL} returned 200 -- the deployment can reach PostgreSQL."
+              exit 0
+            fi
+
+            if [ "$ELAPSED" -ge "$READINESS_TIMEOUT_SECONDS" ]; then
+              echo "::error::GET ${READINESS_URL} did not return 200 within ${READINESS_TIMEOUT_SECONDS}s (last status: ${STATUS}). The new task definition is serving, but the API cannot reach its database -- treat this as a failed deploy and investigate RDS reachability/credentials before rolling anything further."
+              exit 1
+            fi
+
+            sleep "$READINESS_INTERVAL_SECONDS"
+          done
 
       - name: Mark this commit as deployed
         if: steps.changes.outputs.relevant == 'true'
