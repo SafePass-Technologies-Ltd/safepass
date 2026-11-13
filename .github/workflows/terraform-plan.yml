@@ -44,6 +44,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Same preflight as terraform-apply.yml (see the comment there for the
+      # full incident context: run 34940923183 failed an apply mid-flight with
+      # "Get Redis Database failed, status code: 401"). Duplicating the few
+      # lines is deliberate — a PR should surface a dead Upstash credential as
+      # a fast, clearly-labelled failure rather than as a provider error buried
+      # in the plan output, and a shared composite action would be more
+      # machinery than four lines of curl warrant.
+      - name: Preflight — Upstash management credentials
+        env:
+          UPSTASH_EMAIL: ${{ vars.UPSTASH_EMAIL }}
+          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
+        run: |
+          if [ -z "$UPSTASH_EMAIL" ] || [ -z "$UPSTASH_API_KEY" ]; then
+            echo "::error::UPSTASH_EMAIL (repository variable) and/or UPSTASH_API_KEY (repository secret) is unset, so provider \"upstash\" cannot be configured at all. Set both under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          STATUS=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --user "$UPSTASH_EMAIL:$UPSTASH_API_KEY" \
+            https://api.upstash.com/v2/redis/databases || echo 000)
+          case "$STATUS" in
+            200)
+              echo "Upstash management credentials accepted by api.upstash.com."
+              ;;
+            401)
+              echo "::error::api.upstash.com rejected the stored Upstash credentials (HTTP 401 Unauthorized): the API key has been revoked or regenerated, or it belongs to a different account than UPSTASH_EMAIL. Fix — sign in at https://console.upstash.com as ${UPSTASH_EMAIL}, open Account > API Keys, create and copy a current key, then update the UPSTASH_API_KEY repository secret (and UPSTASH_EMAIL if the account email changed)."
+              exit 1
+              ;;
+            *)
+              echo "::warning::Upstash preflight returned HTTP $STATUS, which is not an auth verdict; continuing — Terraform will surface any real provider error."
+              ;;
+          esac
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:

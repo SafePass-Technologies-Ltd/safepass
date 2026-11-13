@@ -67,6 +67,46 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Fails fast, naming the exact thing to fix, when the Upstash management
+      # credential no longer authenticates. Terraform Apply run 34940923183
+      # (2026-09-15) died mid-apply with
+      #   Error: Get Redis Database failed, status code: 401 response:
+      #   {"error":"Unauthorized"}
+      # because the upstash/upstash provider authenticates to api.upstash.com
+      # with HTTP Basic (account email + account API key) and had been handed a
+      # credential Upstash rejects. That is a third-party problem that only
+      # surfaced AFTER real AWS changes had already been applied.
+      #
+      # Only 401 is fatal here — it is the one status that means "the stored
+      # credential is wrong". Any other status (5xx, a moved API path, a
+      # network blip) is a warning so that Upstash having a bad day can never
+      # block an AWS recovery apply; Terraform will still surface a real
+      # provider error with its own message.
+      - name: Preflight — Upstash management credentials
+        env:
+          UPSTASH_EMAIL: ${{ vars.UPSTASH_EMAIL }}
+          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
+        run: |
+          if [ -z "$UPSTASH_EMAIL" ] || [ -z "$UPSTASH_API_KEY" ]; then
+            echo "::error::UPSTASH_EMAIL (repository variable) and/or UPSTASH_API_KEY (repository secret) is unset, so provider \"upstash\" cannot be configured at all. Set both under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          STATUS=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --user "$UPSTASH_EMAIL:$UPSTASH_API_KEY" \
+            https://api.upstash.com/v2/redis/databases || echo 000)
+          case "$STATUS" in
+            200)
+              echo "Upstash management credentials accepted by api.upstash.com."
+              ;;
+            401)
+              echo "::error::api.upstash.com rejected the stored Upstash credentials (HTTP 401 Unauthorized): the API key has been revoked or regenerated, or it belongs to a different account than UPSTASH_EMAIL. Fix — sign in at https://console.upstash.com as ${UPSTASH_EMAIL}, open Account > API Keys, create and copy a current key, then update the UPSTASH_API_KEY repository secret (and UPSTASH_EMAIL if the account email changed). Only Terraform's ability to read the database is affected; the safepass-production-realtime Redis database itself is still up."
+              exit 1
+              ;;
+            *)
+              echo "::warning::Upstash preflight returned HTTP $STATUS, which is not an auth verdict; continuing — Terraform will surface any real provider error."
+              ;;
+          esac
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:

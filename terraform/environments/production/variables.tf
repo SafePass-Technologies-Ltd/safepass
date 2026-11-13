@@ -42,6 +42,20 @@ variable "rds_allocated_storage_gb" {
   default = 50
 }
 
+# --- RDS posture after the 2026-11-13 account-closure restore (DELIVERY.md D-012) ---
+
+variable "rds_multi_az" {
+  description = "Multi-AZ for the production database. Deliberately false: the instance was rebuilt single-AZ on 2026-11-13 to control cost until the Multi-AZ posture is revisited (D-012), and Terraform must not quietly convert it back on the next apply — that is an in-place ModifyDBInstance that takes several minutes of availability work and doubles the instance's cost. Flip to true for a planned apply when the posture is revisited."
+  type        = bool
+  default     = false
+}
+
+variable "rds_master_user_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the production master credentials. Required here (rather than read off the instance) because the restored instance has no AWS-managed master secret: `MasterUserSecret` is null, RDS rejected ManageMasterUserPassword on the postgres snapshot restore, and the instance's own master_user_secret attribute therefore comes back as an empty list. The secret below is the surviving RDS-created secret that already holds the live password every running task reads through DB_SECRET_ARN — keeping it explicit keeps DB_SECRET_ARN stable across applies instead of failing the plan or silently emptying it. A fresh/recreated stack should override this to null so module.rds falls back to the AWS-managed secret it creates itself. An ARN is an account-scoped identifier, not a credential."
+  type        = string
+  default     = "arn:aws:secretsmanager:eu-west-2:703097865622:secret:rds!db-2b485055-7ddf-4bb1-be28-899080883a8a-3YzIhV"
+}
+
 variable "ecs_cpu" {
   type    = number
   default = 512

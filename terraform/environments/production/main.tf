@@ -138,6 +138,15 @@ module "rds" {
 
   instance_class       = var.rds_instance_class
   allocated_storage_gb = var.rds_allocated_storage_gb
+
+  # Post-restore reality (see both variables' descriptions, and the SAFETY
+  # note on modules/rds's manage_master_user_password): the instance is
+  # single-AZ because that is the deliberate posture recorded in D-012, and
+  # its master credentials live in the surviving pre-deletion secret rather
+  # than in an AWS-managed one — DB_SECRET_ARN below must keep pointing at
+  # exactly that ARN.
+  multi_az               = var.rds_multi_az
+  master_user_secret_arn = var.rds_master_user_secret_arn
 }
 
 # Grants the ECS task role read access to the RDS-managed master credentials

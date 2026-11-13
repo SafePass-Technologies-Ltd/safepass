@@ -46,6 +46,18 @@ variable "master_username" {
   sensitive = true
 }
 
+variable "multi_az" {
+  description = "Run the instance Multi-AZ (synchronous standby in a second AZ). Defaults to true per architecture.md's \"AWS RDS Multi-AZ with automatic failover\"; an environment may override it when single-AZ is a deliberate, temporary cost posture."
+  type        = bool
+  default     = true
+}
+
+variable "master_user_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding this instance's master credentials. Leave null for a normal AWS-managed-password instance: the ARN is then read off the instance's own master_user_secret attribute. It MUST be set for an instance restored from a snapshot, because a snapshot restore has no AWS-managed master secret to read the ARN from — see the SAFETY note on manage_master_user_password below. An ARN is an account-scoped identifier, not a credential."
+  type        = string
+  default     = null
+}
+
 resource "aws_db_subnet_group" "main" {
   name       = "${var.project}-${var.environment}-db-subnets"
   subnet_ids = var.private_subnet_ids
@@ -99,9 +111,28 @@ resource "aws_db_instance" "main" {
   # replaces the previous dual-source-of-truth setup (a GitHub Actions
   # secret AND a manually-populated Secrets Manager placeholder that could
   # drift out of sync with each other).
+  #
+  # SAFETY — read before changing: production's instance was rebuilt on
+  # 2026-11-13 by `aws rds restore-db-instance-from-db-snapshot` after the AWS
+  # account closure deleted it. RDS rejects ManageMasterUserPassword on a
+  # postgres snapshot restore (and the CLI's restore call has no
+  # MasterUserPassword either), so the restored instance reports
+  # `MasterUserSecret: null` while the surviving secret
+  # `rds!db-2b485055-...` still holds the live master password that every
+  # running ECS task reads through DB_SECRET_ARN. Terraform still records
+  # this flag as true from before the deletion, so a plan that *did* see the
+  # drift would issue ModifyDBInstance(ManageMasterUserPassword=true), which
+  # in one call mints a BRAND NEW Secrets Manager secret and rotates the
+  # master password — instantly invalidating the credential in the secret the
+  # running task definition points at, i.e. a second total production auth
+  # outage. The `lifecycle.ignore_changes` at the bottom of this resource is
+  # the guard that makes that impossible; re-establishing AWS-managed rotation
+  # must instead be a deliberate, coordinated change: run it in a maintenance
+  # window AND repoint DB_SECRET_ARN (see the environment's
+  # rds_master_user_secret_arn variable) in the same apply.
   manage_master_user_password = true
 
-  multi_az               = true # per architecture.md: "AWS RDS Multi-AZ with automatic failover"
+  multi_az               = var.multi_az # architecture.md: "AWS RDS Multi-AZ with automatic failover"
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.db.id]
   publicly_accessible    = false
@@ -120,6 +151,20 @@ resource "aws_db_instance" "main" {
   tags = {
     Name        = "${var.project}-${var.environment}-pg"
     Environment = var.environment
+  }
+
+  lifecycle {
+    # See the SAFETY note on manage_master_user_password above: the only
+    # realistic way a plan would decide that flag is out of date is a
+    # restored/imported instance (whose MasterUserSecret is null) being
+    # compared against this config, and acting on that decision means
+    # ModifyDBInstance(ManageMasterUserPassword=true) — a new secret plus a
+    # master-password rotation, breaking every running task that still reads
+    # DB_SECRET_ARN from the old secret. Ignoring drift on the flag keeps
+    # plan/apply from ever reaching for that; enabling AWS-managed rotation
+    # again is an explicit, coordinated change instead (see the environment's
+    # rds_master_user_secret_arn variable).
+    ignore_changes = [manage_master_user_password]
   }
 }
 
@@ -146,6 +191,6 @@ output "security_group_id" {
 }
 
 output "master_user_secret_arn" {
-  description = "ARN of the Secrets Manager secret AWS created to hold the RDS master credentials (JSON: username + password only — host/port/dbname are NOT included, use the address/port/db_name outputs above for those). Consumed by the environment root to inject DB_USER/DB_PASSWORD into the running container via JSON-key-selector valueFrom."
-  value       = aws_db_instance.main.master_user_secret[0].secret_arn
+  description = "ARN of the Secrets Manager secret holding the RDS master credentials (JSON: username + password only — host/port/dbname are NOT included, use the address/port/db_name outputs above for those). Consumed by the environment root as the container's DB_SECRET_ARN. For a snapshot-restored instance there is no AWS-managed secret to read off the instance attributes (master_user_secret comes back as an empty list, and indexing it blindly fails the whole plan with \"Invalid index\"), so var.master_user_secret_arn takes precedence when set; the instance attribute remains the fallback for a normal AWS-managed-password instance."
+  value       = var.master_user_secret_arn != null ? var.master_user_secret_arn : aws_db_instance.main.master_user_secret[0].secret_arn
 }
