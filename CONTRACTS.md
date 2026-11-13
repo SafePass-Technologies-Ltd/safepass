@@ -211,7 +211,9 @@ Response 200:
 Errors: 401 (invalid sign-in token).
 
 ### C-002 — POST /v1/auth/refresh
-Status: Frozen
+Status: Frozen (revision 2)
+Revision 2 note (2026-11-13): the previous text allowed only `401` and did not distinguish a dead session from a dead server. Every failure — including a database outage — was answered `401 "Invalid or expired refresh token"`, and the mobile client responds to any refresh failure by clearing stored tokens, which logged every user out during an infrastructure fault. Revision 2 splits the classes. Request and response shapes are unchanged from revision 1.
+
 Description: Issue a new token pair from a valid refresh token.
 Auth: none.
 
@@ -220,7 +222,16 @@ Request:
 { "refreshToken": "string" }
 ```
 Response 200: `{ "accessToken": "string", "refreshToken": "string" }`
-Errors: 401 (invalid or expired refresh token).
+
+Errors:
+- `401` — **only** when the refresh token itself is unusable: bad signature, expired, or the user no longer exists / is inactive. The session is dead and the client must re-authenticate.
+- `500` — infrastructure failure that says nothing about the session: database unreachable, signing secret unavailable, token decode failure caused by configuration. The session may still be valid.
+
+Client contract (binding on every client):
+- `401` ⇒ discard the stored session and send the user to sign in.
+- `5xx` or a network failure ⇒ retry with backoff and **keep** the stored session. A 5xx is never evidence that the user is logged out.
+
+Logging: failures are staged as `token_verify | user_lookup | token_issue` on one structured log line. The stage never appears in the response body.
 
 ### C-003 — POST /v1/leads
 Status: Frozen
