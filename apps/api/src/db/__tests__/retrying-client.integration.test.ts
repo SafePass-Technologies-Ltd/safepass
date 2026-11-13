@@ -20,8 +20,10 @@
  * account in a test run, and the credential *flow* is what is under test).
  *
  * Skipped -- with a warning, never silently -- when PostgreSQL is not reachable,
- * because CI does not start a database service (see the QA report: that gap is
- * tracked separately). Locally: `docker compose up -d`.
+ * which is the local case without `docker compose up -d`. CI does start a
+ * PostgreSQL 16 service container for this suite (T-053, .github/workflows/ci.yml),
+ * so these tests are genuinely exercised there rather than skipping. Locally:
+ * `docker compose up -d`.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import postgres from 'postgres';
