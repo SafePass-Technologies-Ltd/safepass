@@ -36,7 +36,6 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.safepasstech.safepass_mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -67,6 +66,24 @@ android {
         // .use{} so the stream is closed even if the file is malformed -- on
         // Windows an unclosed handle keeps key.properties locked.
         FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
+
+        // A key.properties that exists but is incomplete (a renamed key, a value
+        // pasted into the wrong line, a half-finished copy out of the Play
+        // Console) would otherwise fail much later and much less clearly: Gradle
+        // reports a null store file or an "invalid keystore" at sign time, and
+        // the same gap in CI surfaces only once the AAB reaches Play. Fail at
+        // configuration instead, naming every missing property and the file.
+        val requiredKeystoreProperties =
+            listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+        val missingKeystoreProperties =
+            requiredKeystoreProperties.filter { keystoreProperties.getProperty(it).isNullOrBlank() }
+        if (missingKeystoreProperties.isNotEmpty()) {
+            throw GradleException(
+                "${keystorePropertiesFile.absolutePath} is missing " +
+                    "${missingKeystoreProperties.joinToString(", ")}. A release keystore needs all " +
+                    "four properties: storeFile, storePassword, keyAlias, keyPassword.",
+            )
+        }
     }
 
     signingConfigs {

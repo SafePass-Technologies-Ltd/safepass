@@ -29,6 +29,22 @@ coverage/
 *.keystore
 apps/mobile/android/upload-keystore.jks
 
+# apps/mobile: release-run intermediates written by .github/workflows/
+# release-{android,ios}.yml. Both are generated per run and both leak something
+# that must not be committed:
+#   * release-defines.json holds the resolved API/WebSocket base URLs and OAuth
+#     client ids compiled into a store build (production endpoints, not the
+#     committed .env.example.json placeholders);
+#   * ios/ExportOptions.plist holds the export method, signing style and Apple
+#     team id for the archive.
+# Neither is ever a hand-authored file. The workflows delete both in an
+# `if: always()` cleanup step, but that is not a substitute for ignoring them: a
+# cancelled or killed job never reaches the cleanup, and an untracked file one
+# `git add -A` away from a release commit is exactly how endpoint config and
+# signing settings leak into a repo.
+apps/mobile/release-defines.json
+apps/mobile/ios/ExportOptions.plist
+
 # apps/api: local-disk dev-only fallback for emergency audio uploads (used
 # when EVIDENCE_BUCKET_NAME/S3 isn't configured -- see emergency.routes.ts's
 # AUDIO_UPLOAD_DIR). Production always uses S3 and never writes here, but
