@@ -1,0 +1,686 @@
+# SafePass — Release iOS (App Store Connect)
+#
+# One workflow for both release paths (D-017):
+#   * push tag `v*`      -> signed archive exported and UPLOADED to App Store
+#                           Connect, gated by a GitHub Environment with
+#                           required reviewers.
+#   * workflow_dispatch  -> `build-only` (compile + validate, no Apple
+#                           credentials at all), `testflight` (same upload, it
+#                           becomes available to TestFlight testers once
+#                           processed) or `appstore` (upload only — Submit for
+#                           Review stays a manual App Store Connect step).
+#
+# WHY NATIVE CLIs: `flutter build ipa` plus `xcrun altool` keeps the pipeline in
+# YAML — no Fastlane, no Gemfile, no expiring `.mobileprovision` secrets.
+#
+# WHY AN APP STORE CONNECT API KEY: with `signingStyle = automatic` and
+# `-allowProvisioningUpdates`, xcodebuild mints/refreshes the distribution
+# certificate and provisioning profile itself using the `.p8` key. Nothing
+# long-lived has to be stored; revoking the key in App Store Connect revokes the
+# pipeline's access.
+#
+# WHY `appstore` DOES NOT SUBMIT FOR REVIEW: auto-submission needs complete ASC
+# version metadata (screenshots, description, review contact, export-compliance
+# answers) to exist for that exact version, and guessing them in a pipeline
+# risks a rejected or mis-listed release. The workflow's contract is "the build
+# is in App Store Connect"; a human presses Submit for Review.
+#
+# SECRETS (see the report/handoff for the full checklist):
+#   APPLE_TEAM_ID         10-character Apple Developer team id
+#   ASC_KEY_ID            App Store Connect API key id
+#   ASC_ISSUER_ID         App Store Connect API issuer id
+#   ASC_PRIVATE_KEY       the .p8 key — raw PEM or base64-encoded
+#   API_BASE_URL, WS_BASE_URL, GOOGLE_WEB_CLIENT_ID, FACEBOOK_APP_ID,
+#   FACEBOOK_CLIENT_TOKEN compiled-in runtime config (dart-define)
+name: Release iOS
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      destination:
+        description: 'Where this build goes (build-only needs no Apple credentials).'
+        type: choice
+        options: [build-only, testflight, appstore]
+        default: build-only
+      version_name:
+        description: 'Version name (x.y.z). Defaults to the version: line in apps/mobile/pubspec.yaml.'
+        type: string
+        required: false
+      build_number:
+        description: 'CFBundleVersion. Defaults to GITHUB_RUN_NUMBER*100 + GITHUB_RUN_ATTEMPT.'
+        type: string
+        required: false
+
+# Read-only: builds an archive and uploads it to App Store Connect; nothing is
+# written back to the repository.
+permissions:
+  contents: read
+
+# Never let two uploads for the same app interleave. App Store Connect rejects a
+# build number it already has, and a cancelled run cannot unsend an upload that
+# is already in flight. Queue instead of cancel.
+concurrency:
+  group: release-ios
+  cancel-in-progress: false
+
+env:
+  # D-018: exact SDK pin, matching apps/mobile/.fvmrc.
+  FLUTTER_VERSION: "3.47.9"
+  BUNDLE_ID: com.safepass-tech.safepassMobile
+  # A tag push is a production App Store delivery; a manual dispatch carries its
+  # choice.
+  DESTINATION: ${{ github.event_name == 'push' && 'appstore' || inputs.destination }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Verify
+  # ---------------------------------------------------------------------------
+  # Analyze + test run on Linux (cheap, fast) so an obvious failure never
+  # occupies a macOS runner. The iOS build depends on this job.
+  verify:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: apps/mobile
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: apps/mobile
+        # --no-fatal-infos: apps/mobile/lib carries 51 pre-existing info-level
+        # lints (frontend-owned). Errors and warnings still fail the job; a
+        # release gate should not be permanently red on style nits.
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        working-directory: apps/mobile
+        run: flutter test
+
+  # ---------------------------------------------------------------------------
+  # Build
+  # ---------------------------------------------------------------------------
+  # Deliberately NOT attached to a GitHub Environment: compiling an archive must
+  # not require human approval, and only the publish job talks to Apple.
+  build:
+    name: Build Archive
+    needs: verify
+    # macos-15 ships Xcode 16.x, which is what `method: app-store-connect` in the
+    # generated ExportOptions.plist and altool's App Store Connect API key flags
+    # expect.
+    runs-on: macos-15
+    outputs:
+      version-name: ${{ steps.version.outputs.version-name }}
+      build-number: ${{ steps.version.outputs.build-number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # Logged so a failure can be attributed to a specific Xcode/CocoaPods
+      # toolchain without re-running the job to find out what the runner had.
+      - name: Show toolchain versions
+        run: |
+          xcodebuild -version
+          pod --version
+          flutter --version
+
+      - name: Install Flutter dependencies
+        working-directory: apps/mobile
+        run: flutter pub get
+
+      # ---------------------------------------------------------------------
+      # Credential preflight
+      # ---------------------------------------------------------------------
+      # Emptiness-only check, before anything is written to disk, so a missing
+      # secret fails in one step that names every missing value. Values are never
+      # printed.
+      - name: Validate Apple credentials
+        if: env.DESTINATION != 'build-only'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          MISSING=()
+          for NAME in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY; do
+            if [ -z "${!NAME:-}" ]; then
+              MISSING+=("$NAME")
+            fi
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required Apple credential secret(s): ${MISSING[*]}. Set them as repository or 'appstore-*' environment secrets, or use the build-only destination."
+            exit 1
+          fi
+          echo "All four Apple credential secrets are present."
+
+      # ---------------------------------------------------------------------
+      # App Store Connect API key
+      # ---------------------------------------------------------------------
+      # xcodebuild and altool both look for the key at
+      # ~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8, so the filename is
+      # not arbitrary. The secret is accepted either as the raw PEM (what you
+      # download from App Store Connect, "BEGIN PRIVATE KEY") or base64-encoded
+      # (the usual choice when pasting into a secret field, since PEM newlines
+      # survive badly through some UIs).
+      - name: Install App Store Connect API key
+        if: env.DESTINATION != 'build-only'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          KEY_PATH="$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+          if printf '%s' "$ASC_PRIVATE_KEY" | grep -q 'BEGIN PRIVATE KEY'; then
+            # Raw PEM: write through as-is, guaranteeing a trailing newline so
+            # the secp256r1 key parser accepts it.
+            printf '%s\n' "$ASC_PRIVATE_KEY" > "$KEY_PATH"
+          else
+            # Base64: whitespace is stripped first so pasted line-wrapped input
+            # still decodes, then decoded single-line.
+            printf '%s' "$ASC_PRIVATE_KEY" | tr -d '\r\n\t ' | openssl base64 -d -A > "$KEY_PATH"
+          fi
+          # Sanity-check the result before xcodebuild sees it; a malformed key
+          # otherwise surfaces as an opaque "no signing certificate" error.
+          if ! grep -q 'BEGIN PRIVATE KEY' "$KEY_PATH"; then
+            echo "::error::ASC_PRIVATE_KEY did not decode to a PEM private key. Store either the .p8 contents or its base64 encoding."
+            exit 1
+          fi
+          chmod 600 "$KEY_PATH"
+          echo "Wrote $KEY_PATH (contents not echoed)."
+
+      # ---------------------------------------------------------------------
+      # Compile-time configuration (dart-define)
+      # ---------------------------------------------------------------------
+      # Same contract as the Android release: a store build with a missing value
+      # hard-fails (otherwise the app would point at a local-dev endpoint),
+      # while build-only falls back to the committed apps/mobile/.env.example.json
+      # placeholder and logs which keys it substituted.
+      - name: Build dart-define file
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          WS_BASE_URL: ${{ secrets.WS_BASE_URL }}
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          FACEBOOK_APP_ID: ${{ secrets.FACEBOOK_APP_ID }}
+          FACEBOOK_CLIENT_TOKEN: ${{ secrets.FACEBOOK_CLIENT_TOKEN }}
+        run: |
+          set -euo pipefail
+          FALLBACK_FILE=apps/mobile/.env.example.json
+          OUT_FILE=apps/mobile/release-defines.json
+          PLACEHOLDER_LOG="$(mktemp)"
+          BUILD_ONLY="false"
+          if [ "$DESTINATION" = "build-only" ]; then BUILD_ONLY="true"; fi
+
+          resolve() {
+            local name="$1"
+            local value="${!name:-}"
+            if [ -n "$value" ]; then
+              printf '%s' "$value"
+              return 0
+            fi
+            if [ "$BUILD_ONLY" != "true" ]; then
+              printf '%s\n' "$name" >> "$PLACEHOLDER_LOG"
+              printf '%s' ""
+              return 0
+            fi
+            # Committed template value — read, never invented.
+            local fallback
+            fallback="$(jq -r --arg k "$name" '.[$k] // ""' "$FALLBACK_FILE")"
+            printf '%s\n' "$name" >> "$PLACEHOLDER_LOG.fallback"
+            printf '%s' "$fallback"
+          }
+
+          jq -n \
+            --arg apiBaseUrl "$(resolve API_BASE_URL)" \
+            --arg wsBaseUrl "$(resolve WS_BASE_URL)" \
+            --arg googleWebClientId "$(resolve GOOGLE_WEB_CLIENT_ID)" \
+            --arg facebookAppId "$(resolve FACEBOOK_APP_ID)" \
+            --arg facebookClientToken "$(resolve FACEBOOK_CLIENT_TOKEN)" \
+            '{
+              API_BASE_URL: $apiBaseUrl,
+              WS_BASE_URL: $wsBaseUrl,
+              GOOGLE_WEB_CLIENT_ID: $googleWebClientId,
+              FACEBOOK_APP_ID: $facebookAppId,
+              FACEBOOK_CLIENT_TOKEN: $facebookClientToken
+            }' > "$OUT_FILE"
+
+          if [ -s "$PLACEHOLDER_LOG" ]; then
+            echo "::error::Missing required build configuration for a store build: $(tr '\n' ' ' < "$PLACEHOLDER_LOG"). A store artifact must not fall back to local-dev endpoints."
+            exit 1
+          fi
+          if [ -s "$PLACEHOLDER_LOG.fallback" ]; then
+            echo "::notice::No secret set for: $(tr '\n' ' ' < "$PLACEHOLDER_LOG.fallback") — used the committed apps/mobile/.env.example.json placeholder. This build points at a local-dev endpoint and must not be distributed."
+          fi
+          echo "Wrote $OUT_FILE (keys: $(jq -r 'keys | join(", ")' "$OUT_FILE"))."
+
+      # ---------------------------------------------------------------------
+      # Version / build number
+      # ---------------------------------------------------------------------
+      # CFBundleShortVersionString (x.y.z) is the App Store version; CFBundleVersion
+      # must be unique per version, so a re-run of the same run must not reuse it.
+      # GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT leaves 99 attempts of
+      # headroom before the next run's number is reached, keeping the value
+      # strictly increasing across re-runs (App Store Connect rejects a duplicate
+      # build number with "The bundle version must be higher than the previously
+      # uploaded version").
+      - name: Resolve version name and build number
+        id: version
+        env:
+          INPUT_VERSION_NAME: ${{ inputs.version_name }}
+          INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_VERSION_NAME:-}" ]; then
+            VERSION_NAME="$INPUT_VERSION_NAME"
+          else
+            VERSION_NAME="$(grep -m1 '^version:' apps/mobile/pubspec.yaml \
+              | sed -E 's/^version:[[:space:]]*//; s/\+.*$//' \
+              | tr -d '[:space:]')"
+          fi
+          if [ -n "${INPUT_BUILD_NUMBER:-}" ]; then
+            BUILD_NUMBER="$INPUT_BUILD_NUMBER"
+          else
+            BUILD_NUMBER=$(( GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT ))
+          fi
+
+          if ! printf '%s' "$VERSION_NAME" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Could not resolve a valid version name (got '$VERSION_NAME'). Expected x.y.z from the version_name input or apps/mobile/pubspec.yaml."
+            exit 1
+          fi
+          if ! printf '%s' "$BUILD_NUMBER" | grep -qE '^[0-9]+$' || [ "$BUILD_NUMBER" -le 0 ]; then
+            echo "::error::Could not resolve a valid build number (got '$BUILD_NUMBER'). Expected a positive integer."
+            exit 1
+          fi
+
+          echo "version-name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "build-number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Resolved version $VERSION_NAME ($BUILD_NUMBER)."
+
+      # The Podfile is committed but Pods/ is not, so every run resolves plugins
+      # from scratch. Run it explicitly (rather than letting `flutter build ipa`
+      # bootstrap it) so a dependency-resolution failure is its own red step.
+      - name: Install CocoaPods dependencies
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      # ---------------------------------------------------------------------
+      # Export configuration (generated, never committed)
+      # ---------------------------------------------------------------------
+      # `method: app-store-connect` + `destination: export` means xcodebuild
+      # produces an IPA and stops; the upload is altool's job in the publish job,
+      # so this workflow can never submit a build for review by accident.
+      # `manageAppVersionAndBuildNumber = false` keeps the version/build number
+      # this workflow resolved instead of letting Xcode rewrite them (which would
+      # silently diverge from the build number the summary reports).
+      # `signingStyle = automatic` + `teamID` lets xcodebuild create or refresh
+      # the distribution certificate and profile from the API key.
+      - name: Generate ExportOptions.plist
+        if: env.DESTINATION != 'build-only'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          cat > apps/mobile/ios/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>export</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>teamID</key>
+            <string>${APPLE_TEAM_ID}</string>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+          </dict>
+          </plist>
+          PLIST
+          plutil -lint apps/mobile/ios/ExportOptions.plist
+
+      # ---------------------------------------------------------------------
+      # build-only: compile without any signing identity
+      # ---------------------------------------------------------------------
+      # Proves the toolchain, plugins, Pods and dart-defines all work, so the
+      # pipeline can be validated before the Apple account exists. `--no-codesign`
+      # is required because no certificate is available.
+      - name: Build (unsigned, build-only)
+        if: env.DESTINATION == 'build-only'
+        working-directory: apps/mobile
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define-from-file=release-defines.json \
+            --build-name="${{ steps.version.outputs.version-name }}" \
+            --build-number="${{ steps.version.outputs.build-number }}"
+
+      - name: Package unsigned Runner.app (build-only)
+        if: env.DESTINATION == 'build-only'
+        run: |
+          set -euo pipefail
+          # ditto preserves the bundle's symlinks, extended attributes and
+          # executable bits, which `zip -r` does not — an archive zipped without
+          # it cannot be re-expanded into a valid .app.
+          # Written under build/ (gitignored) so a manual local run cannot leave
+          # an untracked archive at the repo root.
+          mkdir -p apps/mobile/build/ios
+          ditto -c -k --sequesterRsrc --keepParent \
+            apps/mobile/build/ios/iphoneos/Runner.app \
+            "apps/mobile/build/ios/safepass-ios-${{ steps.version.outputs.version-name }}-${{ steps.version.outputs.build-number }}.app.zip"
+
+      # ---------------------------------------------------------------------
+      # Signed archive + IPA export
+      # ---------------------------------------------------------------------
+      # IMPORTANT — there is no xcodebuild passthrough in this SDK. Flutter
+      # 3.47.9's `build ios`/`build ipa` accepts no `--xcargs` (verified against
+      # packages/flutter_tools at this exact SDK revision); the supported way to
+      # inject an Xcode build setting is the FLUTTER_XCODE_<SETTING> environment
+      # variable, which the tool rewrites into `SETTING=value` on the xcodebuild
+      # command line (ios/xcodeproj.dart -> environmentVariablesAsXcodeBuildSettings,
+      # whose own doc comment names CI code signing as the intended use). That is
+      # how DEVELOPMENT_TEAM reaches Xcode without committing it to the project.
+      #
+      # `continue-on-error` is deliberate and paired with the next step. The App
+      # Store Connect automation flags (-authenticationKeyPath /
+      # -authenticationKeyID / -authenticationKeyIssuerID) are xcodebuild COMMAND
+      # FLAGS, not build settings, so this command cannot carry them — and a
+      # runner has no Apple ID session for automatic (cloud) signing to fall back
+      # on. The following step therefore finishes the job with a direct
+      # `xcodebuild archive` + `xcodebuild -exportArchive`, which can carry those
+      # flags, and hard-fails if no IPA appears. Neither path ever continues
+      # without an artifact.
+      - name: Build signed IPA (flutter build ipa)
+        id: flutter_ipa
+        if: env.DESTINATION != 'build-only'
+        continue-on-error: true
+        working-directory: apps/mobile
+        env:
+          FLUTTER_XCODE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          flutter build ipa --release \
+            --export-options-plist=ios/ExportOptions.plist \
+            --dart-define-from-file=release-defines.json \
+            --build-name="${{ steps.version.outputs.version-name }}" \
+            --build-number="${{ steps.version.outputs.build-number }}"
+
+      # flutter build ipa reports success once the archive is made, but the export
+      # can come back empty (export-options mismatch, missing profile), and on a
+      # headless runner the archive step itself cannot authenticate without the
+      # API-key flags. This step covers both: reuse whatever Flutter produced if
+      # it is usable, otherwise archive and export directly with authentication,
+      # then hard-fail if there is still no IPA to upload.
+      - name: Ensure a signed IPA exists (xcodebuild archive/export)
+        if: env.DESTINATION != 'build-only'
+        working-directory: apps/mobile
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          VERSION_NAME: ${{ steps.version.outputs.version-name }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build-number }}
+        run: |
+          set -euo pipefail
+          IPA_DIR=build/ios/ipa
+          ARCHIVE=build/ios/archive/Runner.xcarchive
+          # The archived app, not just the archive directory: a failed archive can
+          # leave a half-written .xcarchive that would export nothing.
+          ARCHIVED_APP="$ARCHIVE/Products/Applications/Runner.app"
+          KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8"
+          shopt -s nullglob
+
+          IPAS=("$IPA_DIR"/*.ipa)
+          if [ ${#IPAS[@]} -gt 0 ]; then
+            echo "flutter build ipa produced ${IPAS[0]} — no fallback needed."
+            exit 0
+          fi
+
+          echo "::warning::flutter build ipa produced no IPA; completing archive + export with xcodebuild directly so the App Store Connect API key can authenticate."
+
+          if [ ! -d "$ARCHIVED_APP" ]; then
+            # DART_DEFINES is passed the way Flutter encodes it (base64 of each
+            # KEY=VALUE, comma separated — build_info.dart encodeDartDefines), so
+            # the fallback compiles with exactly the same runtime config as the
+            # primary path instead of falling back to defaults.
+            DART_DEFINES="$(
+              jq -r 'to_entries[] | "\(.key)=\(.value)"' release-defines.json \
+                | tr -d '\r' \
+                | while IFS= read -r pair; do
+                    printf '%s,' "$(printf '%s' "$pair" | base64 | tr -d '\n')"
+                  done
+            )"
+            DART_DEFINES="${DART_DEFINES%,}"
+
+            xcodebuild archive \
+              -workspace ios/Runner.xcworkspace \
+              -scheme Runner \
+              -configuration Release \
+              -destination 'generic/platform=iOS' \
+              -archivePath "$ARCHIVE" \
+              -allowProvisioningUpdates \
+              -allowProvisioningDeviceRegistration \
+              -authenticationKeyPath "$KEY_PATH" \
+              -authenticationKeyID "$ASC_KEY_ID" \
+              -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+              DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+              FLUTTER_BUILD_NAME="$VERSION_NAME" \
+              FLUTTER_BUILD_NUMBER="$BUILD_NUMBER" \
+              DART_DEFINES="$DART_DEFINES"
+          fi
+
+          if [ ! -d "$ARCHIVED_APP" ]; then
+            echo "::error::No usable archive at $ARCHIVE after the fallback archive step. Inspect the signing output above (usually a teamID mismatch, a revoked distribution certificate, or an API key that cannot manage certificates)."
+            exit 1
+          fi
+
+          # A non-existent export path: xcodebuild -exportArchive refuses a
+          # directory that already holds files, and build/ios/ipa may exist but be
+          # empty after a failed Flutter export.
+          EXPORT_DIR=build/ios/ipa-fallback
+          rm -rf "$EXPORT_DIR"
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE" \
+            -exportPath "$EXPORT_DIR" \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+          EXPORTED=("$EXPORT_DIR"/*.ipa)
+          if [ ${#EXPORTED[@]} -gt 0 ]; then
+            mkdir -p "$IPA_DIR"
+            cp "${EXPORTED[0]}" "$IPA_DIR/"
+          fi
+
+          IPAS=("$IPA_DIR"/*.ipa)
+          if [ ${#IPAS[@]} -eq 0 ]; then
+            echo "::error::No IPA was produced by flutter build ipa, xcodebuild archive, or xcodebuild -exportArchive. Refusing to continue without an artifact to upload — see the export log above."
+            exit 1
+          fi
+          echo "Signed IPA ready: ${IPAS[0]}"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: safepass-ios-${{ steps.version.outputs.version-name }}-${{ steps.version.outputs.build-number }}
+          # Only one of the two paths exists per run: the zip on build-only, the
+          # .ipa on a signed build.
+          path: |
+            apps/mobile/build/ios/ipa/*.ipa
+            apps/mobile/build/ios/*.app.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload dSYMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: safepass-ios-dsyms-${{ steps.version.outputs.version-name }}-${{ steps.version.outputs.build-number }}
+          # Needed to symbolicate crash reports from TestFlight/App Store builds.
+          # `warn` rather than `error`: a build-only run (no archive) legitimately
+          # has none, and losing dSYMs must not block a release that is otherwise
+          # fine.
+          path: apps/mobile/build/ios/archive/Runner.xcarchive/dSYMs
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Always runs — including on failure — so the API key, the generated export
+      # options and the endpoint config never survive in the workspace.
+      - name: Clean up credentials and generated config
+        if: always()
+        run: |
+          rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_"*.p8
+          rm -f apps/mobile/ios/ExportOptions.plist
+          rm -f apps/mobile/release-defines.json
+          echo "Removed the App Store Connect key, ExportOptions.plist and release-defines.json."
+
+  # ---------------------------------------------------------------------------
+  # Publish
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Upload to App Store Connect
+    needs: build
+    # Tag pushes always publish; a manual dispatch publishes unless it asked for
+    # build-only. Written out (rather than referencing env.DESTINATION) because
+    # the `env` context is not available to a job-level `if`.
+    if: github.event_name == 'push' || inputs.destination != 'build-only'
+    runs-on: macos-15
+    # The approval gate. A tag push (or an explicit `appstore` dispatch) routes
+    # to `appstore-production`, which must have required reviewers, so no
+    # accidental tag can put a build on the App Store track. `testflight` routes
+    # to `appstore-testflight`, which has no reviewer requirement so QA can push
+    # a build to TestFlight at any time.
+    environment:
+      name: ${{ (github.event_name == 'push' || inputs.destination == 'appstore') && 'appstore-production' || 'appstore-testflight' }}
+    steps:
+      - name: Download IPA artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: safepass-ios-${{ needs.build.outputs.version-name }}-${{ needs.build.outputs.build-number }}
+          path: dist
+
+      - name: Validate App Store Connect credentials
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          MISSING=()
+          for NAME in ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY; do
+            if [ -z "${!NAME:-}" ]; then
+              MISSING+=("$NAME")
+            fi
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required App Store Connect secret(s): ${MISSING[*]}. Add them to the 'appstore-production' / 'appstore-testflight' environment (or repository-wide)."
+            exit 1
+          fi
+          echo "App Store Connect API credentials are present."
+
+      # The API key is deliberately NOT an artifact: artifacts are downloadable
+      # by anyone with repo read access and are retained for 30 days. altool
+      # reads it from ~/.appstoreconnect/private_keys on this fresh runner.
+      - name: Install App Store Connect API key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          KEY_PATH="$KEY_DIR/AuthKey_${ASC_KEY_ID}.p8"
+          if printf '%s' "$ASC_PRIVATE_KEY" | grep -q 'BEGIN PRIVATE KEY'; then
+            printf '%s\n' "$ASC_PRIVATE_KEY" > "$KEY_PATH"
+          else
+            printf '%s' "$ASC_PRIVATE_KEY" | tr -d '\r\n\t ' | openssl base64 -d -A > "$KEY_PATH"
+          fi
+          if ! grep -q 'BEGIN PRIVATE KEY' "$KEY_PATH"; then
+            echo "::error::ASC_PRIVATE_KEY did not decode to a PEM private key."
+            exit 1
+          fi
+          chmod 600 "$KEY_PATH"
+          echo "Wrote $KEY_PATH (contents not echoed)."
+
+      - name: Upload IPA to App Store Connect
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          IPAS=(dist/*.ipa)
+          if [ ${#IPAS[@]} -ne 1 ]; then
+            echo "::error::Expected exactly one .ipa in the downloaded artifact, found ${#IPAS[@]}. Refusing to guess which build to upload."
+            exit 1
+          fi
+          # App Store Connect rejects a re-upload of an existing build number, so
+          # a failure here is informational: check the ASC build list before
+          # dispatching again with an explicit build_number.
+          xcrun altool --upload-app \
+            --type ios \
+            --file "${IPAS[0]}" \
+            --apiKey "$ASC_KEY_ID" \
+            --apiIssuer "$ASC_ISSUER_ID" \
+            --verbose
+
+      - name: Clean up App Store Connect key
+        if: always()
+        run: |
+          rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_"*.p8
+          echo "Removed the App Store Connect API key."
+
+      - name: Delivery notice
+        # Only announced once the upload actually succeeded; a failed upload must
+        # never produce a "delivered" notice.
+        if: success()
+        env:
+          DESTINATION: ${{ env.DESTINATION }}
+        run: |
+          if [ "$DESTINATION" = "testflight" ]; then
+            echo "::notice::Build uploaded to App Store Connect. It becomes installable by TestFlight testers once Apple finishes processing (usually 5–30 minutes). Add it to a TestFlight group in App Store Connect to expose it."
+          else
+            echo "::notice::Build delivered to App Store Connect for version ${{ needs.build.outputs.version-name }} (${{ needs.build.outputs.build-number }}). Submitting for App Review is a MANUAL step in App Store Connect — this workflow never submits a build for review."
+          fi
+
+      - name: Release summary
+        if: always()
+        env:
+          DESTINATION: ${{ env.DESTINATION }}
+        run: |
+          {
+            echo "## SafePass iOS release"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Bundle ID | \`$BUNDLE_ID\` |"
+            echo "| Version name | \`${{ needs.build.outputs.version-name }}\` |"
+            echo "| Build number (CFBundleVersion) | \`${{ needs.build.outputs.build-number }}\` |"
+            echo "| Channel | \`$DESTINATION\` |"
+            echo "| Upload | \`xcrun altool --upload-app\` → App Store Connect |"
+            echo ""
+            echo "Next step: in App Store Connect, wait for processing, then either add the build to a TestFlight group or attach it to the version and press **Submit for Review** manually."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,3 +1,7 @@
+import java.io.FileInputStream
+import java.util.Properties
+import org.gradle.api.GradleException
+
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
@@ -32,7 +36,6 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.safepasstech.safepass_mobile"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
@@ -42,11 +45,88 @@ android {
         versionName = flutter.versionName
     }
 
+    // ---------------------------------------------------------------------
+    // Release signing
+    // ---------------------------------------------------------------------
+    // The upload key is read from android/key.properties, which is gitignored
+    // (android/.gitignore) and is never committed. It exists in one of two
+    // ways:
+    //   * locally, created by hand from the Play Console upload certificate;
+    //   * in CI, written by the "Configure Android release signing" step of
+    //     .github/workflows/release-android.yml, which decodes the base64
+    //     keystore secret to android/upload-keystore.jks and writes this file
+    //     with an ABSOLUTE storeFile path.
+    // rootProject.file() is used for storeFile because relative values (the
+    // usual local convention) resolve against android/, while the CI-written
+    // absolute path passes through untouched.
+    val keystorePropertiesFile = rootProject.file("key.properties")
+    val keystoreProperties = Properties()
+    val hasReleaseKeystore = keystorePropertiesFile.exists()
+    if (hasReleaseKeystore) {
+        // .use{} so the stream is closed even if the file is malformed -- on
+        // Windows an unclosed handle keeps key.properties locked.
+        FileInputStream(keystorePropertiesFile).use { keystoreProperties.load(it) }
+
+        // A key.properties that exists but is incomplete (a renamed key, a value
+        // pasted into the wrong line, a half-finished copy out of the Play
+        // Console) would otherwise fail much later and much less clearly: Gradle
+        // reports a null store file or an "invalid keystore" at sign time, and
+        // the same gap in CI surfaces only once the AAB reaches Play. Fail at
+        // configuration instead, naming every missing property and the file.
+        val requiredKeystoreProperties =
+            listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+        val missingKeystoreProperties =
+            requiredKeystoreProperties.filter { keystoreProperties.getProperty(it).isNullOrBlank() }
+        if (missingKeystoreProperties.isNotEmpty()) {
+            throw GradleException(
+                "${keystorePropertiesFile.absolutePath} is missing " +
+                    "${missingKeystoreProperties.joinToString(", ")}. A release keystore needs all " +
+                    "four properties: storeFile, storePassword, keyAlias, keyPassword.",
+            )
+        }
+    }
+
+    signingConfigs {
+        // Only declare the release config when the file is actually there --
+        // an unconditional create() with null values would fail configuration
+        // for every debug build on a machine without the upload key.
+        if (hasReleaseKeystore) {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                // LOCAL-ONLY fallback: with no upload key present, sign the
+                // release variant with the debug key so `flutter run --release`
+                // and local profiling still work. Such an artifact can never be
+                // published -- Play rejects a debug certificate, and a debug
+                // key is not a recoverable upload identity.
+                //
+                // CI takes the hard-failure branch below instead: release
+                // workflows export REQUIRE_RELEASE_SIGNING=true for any
+                // non-build-only destination, turning a missing keystore into a
+                // red build rather than a silently debug-signed bundle.
+                if (System.getenv("REQUIRE_RELEASE_SIGNING") == "true") {
+                    throw GradleException(
+                        "REQUIRE_RELEASE_SIGNING=true but ${keystorePropertiesFile.absolutePath} " +
+                            "does not exist. Refusing to build a debug-signed release artifact for " +
+                            "a store upload. Ensure the ANDROID_KEYSTORE_BASE64, " +
+                            "ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD " +
+                            "secrets are set and that the 'Configure Android release signing' step " +
+                            "in .github/workflows/release-android.yml ran.",
+                    )
+                }
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
 }

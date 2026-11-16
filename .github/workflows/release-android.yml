@@ -1,0 +1,491 @@
+# SafePass — Release Android (Google Play)
+#
+# One workflow for both release paths (D-017):
+#   * push tag `v*`            -> signed build published to the `production`
+#                                 Play track at a FULL rollout (1.0), gated by a
+#                                 GitHub Environment with required reviewers.
+#   * workflow_dispatch        -> `build-only` (compile + validate, no store
+#                                 credentials at all), `internal` (Play internal
+#                                 testing track) or `production` (staged rollout
+#                                 fraction as an input).
+#
+# WHY NATIVE CLIs: `flutter build appbundle` plus r0adkll/upload-google-play
+# keeps the whole pipeline inside YAML — no Fastlane/Gem/config layer whose
+# Ruby and plugin versions could drift independently of the app.
+#
+# WHY build-only EXISTS: the compile, analyze and test path must be runnable
+# before the Play Console service account exists, so a release-workflow change
+# can be validated by hand without any credential. In that mode the signing
+# secrets are not required and the app is built against the committed
+# apps/mobile/.env.example.json placeholders (clearly logged) — it is a
+# smoke test of the pipeline, never a shippable artifact.
+#
+# SECRETS (see the report/handoff for the full checklist):
+#   ANDROID_KEYSTORE_BASE64      base64 of the upload keystore (.jks)
+#   ANDROID_KEYSTORE_PASSWORD    keystore store password
+#   ANDROID_KEY_ALIAS            upload key alias
+#   ANDROID_KEY_PASSWORD         upload key password
+#   PLAY_SERVICE_ACCOUNT_JSON    Play Console service-account JSON (raw)
+#   API_BASE_URL, WS_BASE_URL, GOOGLE_WEB_CLIENT_ID, FACEBOOK_APP_ID,
+#   FACEBOOK_CLIENT_TOKEN        compiled-in runtime config (dart-define)
+name: Release Android
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      destination:
+        description: 'Where this build goes (build-only needs no store credentials).'
+        type: choice
+        options: [build-only, internal, production]
+        default: build-only
+      rollout:
+        # Staged rollout matters on a safety-critical app: a bad build reaches a
+        # fraction of the production install base instead of all of it.
+        description: 'Production rollout fraction in (0,1]. 1.0 means full release. Ignored for internal.'
+        type: string
+        default: '0.1'
+        required: false
+      version_name:
+        description: 'Version name (x.y.z). Defaults to the version: line in apps/mobile/pubspec.yaml.'
+        type: string
+        required: false
+      build_number:
+        description: 'Play versionCode. Defaults to GITHUB_RUN_NUMBER*100 + GITHUB_RUN_ATTEMPT.'
+        type: string
+        required: false
+
+# Read-only: this workflow builds artifacts and calls Google Play, it never
+# writes to the repository.
+permissions:
+  contents: read
+
+# Never let two store uploads for the same track interleave: a cancelled run
+# cannot cancel a Play edit that was already committed, and overlapping
+# versionCodes for one app are rejected by Play. Queue instead of cancel.
+concurrency:
+  group: release-android
+  cancel-in-progress: false
+
+env:
+  # D-018: exact SDK pin, matching apps/mobile/.fvmrc. An unpinned `stable` would
+  # let an SDK update change a release without a code change.
+  FLUTTER_VERSION: "3.47.9"
+  JAVA_VERSION: "17"
+  PACKAGE_NAME: com.safepasstech.safepass_mobile
+  # A tag push is a production release; a manual dispatch carries its choice.
+  DESTINATION: ${{ github.event_name == 'push' && 'production' || inputs.destination }}
+  # Tags release fully; dispatch decides its own staging fraction.
+  ROLLOUT: ${{ github.event_name == 'push' && '1.0' || inputs.rollout }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build
+  # ---------------------------------------------------------------------------
+  # Deliberately NOT attached to a GitHub Environment: building and testing must
+  # not require human approval, and only the publish job needs store access.
+  build:
+    name: Build App Bundle
+    runs-on: ubuntu-latest
+    outputs:
+      version-name: ${{ steps.version.outputs.version-name }}
+      build-number: ${{ steps.version.outputs.build-number }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      # Caches the Gradle user home / wrapper between runs. Independent of the
+      # Flutter cache below because Gradle's key is the build files, not the SDK.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Flutter ${{ env.FLUTTER_VERSION }}
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        working-directory: apps/mobile
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: apps/mobile
+        # --no-fatal-infos: the analyzer reports 51 pre-existing info-level lints
+        # in apps/mobile/lib (dangling library docs, prefer_const_constructors,
+        # unnecessary_library_name, ...), all frontend-owned and none of them
+        # errors or warnings. A release gate must still fail on a real error or
+        # warning but must not be permanently red on style nits it does not own;
+        # flipping that policy belongs to whoever fixes the lints.
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        working-directory: apps/mobile
+        run: flutter test
+
+      # ---------------------------------------------------------------------
+      # Credential preflight
+      # ---------------------------------------------------------------------
+      # Checked before anything is written to disk so a missing secret fails in
+      # one red step that names every missing value, instead of a confusing
+      # Gradle/plugin failure several minutes into the build. Values are only
+      # tested for emptiness here — never printed.
+      - name: Validate signing secrets
+        if: env.DESTINATION != 'build-only'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          MISSING=()
+          for NAME in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!NAME:-}" ]; then
+              MISSING+=("$NAME")
+            fi
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required signing secret(s) for a store build: ${MISSING[*]}. Set them as repository or 'playstore-*' environment secrets, or use the build-only destination."
+            exit 1
+          fi
+          echo "All four Android signing secrets are present."
+
+      # ---------------------------------------------------------------------
+      # Signing material
+      # ---------------------------------------------------------------------
+      # android/key.properties is gitignored and read by
+      # apps/mobile/android/app/build.gradle.kts. storeFile is written as an
+      # ABSOLUTE path so Gradle never has to guess a base directory.
+      # A restrictive umask + chmod 600 keeps the key readable only by the
+      # runner user for the lifetime of the job; the `if: always()` cleanup at
+      # the end of this job removes it again.
+      - name: Configure Android release signing
+        if: env.DESTINATION != 'build-only'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEYSTORE=apps/mobile/android/upload-keystore.jks
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          if [ ! -s "$KEYSTORE" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 did not decode to a non-empty keystore. Expected the base64 encoding of the .jks (e.g. 'base64 -w0 upload-keystore.jks')."
+            exit 1
+          fi
+          chmod 600 "$KEYSTORE"
+          KEYSTORE_PATH="$(cd "$(dirname "$KEYSTORE")" && pwd)/$(basename "$KEYSTORE")"
+          # Java .properties treats '\' as an escape character, so a Windows-style
+          # absolute path ("C:\...") makes Properties.load throw "Malformed \uxxxx
+          # encoding". Doubling the separators is a no-op for the POSIX path the
+          # runner actually writes and keeps the same file valid if this step is
+          # ever run on Windows.
+          ESCAPED_KEYSTORE_PATH="$(printf '%s' "$KEYSTORE_PATH" | sed 's/\\/\\\\/g')"
+          {
+            printf 'storeFile=%s\n' "$ESCAPED_KEYSTORE_PATH"
+            printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+          } > apps/mobile/android/key.properties
+          chmod 600 apps/mobile/android/key.properties
+          echo "Wrote $KEYSTORE_PATH and android/key.properties (contents not echoed)."
+
+      # ---------------------------------------------------------------------
+      # Compile-time configuration (dart-define)
+      # ---------------------------------------------------------------------
+      # The app reads API_BASE_URL / WS_BASE_URL / the OAuth client ids from a
+      # dart-define JSON rather than a bundled .env, so each release build is
+      # pinned to the endpoints it was compiled for.
+      #
+      # build-only: a missing secret falls back to the committed
+      # apps/mobile/.env.example.json value (a local-dev endpoint) and the
+      # placeholders used are listed in a notice — the artifact is a pipeline
+      # smoke test, not something anyone should ship.
+      #
+      # Any real destination: a missing value is a hard failure. Falling back
+      # would silently ship a store build pointing at 10.0.2.2, which looks
+      # signed and installs fine but cannot reach the API.
+      - name: Build dart-define file
+        env:
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          WS_BASE_URL: ${{ secrets.WS_BASE_URL }}
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          FACEBOOK_APP_ID: ${{ secrets.FACEBOOK_APP_ID }}
+          FACEBOOK_CLIENT_TOKEN: ${{ secrets.FACEBOOK_CLIENT_TOKEN }}
+        run: |
+          set -euo pipefail
+          FALLBACK_FILE=apps/mobile/.env.example.json
+          OUT_FILE=apps/mobile/release-defines.json
+          PLACEHOLDER_LOG="$(mktemp)"
+          BUILD_ONLY="false"
+          if [ "$DESTINATION" = "build-only" ]; then BUILD_ONLY="true"; fi
+
+          # resolve <VAR_NAME>: echo the secret, else the .env.example.json
+          # value (build-only only), else fail.
+          resolve() {
+            local name="$1"
+            local value="${!name:-}"
+            if [ -n "$value" ]; then
+              printf '%s' "$value"
+              return 0
+            fi
+            if [ "$BUILD_ONLY" != "true" ]; then
+              printf '%s\n' "$name" >> "$PLACEHOLDER_LOG"
+              printf '%s' ""
+              return 0
+            fi
+            # Committed template value — read, never invented.
+            local fallback
+            fallback="$(jq -r --arg k "$name" '.[$k] // ""' "$FALLBACK_FILE")"
+            printf '%s\n' "$name" >> "$PLACEHOLDER_LOG.fallback"
+            printf '%s' "$fallback"
+          }
+
+          jq -n \
+            --arg apiBaseUrl "$(resolve API_BASE_URL)" \
+            --arg wsBaseUrl "$(resolve WS_BASE_URL)" \
+            --arg googleWebClientId "$(resolve GOOGLE_WEB_CLIENT_ID)" \
+            --arg facebookAppId "$(resolve FACEBOOK_APP_ID)" \
+            --arg facebookClientToken "$(resolve FACEBOOK_CLIENT_TOKEN)" \
+            '{
+              API_BASE_URL: $apiBaseUrl,
+              WS_BASE_URL: $wsBaseUrl,
+              GOOGLE_WEB_CLIENT_ID: $googleWebClientId,
+              FACEBOOK_APP_ID: $facebookAppId,
+              FACEBOOK_CLIENT_TOKEN: $facebookClientToken
+            }' > "$OUT_FILE"
+
+          if [ -s "$PLACEHOLDER_LOG" ]; then
+            echo "::error::Missing required build configuration for a store build: $(tr '\n' ' ' < "$PLACEHOLDER_LOG"). A store artifact must not fall back to local-dev endpoints."
+            exit 1
+          fi
+          if [ -s "$PLACEHOLDER_LOG.fallback" ]; then
+            echo "::notice::No secret set for: $(tr '\n' ' ' < "$PLACEHOLDER_LOG.fallback") — used the committed apps/mobile/.env.example.json placeholder. This build points at a local-dev endpoint and must not be distributed."
+          fi
+          echo "Wrote $OUT_FILE (keys: $(jq -r 'keys | join(", ")' "$OUT_FILE"))."
+
+      # ---------------------------------------------------------------------
+      # Version / build number
+      # ---------------------------------------------------------------------
+      # versionName is the human-facing x.y.z; versionCode (build number) must be
+      # a strictly increasing positive integer for Play to accept an upload.
+      #
+      # Default build number = GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT.
+      # Multiplying by 100 leaves room for up to 99 re-run attempts of the same
+      # run without colliding with the next run's number, so a re-run never
+      # reuses a versionCode Play has already seen (Play rejects the whole
+      # upload bundle with "Version code N has already been used"). The attempt
+      # counter makes the value monotonic even across a re-run of the same run.
+      - name: Resolve version name and build number
+        id: version
+        env:
+          INPUT_VERSION_NAME: ${{ inputs.version_name }}
+          INPUT_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_VERSION_NAME:-}" ]; then
+            VERSION_NAME="$INPUT_VERSION_NAME"
+          else
+            VERSION_NAME="$(grep -m1 '^version:' apps/mobile/pubspec.yaml \
+              | sed -E 's/^version:[[:space:]]*//; s/\+.*$//' \
+              | tr -d '[:space:]')"
+          fi
+          if [ -n "${INPUT_BUILD_NUMBER:-}" ]; then
+            BUILD_NUMBER="$INPUT_BUILD_NUMBER"
+          else
+            BUILD_NUMBER=$(( GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT ))
+          fi
+
+          if ! printf '%s' "$VERSION_NAME" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Could not resolve a valid version name (got '$VERSION_NAME'). Expected x.y.z from the version_name input or apps/mobile/pubspec.yaml."
+            exit 1
+          fi
+          if ! printf '%s' "$BUILD_NUMBER" | grep -qE '^[0-9]+$' || [ "$BUILD_NUMBER" -le 0 ]; then
+            echo "::error::Could not resolve a valid build number (got '$BUILD_NUMBER'). Expected a positive integer versionCode."
+            exit 1
+          fi
+
+          echo "version-name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "build-number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Resolved version $VERSION_NAME ($BUILD_NUMBER)."
+
+      - name: Build release App Bundle
+        working-directory: apps/mobile
+        # REQUIRE_RELEASE_SIGNING is the CI dead-man switch read by
+        # apps/mobile/android/app/build.gradle.kts: without it, a missing
+        # key.properties silently falls back to the debug certificate and the
+        # upload would carry the wrong signing identity forever.
+        env:
+          REQUIRE_RELEASE_SIGNING: ${{ env.DESTINATION != 'build-only' && 'true' || 'false' }}
+        run: |
+          flutter build appbundle --release \
+            --dart-define-from-file=release-defines.json \
+            --build-name="${{ steps.version.outputs.version-name }}" \
+            --build-number="${{ steps.version.outputs.build-number }}"
+
+      - name: Upload App Bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: safepass-android-${{ steps.version.outputs.version-name }}-${{ steps.version.outputs.build-number }}
+          path: apps/mobile/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          # Store builds are traceable through this artifact for a month; the
+          # AAB itself is the exact bytes Play received.
+          retention-days: 30
+
+      # Always runs — including on a failed build — so a partial run cannot
+      # leave the decoded keystore, its passwords or the endpoint config in the
+      # workspace for a later step (or a re-used self-hosted runner) to read.
+      - name: Clean up signing material and build config
+        if: always()
+        run: |
+          rm -f apps/mobile/android/key.properties
+          rm -f apps/mobile/android/upload-keystore.jks
+          rm -f apps/mobile/release-defines.json
+          echo "Removed key.properties, upload-keystore.jks and release-defines.json."
+
+  # ---------------------------------------------------------------------------
+  # Publish
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish to Google Play
+    needs: build
+    # Tag pushes always publish; a manual dispatch publishes unless it asked for
+    # build-only. Written out (rather than referencing env.DESTINATION) because
+    # the `env` context is not available to a job-level `if`.
+    if: github.event_name == 'push' || inputs.destination != 'build-only'
+    runs-on: ubuntu-latest
+    # The approval gate. A tag push (or an explicit production dispatch) is
+    # routed to `playstore-production`, which must be configured with required
+    # reviewers, so no accidental tag can ship to every user. Internal builds go
+    # to `playstore-internal`, which deliberately has no reviewer requirement so
+    # QA can push an internal test build at any time.
+    environment:
+      name: ${{ (github.event_name == 'push' || inputs.destination == 'production') && 'playstore-production' || 'playstore-internal' }}
+    steps:
+      - name: Download App Bundle artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: safepass-android-${{ needs.build.outputs.version-name }}-${{ needs.build.outputs.build-number }}
+          path: dist
+
+      - name: Validate Play credentials
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "${PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::error::PLAY_SERVICE_ACCOUNT_JSON is empty. Add the Play Console service-account JSON as a secret on the 'playstore-production' / 'playstore-internal' environment (or repository-wide)."
+            exit 1
+          fi
+          echo "Play service account JSON is present."
+
+      # r0adkll/upload-google-play@v1's `serviceAccountJson` input is a PATH, not
+      # the JSON body. The secret holds the document itself, so it is written to
+      # a 0600 file under RUNNER_TEMP (never the repo workspace) and pointed at
+      # by path; the file is removed in the always() cleanup below.
+      - name: Stage Play service account file
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$PLAY_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/play-service-account.json"
+          chmod 600 "$RUNNER_TEMP/play-service-account.json"
+          echo "Wrote \$RUNNER_TEMP/play-service-account.json."
+
+      # Track/status/rollout mapping in one place so the upload step stays
+      # declarative:
+      #   internal                     -> track internal,  completed
+      #   production, rollout >= 1.0   -> track production, completed
+      #   production, rollout <  1.0   -> track production, inProgress + fraction
+      # A completed production release cannot carry a userFraction, so the
+      # staged fraction is emitted empty for the non-staged cases.
+      - name: Resolve Play track, status and rollout
+        id: channel
+        env:
+          ROLLOUT: ${{ env.ROLLOUT }}
+        run: |
+          set -euo pipefail
+          if [ "$DESTINATION" = "internal" ]; then
+            TRACK=internal
+            STATUS=completed
+            FRACTION=""
+            echo "Internal testing track: full rollout to internal testers."
+          else
+            TRACK=production
+            # Shape-check before any awk arithmetic: a dispatch input is a free
+            # text field, and interpolating it into an awk program unvalidated
+            # would let a stray character become awk code.
+            if ! printf '%s' "$ROLLOUT" | grep -qE '^(0\.[0-9]+|1(\.0+)?)$'; then
+              echo "::error::Invalid rollout fraction '$ROLLOUT'. Expected a number in (0,1] — use 1.0 for a full release."
+              exit 1
+            fi
+            if awk "BEGIN{exit !($ROLLOUT >= 1)}"; then
+              STATUS=completed
+              FRACTION=""
+              echo "Production track: full release (rollout $ROLLOUT)."
+            else
+              STATUS=inProgress
+              FRACTION="$ROLLOUT"
+              echo "Production track: staged rollout to $ROLLOUT of the install base."
+            fi
+          fi
+          echo "track=$TRACK" >> "$GITHUB_OUTPUT"
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          echo "user-fraction=$FRACTION" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Google Play
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJson: ${{ runner.temp }}/play-service-account.json
+          packageName: com.safepasstech.safepass_mobile
+          releaseFiles: dist/app-release.aab
+          track: ${{ steps.channel.outputs.track }}
+          status: ${{ steps.channel.outputs.status }}
+          # Empty for completed releases — the action omits an unset input, and
+          # Play rejects a fraction on a completed release.
+          userFraction: ${{ steps.channel.outputs.user-fraction }}
+          releaseName: SafePass ${{ needs.build.outputs.version-name }} (${{ needs.build.outputs.build-number }})
+
+      - name: Clean up Play credentials
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/play-service-account.json"
+          echo "Removed the staged Play service-account file."
+
+      - name: Release summary
+        if: always() && steps.channel.outcome == 'success'
+        env:
+          TRACK: ${{ steps.channel.outputs.track }}
+          STATUS: ${{ steps.channel.outputs.status }}
+          FRACTION: ${{ steps.channel.outputs.user-fraction }}
+        run: |
+          {
+            echo "## SafePass Android release"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Package | \`$PACKAGE_NAME\` |"
+            echo "| Version name | \`${{ needs.build.outputs.version-name }}\` |"
+            echo "| Build number (versionCode) | \`${{ needs.build.outputs.build-number }}\` |"
+            echo "| Track | \`$TRACK\` |"
+            echo "| Status | \`$STATUS\` |"
+            if [ -n "$FRACTION" ]; then
+              echo "| Rollout | \`$FRACTION\` of the install base |"
+            else
+              echo "| Rollout | full |"
+            fi
+            echo "| Destination | \`$DESTINATION\` |"
+            echo ""
+            echo "Staged rollouts are promoted by increasing the fraction on the same release in the Play Console, or by dispatching again with a higher \`rollout\`."
+          } >> "$GITHUB_STEP_SUMMARY"

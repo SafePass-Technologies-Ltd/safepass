@@ -26,7 +26,7 @@ Rules: no two agents work the same directory in parallel; each engineer gets a p
 | Package manager | pnpm | 10.32 |
 | Backend | Node.js + Hono + TypeScript (strict) | 4.12 / 6.0 |
 | ORM | Drizzle ORM (PostgreSQL migrations) | 0.45.2 |
-| Mobile | Flutter (iOS + Android) | 3.44 |
+| Mobile | Flutter (iOS + Android) | 3.47.9 (pinned in `.fvmrc` + CI) |
 | Mobile state/routing/models | flutter_bloc / go_router / equatable | 9.1 / 17.2 / 2.0 |
 | Mobile HTTP | dio | 5.9 |
 | Mobile auth | google_sign_in / sign_in_with_apple / firebase_auth | 7.2 / 8.1 / latest |
@@ -85,6 +85,51 @@ Landing creative/motion tokens live in `apps/landing/src/lib/content/brand.ts` a
 ## Asset Ledger
 
 `ASSETS.md` records every asset: existing repo assets (logo, app icons, landing imagery) and spec-declared needs (empty-state illustrations, hero imagery), each with slot, path, origin, tool, prompt, status, and family/variant.
+
+## Release Pipeline
+
+Two GitHub Actions workflows own mobile store delivery (D-017). Both are manually runnable and also trigger on a `v*` tag.
+
+| Workflow | File | Tag `v*` | Manual destinations |
+|---|---|---|---|
+| Release Android | `.github/workflows/release-android.yml` | Play `production`, full rollout, `playstore-production` approval | `build-only`, `internal`, `production` (staged `rollout` input) |
+| Release iOS | `.github/workflows/release-ios.yml` | App Store Connect upload, `appstore-production` approval | `build-only`, `testflight`, `appstore` |
+
+- Both run `flutter pub get`, `flutter analyze --no-fatal-infos`, and `flutter test` before building. Errors and warnings are fatal; the 51 pre-existing info-level lints are not a release gate.
+- `build-only` requires no store credentials. It compiles against the committed `apps/mobile/.env.example.json` values and prints a notice listing substituted placeholders. It is a pipeline smoke test, never a shippable artifact.
+- A store build hard-fails on any missing build-config secret or signing secret. It never falls back to local-dev endpoints.
+- Version name comes from the `version_name` input or `apps/mobile/pubspec.yaml` (`x.y.z`). Build number is `GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT` unless overridden, so re-runs cannot reuse a Play `versionCode` or App Store `CFBundleVersion`.
+- Android signing reads `apps/mobile/android/key.properties` (gitignored). CI decodes `ANDROID_KEYSTORE_BASE64`, writes the file, and exports `REQUIRE_RELEASE_SIGNING=true`; Gradle throws rather than fall back to the debug certificate. Local release builds without `key.properties` still use debug signing for `flutter run --release`.
+- iOS signing uses an App Store Connect API key (`.p8` + Key ID + Issuer ID) with `signingStyle = automatic` and `-allowProvisioningUpdates`; no certificates repo and no long-lived provisioning-profile secret. `Runner.xcodeproj` intentionally has no `DEVELOPMENT_TEAM`; it is injected as a build setting from `APPLE_TEAM_ID`.
+- iOS `appstore` ends with the build delivered to App Store Connect. **Submit for Review is a manual console step**; the workflow never submits a build for review. TestFlight builds become installable after Apple processing.
+- Artifacts: signed AAB/IPA + iOS dSYMs, 30-day retention. Signing material and the generated `release-define`/`ExportOptions` files are deleted in `if: always()` cleanup steps.
+
+### Repository-level secrets (all destinations built in CI; environment-level secrets are invisible to the env-less build jobs)
+
+| Secret | Android internal/production | iOS testflight/appstore |
+|---|---|---|
+| `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | required | — |
+| `PLAY_SERVICE_ACCOUNT_JSON` | required | — |
+| `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY` (raw `.p8` or base64) | — | required |
+| `API_BASE_URL`, `WS_BASE_URL`, `GOOGLE_WEB_CLIENT_ID`, `FACEBOOK_APP_ID`, `FACEBOOK_CLIENT_TOKEN` | required | required |
+
+### GitHub Environments
+
+| Environment | Used by | Required reviewers |
+|---|---|---|
+| `playstore-production` | tag `v*`, dispatch `production` | yes |
+| `playstore-internal` | dispatch `internal` | no |
+| `appstore-production` | tag `v*`, dispatch `appstore` | yes |
+| `appstore-testflight` | dispatch `testflight` | no |
+
+### Known release blockers / follow-ups (not fixed by the workflow)
+
+1. Android Google Sign-In: `apps/mobile/android/app/google-services.json` carries the **debug** certificate hash. Add the release upload key's SHA-1 in Firebase or Google sign-in fails in store builds.
+2. Android App Links: set the API's `ANDROID_SHA256_FINGERPRINTS` to the release certificate SHA-256, or verified App Links fall back to the browser.
+3. iOS push: `apps/mobile/ios/Runner/Runner.entitlements` has no `aps-environment` capability. FCM push will not work on iOS until the Push Notifications capability is added with the Apple team.
+4. App Store Connect account + API key must exist before the first `testflight`/`appstore` run. Until then, validate the pipeline with `build-only`.
+5. App Store export compliance (`ITSAppUsesNonExemptEncryption`) is not declared in `Info.plist`; App Store Connect will ask on the first submission. Decision needed before submission.
+6. T-063: the Google Maps Android API key is committed in `AndroidManifest.xml`; move it to build config and restrict it in Google Cloud.
 
 ## Coding Style & Conventions
 
@@ -186,6 +231,11 @@ Mission 1: reconcile implemented code with the regenerated spec. Mission 2: road
 | T-056 | `markTripArrived` (`trip.service.ts` ~618) still swallows failures to `console.warn` — same anti-pattern T-050 removed from the live-tracking path | backend | Backlog | T-050 | — | — |
 | T-057 | `terraform-apply.yml` force-deploys tasks **outside** the new CI readiness gate, so an infra-driven deploy can bypass the check T-051 added | infra | Backlog | T-051 | — | — |
 | T-058 | Alarm on token-exchange 5xx rate — operational backstop for the residual Firebase classifications that message-matching cannot attribute | infra | Backlog | T-052, T-055 | — | — |
+| T-059 | Play Store release workflow (`release-android.yml`) + Android release signing config (keystore from secrets, CI hard-fail; no debug-signed releases) | infra | Done | — | — | 2026-11-16 PASS |
+| T-060 | App Store release workflow (`release-ios.yml`) + missing iOS `Podfile` + Flutter 3.47.9 pin | infra | Done | — | — | 2026-11-16 PASS (static + Android; iOS runner pending) |
+| T-061 | Release pipeline docs: secrets/environments checklist, known store blockers (release SHA, APNs entitlement, export compliance) | tech-lead | Done | T-059, T-060 | — | 2026-11-16 |
+| T-062 | Fix malformed XML comment in `AndroidManifest.xml` (illegal `--` inside a comment) — currently breaks every Android build at `processMainManifest` | frontend | Done | — | — | 2026-11-16 PASS |
+| T-063 | Move the Google Maps Android API key out of the committed `AndroidManifest.xml` into build config (`manifestPlaceholders` + `local.properties`/secret); restrict the key in Google Cloud | infra + frontend | Backlog | T-062 | — | — |
 
 Status: Backlog / Ready / In Progress / Blocked / Done.
 
@@ -206,6 +256,8 @@ Status: Backlog / Ready / In Progress / Blocked / Done.
 | D-014 | RDS master-password management is pinned: `lifecycle.ignore_changes = [manage_master_user_password]` plus a committed `.terraform.lock.hcl`, and `rds_master_user_secret_arn` is supplied explicitly | A snapshot restore drops the instance's managed-secret association, so any apply that acts on that drift would mint a new secret and rotate the password while ECS still points at the old one. Re-enabling AWS-managed rotation must be one coordinated change with `DB_SECRET_ARN` | 2026-11-13 |
 | D-015 | Blocked modules may be recovered with a targeted apply scoped to modules that cannot reach the blocked provider (`-target=module.dynamodb -target=module.s3_evidence`) | The Upstash credential failure makes the full graph unappliable; a reduced graph never reads the RDS/ECS/secrets resources, so the master-password invariants cannot be reached. Reaching `module.secrets` or `module.ecs` was verified to drag in the failing provider, so the target set must stay exactly those two modules | 2026-11-13 |
 | D-016 | Readiness alerting is a standalone Route53 HTTPS health check (string-match on `"ok":true`) → CloudWatch alarm → SNS email, deliberately not a Synthetics canary and not the ALB target group. The monitoring module is pinned to a `us-east-1` provider alias | Route53 publishes health-check metrics only in us-east-1, so an alarm on the default regional provider would watch a metric that never arrives. Cost is ≈$1.60–2.85/mo against ≈$10.37/mo for a 5-minute canary, and a single readiness assertion needs no scripted multi-step canary. The target group stays on `/health` for the reason in D-013 | 2026-11-13 |
+| D-017 | Mobile store releases use two GitHub Actions workflows (one per store) on native CLIs — `flutter build appbundle` + Play upload action, and `flutter build ipa` + App Store Connect API key — with no Fastlane layer. Tag `v*` publishes to production behind a GitHub Environment with required reviewers; manual dispatch targets `build-only` / internal / TestFlight, and staged Play rollout is a dispatch input. iOS `appstore` ends at the build delivered to App Store Connect; Submit for Review stays manual | Native CLIs keep the pipeline entirely in YAML with no Ruby/config layer. Tag-to-production matches the release model while environment approval prevents an accidental store push. ASC API key + automatic signing avoids a certificates repo or expiring `.mobileprovision` secrets. Auto-submitting for App Store review needs complete ASC version metadata and a live account, so it is deferred rather than guessed | 2026-11-16 |
+| D-018 | Flutter SDK pinned to `3.47.9` in `.fvmrc` and both release workflows (replacing `stable`) | The locally verified SDK; an unpinned `stable` makes CI builds non-reproducible and lets an SDK update change a release without a code change | 2026-11-16 |
 
 ## Definition of Done
 
@@ -234,4 +286,16 @@ dart analyze                    # Flutter static analysis
 pnpm --filter @safepass/api db:generate  # new Drizzle migration
 pnpm --filter @safepass/api db:migrate   # apply migrations
 pnpm build                      # build all apps
+```
+
+Release pipeline (mobile): see **Release Pipeline** above. Quick reference:
+
+```bash
+# Validate both workflows without store credentials (GitHub UI: Run workflow → build-only)
+# Android signed bundle locally (requires android/key.properties + upload keystore):
+cd apps/mobile && flutter build appbundle --release --dart-define-from-file=.env.json
+# iOS signed IPA locally (macOS + Apple account in Xcode):
+cd apps/mobile && flutter build ipa --release --dart-define-from-file=.env.json
+# Cut a production release for both stores (requires environment approval):
+git tag v0.1.0 && git push origin v0.1.0
 ```
