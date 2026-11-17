@@ -23,6 +23,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: '/how-we-verify', priority: 0.8, changeFrequency: 'monthly' },
     { path: '/about', priority: 0.5, changeFrequency: 'yearly' },
     { path: '/privacy', priority: 0.3, changeFrequency: 'yearly' },
+    // The app policy is the URL submitted to Google Play; keep it indexed.
+    { path: '/privacy/app', priority: 0.3, changeFrequency: 'yearly' },
     { path: '/terms', priority: 0.3, changeFrequency: 'yearly' },
   ];
 

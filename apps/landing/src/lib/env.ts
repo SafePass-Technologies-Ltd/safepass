@@ -22,7 +22,9 @@ const clientEnvSchema = z.object({
   /** Play Store listing (FEAT-007). */
   androidAppUrl: z
     .string()
-    .default('https://play.google.com/store/apps/details?id=com.safepass.app'),
+    .default(
+      'https://play.google.com/store/apps/details?id=com.safepasstech.safepass_mobile',
+    ),
   /**
    * Whether the app is live and downloadable.
    *

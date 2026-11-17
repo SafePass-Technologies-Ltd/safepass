@@ -37,7 +37,7 @@ export const privacyPolicy: LegalDocument = {
     // TODO: legal review
     'This policy explains how SafePass handles personal information collected through this website. It covers the information you give us directly (for example when you request a demo, submit a partner enquiry, or join a waitlist) and information collected automatically as you browse.',
     // TODO: legal review
-    'This website does not perform any trip monitoring, location tracking, or emergency functionality. Personal information handled inside the SafePass mobile app and dashboards is governed separately by the in-product privacy notice.',
+    'This website does not perform any trip monitoring, location tracking, or emergency functionality. Personal information handled inside the SafePass mobile app — including live location and emergency audio — is covered by the App Privacy Policy, which is published separately.',
   ],
   sections: [
     {
@@ -231,6 +231,7 @@ export const privacyPolicy: LegalDocument = {
     },
   ],
   relatedLinks: [
+    { href: '/privacy/app', label: 'App Privacy Policy' },
     { href: '/terms', label: 'Terms of Service' },
     { href: '/about', label: 'About SafePass' },
     { href: '/', label: 'Back to homepage' },

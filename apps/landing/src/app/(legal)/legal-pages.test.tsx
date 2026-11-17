@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 
 import PrivacyPage, { metadata as privacyMetadata } from './privacy/page';
+import AppPrivacyPage, { metadata as appPrivacyMetadata } from './privacy/app/page';
 import TermsPage, { metadata as termsMetadata } from './terms/page';
 import AboutPage, { metadata as aboutMetadata } from './about/page';
 import { privacyPolicy } from '@/lib/content/legal/privacy-policy';
+import { appPrivacyPolicy } from '@/lib/content/legal/app-privacy-policy';
 import { termsOfService } from '@/lib/content/legal/terms-of-service';
 import { about } from '@/lib/content/legal/about';
 
@@ -29,6 +31,12 @@ vi.mock('next/link', () => ({
 
 const PAGES = [
   { name: 'Privacy Policy', Page: PrivacyPage, metadata: privacyMetadata, doc: privacyPolicy },
+  {
+    name: 'App Privacy Policy',
+    Page: AppPrivacyPage,
+    metadata: appPrivacyMetadata,
+    doc: appPrivacyPolicy,
+  },
   { name: 'Terms of Service', Page: TermsPage, metadata: termsMetadata, doc: termsOfService },
   { name: 'About SafePass', Page: AboutPage, metadata: aboutMetadata, doc: about },
 ] as const;
@@ -201,6 +209,83 @@ describe('Privacy Policy', () => {
     // A fabricated "we keep it for 24 months" is exactly the invented
     // requirement this test exists to prevent regressing into.
     expect(retention).not.toMatch(/\b\d+\s*(days?|months?|years?)\b/i);
+  });
+});
+
+describe('App Privacy Policy', () => {
+  // Google Play requires the submitted policy to describe what the app itself
+  // collects. These are the disclosures a reviewer looks for, and the ones the
+  // website policy explicitly does not make.
+  it.each([
+    ['information-we-collect', 'what the app collects'],
+    ['location-data', 'background location'],
+    ['emergency-audio', 'emergency audio recording'],
+    ['sharing', 'third-party sharing'],
+    ['retention', 'how long it is kept'],
+    ['your-rights', 'data-subject rights'],
+    ['deleting-your-account', 'account deletion'],
+    ['contact', 'how to reach us'],
+  ])('discloses %s (%s)', (sectionId) => {
+    const { container } = render(<AppPrivacyPage />);
+    expect(container.querySelector(`#${sectionId}`)).not.toBeNull();
+  });
+
+  it('states that background location is used only during an active journey', () => {
+    const { container } = render(<AppPrivacyPage />);
+    const location = container.querySelector('#location-data')?.textContent ?? '';
+
+    expect(location).toMatch(/background location/i);
+    expect(location).toMatch(/only while a monitored journey is active/i);
+    expect(location).toMatch(/does not track you between journeys/i);
+  });
+
+  it('explains that emergency audio is unannounced and that consent is captured up front', () => {
+    const { container } = render(<AppPrivacyPage />);
+    const audio = container.querySelector('#emergency-audio')?.textContent ?? '';
+
+    expect(audio).toMatch(/panic button/i);
+    expect(audio).toMatch(/explicit consent/i);
+    expect(audio).toMatch(/not announced on screen/i);
+  });
+
+  it('gives an in-app account deletion route and a fallback contact', () => {
+    const { container } = render(<AppPrivacyPage />);
+    const deletion = container.querySelector('#deleting-your-account')?.textContent ?? '';
+
+    expect(deletion).toMatch(/Profile → Delete account/i);
+  });
+
+  it('names the Nigeria Data Protection Commission as the complaints route', () => {
+    const { container } = render(<AppPrivacyPage />);
+    const rights = container.querySelector('#your-rights');
+
+    expect(rights?.querySelectorAll('li').length).toBeGreaterThanOrEqual(5);
+    expect(rights?.textContent).toContain('Nigeria Data Protection Commission');
+  });
+
+  it('states no specific retention period, which only counsel can set', () => {
+    const { container } = render(<AppPrivacyPage />);
+    const retention = container.querySelector('#retention')?.textContent ?? '';
+
+    expect(retention).not.toMatch(/\b\d+\s*(days?|months?|years?)\b/i);
+  });
+
+  it('carries the legal-review notice under its own title', () => {
+    render(<AppPrivacyPage />);
+    const note = screen.getByRole('note');
+
+    expect(note).toHaveTextContent(/legal review/i);
+    expect(note).toHaveTextContent(/App Privacy Policy is currently undergoing final legal review/i);
+  });
+
+  it('links back to the website policy so the two scopes stay distinguishable', () => {
+    render(<AppPrivacyPage />);
+    const related = screen.getByRole('navigation', { name: 'Related pages' });
+
+    expect(within(related).getByRole('link', { name: 'Website Privacy Policy' })).toHaveAttribute(
+      'href',
+      '/privacy'
+    );
   });
 });
 
