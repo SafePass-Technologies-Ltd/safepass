@@ -9,7 +9,7 @@ derived from the app itself or the brand mark — nothing is invented.
 |---|---|---|
 | `icon-512.png` | 512×512, 32-bit PNG, ≤1 MB | Done |
 | `screenshots/` | 2–8 phone screenshots, 320–3840 px, max dimension ≤ 2× min | Done — 7 |
-| `feature-graphic.png` | 1024×500 PNG | **Not produced** |
+| `feature-graphic.png` | 1024×500 PNG | Done |
 
 ## Screenshots
 
@@ -49,7 +49,34 @@ rejected for that reason, so the emulator was set to 1080×1920 before capture.
 The screenshots are honest captures, not mockups. Re-capture after any UI
 change rather than editing the images.
 
+## Feature graphic
+
+`feature-graphic.png` — 1024×500, RGB, 77 KB.
+
+Chosen direction: **route dominant**. A single dashed electric-blue route climbs
+from lower-left to a crimson destination pin, with checkpoint ticks along it and
+the brand mark bottom-right. It shows what the product *does* (a journey being
+watched) rather than only stating the tagline.
+
+Rendered programmatically by `make_feature_graphics.py` (kept in the scratch
+dir, not the repo) rather than generated: `branding.md` pins exact hex values, a
+2px line weight and a closed palette, and code honours those literally where an
+image model approximates them. Segoe UI Bold stands in for Inter, which is not
+installed on the build machine; swap the two font paths in the script once Inter
+is available.
+
+Two implementation notes that cost time and shouldn't be rediscovered:
+
+- The brand mark is composited with a **lighten blend plus a radial feather**.
+  Its source art carries a starfield gradient that is brighter than the navy
+  field in places, so a plain paste shows the artwork's rectangular edge.
+- The first vignette implementation was inverted and veiled the centre, which
+  made the headline render grey instead of white.
+
+Alternatives kept in `candidates/` for comparison; `contact-sheet.png` shows all
+three. The pin and mark sit inside an ~89% safe area, since Play can crop the
+feature graphic in promotional placements.
+
 ## Not yet done
 
-- **Feature graphic** (1024×500). SafePass has no text-free 16:5 composition
-  yet; the brand mark is square. Needs a deliberate design pass, not a crop.
+Nothing. All three asset types Play requires are present.
