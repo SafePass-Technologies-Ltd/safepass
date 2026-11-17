@@ -26,8 +26,8 @@
 #   ANDROID_KEY_ALIAS            upload key alias
 #   ANDROID_KEY_PASSWORD         upload key password
 #   PLAY_SERVICE_ACCOUNT_JSON    Play Console service-account JSON (raw)
-#   API_BASE_URL, WS_BASE_URL, GOOGLE_WEB_CLIENT_ID, FACEBOOK_APP_ID,
-#   FACEBOOK_CLIENT_TOKEN        compiled-in runtime config (dart-define)
+#   API_BASE_URL, WS_BASE_URL, GOOGLE_WEB_CLIENT_ID
+#                                compiled-in runtime config (dart-define)
 name: Release Android
 
 on:
@@ -220,8 +220,6 @@ jobs:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           WS_BASE_URL: ${{ secrets.WS_BASE_URL }}
           GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
-          FACEBOOK_APP_ID: ${{ secrets.FACEBOOK_APP_ID }}
-          FACEBOOK_CLIENT_TOKEN: ${{ secrets.FACEBOOK_CLIENT_TOKEN }}
         run: |
           set -euo pipefail
           FALLBACK_FILE=apps/mobile/.env.example.json
@@ -255,14 +253,10 @@ jobs:
             --arg apiBaseUrl "$(resolve API_BASE_URL)" \
             --arg wsBaseUrl "$(resolve WS_BASE_URL)" \
             --arg googleWebClientId "$(resolve GOOGLE_WEB_CLIENT_ID)" \
-            --arg facebookAppId "$(resolve FACEBOOK_APP_ID)" \
-            --arg facebookClientToken "$(resolve FACEBOOK_CLIENT_TOKEN)" \
             '{
               API_BASE_URL: $apiBaseUrl,
               WS_BASE_URL: $wsBaseUrl,
-              GOOGLE_WEB_CLIENT_ID: $googleWebClientId,
-              FACEBOOK_APP_ID: $facebookAppId,
-              FACEBOOK_CLIENT_TOKEN: $facebookClientToken
+              GOOGLE_WEB_CLIENT_ID: $googleWebClientId
             }' > "$OUT_FILE"
 
           if [ -s "$PLACEHOLDER_LOG" ]; then
@@ -327,6 +321,10 @@ jobs:
         # upload would carry the wrong signing identity forever.
         env:
           REQUIRE_RELEASE_SIGNING: ${{ env.DESTINATION != 'build-only' && 'true' || 'false' }}
+          # Gradle reads ORG_GRADLE_PROJECT_* as a project property, so the key
+          # reaches manifestPlaceholders without writing it to a file. Empty for
+          # build-only, which needs no Maps key to prove the pipeline compiles.
+          ORG_GRADLE_PROJECT_GOOGLE_MAPS_ANDROID_API_KEY: ${{ secrets.GOOGLE_MAPS_ANDROID_API_KEY }}
         run: |
           flutter build appbundle --release \
             --dart-define-from-file=release-defines.json \

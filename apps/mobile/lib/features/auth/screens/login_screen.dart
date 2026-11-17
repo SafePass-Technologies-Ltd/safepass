@@ -1,5 +1,7 @@
 library login_screen;
 
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -170,34 +172,25 @@ class LoginScreen extends StatelessWidget {
                         borderColor: const Color(0xFFE2E8F0),
                         onPressed: () => context.read<AuthCubit>().signInWithGoogle(),
                       ),
-                      const SizedBox(height: 10),
 
-                      // Facebook + Apple side by side
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _AuthButton(
-                              label: 'Facebook',
-                              icon: Icons.facebook_rounded,
-                              backgroundColor: const Color(0xFF1877F2),
-                              foregroundColor: Colors.white,
-                              compact: true,
-                              onPressed: () => context.read<AuthCubit>().signInWithFacebook(),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _AuthButton(
-                              label: 'Apple',
-                              icon: Icons.apple_rounded,
-                              backgroundColor: Colors.black,
-                              foregroundColor: Colors.white,
-                              compact: true,
-                              onPressed: () => context.read<AuthCubit>().signInWithApple(),
-                            ),
-                          ),
-                        ],
-                      ),
+                      // Apple Sign-In is iOS-only and is hidden on Android so a
+                      // store reviewer never meets a provider the build cannot
+                      // support. Facebook is deliberately absent for the first
+                      // release: no Meta app is configured, so the button would
+                      // fail on tap. Both are removed rather than left visible
+                      // and broken — a dead control on the first screen reads as
+                      // a broken app in Play review.
+                      if (defaultTargetPlatform == TargetPlatform.iOS) ...[
+                        const SizedBox(height: 10),
+                        _AuthButton(
+                          label: 'Continue with Apple',
+                          icon: Icons.apple_rounded,
+                          backgroundColor: Colors.black,
+                          foregroundColor: Colors.white,
+                          onPressed: () =>
+                              context.read<AuthCubit>().signInWithApple(),
+                        ),
+                      ],
 
                       const SizedBox(height: 20),
 

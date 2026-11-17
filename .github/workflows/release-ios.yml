@@ -30,8 +30,8 @@
 #   ASC_KEY_ID            App Store Connect API key id
 #   ASC_ISSUER_ID         App Store Connect API issuer id
 #   ASC_PRIVATE_KEY       the .p8 key — raw PEM or base64-encoded
-#   API_BASE_URL, WS_BASE_URL, GOOGLE_WEB_CLIENT_ID, FACEBOOK_APP_ID,
-#   FACEBOOK_CLIENT_TOKEN compiled-in runtime config (dart-define)
+#   API_BASE_URL, WS_BASE_URL, GOOGLE_WEB_CLIENT_ID
+#                         compiled-in runtime config (dart-define)
 name: Release iOS
 
 on:
@@ -222,8 +222,6 @@ jobs:
           API_BASE_URL: ${{ secrets.API_BASE_URL }}
           WS_BASE_URL: ${{ secrets.WS_BASE_URL }}
           GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
-          FACEBOOK_APP_ID: ${{ secrets.FACEBOOK_APP_ID }}
-          FACEBOOK_CLIENT_TOKEN: ${{ secrets.FACEBOOK_CLIENT_TOKEN }}
         run: |
           set -euo pipefail
           FALLBACK_FILE=apps/mobile/.env.example.json
@@ -255,14 +253,10 @@ jobs:
             --arg apiBaseUrl "$(resolve API_BASE_URL)" \
             --arg wsBaseUrl "$(resolve WS_BASE_URL)" \
             --arg googleWebClientId "$(resolve GOOGLE_WEB_CLIENT_ID)" \
-            --arg facebookAppId "$(resolve FACEBOOK_APP_ID)" \
-            --arg facebookClientToken "$(resolve FACEBOOK_CLIENT_TOKEN)" \
             '{
               API_BASE_URL: $apiBaseUrl,
               WS_BASE_URL: $wsBaseUrl,
-              GOOGLE_WEB_CLIENT_ID: $googleWebClientId,
-              FACEBOOK_APP_ID: $facebookAppId,
-              FACEBOOK_CLIENT_TOKEN: $facebookClientToken
+              GOOGLE_WEB_CLIENT_ID: $googleWebClientId
             }' > "$OUT_FILE"
 
           if [ -s "$PLACEHOLDER_LOG" ]; then
