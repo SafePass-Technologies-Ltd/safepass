@@ -97,3 +97,6 @@ override.tf.json
 # core product's folder and silently let `docs/SafePassLanding` through.
 docs/
 .claude
+# Release vault: keystore, passwords, Play/Firebase identifiers.
+# Local working copy only -- move to an encrypted vault, then delete from disk.
+release-vault/
