@@ -43,6 +43,42 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // -----------------------------------------------------------------
+        // Google Maps API key
+        // -----------------------------------------------------------------
+        // Resolved from local.properties (gitignored, local dev) or the
+        // GOOGLE_MAPS_ANDROID_API_KEY Gradle property (CI, fed from a GitHub
+        // secret). It is deliberately NOT committed in AndroidManifest.xml:
+        // a key in the manifest is compiled into the AAB and becomes public
+        // the moment the app is published, so anyone could bill requests to
+        // it. Resolution order:
+        //   1. local.properties  -> android/local.properties (developer machine)
+        //   2. -PGOOGLE_MAPS_ANDROID_API_KEY / ORG_GRADLE_PROJECT_... (CI)
+        // An empty value leaves Maps without a key, which fails visibly at
+        // runtime rather than silently shipping a shared credential.
+        val localPropertiesFile = rootProject.file("local.properties")
+        val localProperties = Properties()
+        if (localPropertiesFile.exists()) {
+            FileInputStream(localPropertiesFile).use { localProperties.load(it) }
+        }
+        val googleMapsApiKey: String =
+            localProperties.getProperty("GOOGLE_MAPS_ANDROID_API_KEY")
+                ?: (project.findProperty("GOOGLE_MAPS_ANDROID_API_KEY") as String?)
+                ?: ""
+        manifestPlaceholders["googleMapsApiKey"] = googleMapsApiKey
+
+        // CI dead-man switch, sharing REQUIRE_RELEASE_SIGNING (set by the
+        // release workflows for every non-build-only destination): a store
+        // build with no Maps key installs fine and then shows a blank map,
+        // which is not a recoverable experience for a journey-monitoring app.
+        if (System.getenv("REQUIRE_RELEASE_SIGNING") == "true" && googleMapsApiKey.isBlank()) {
+            throw GradleException(
+                "GOOGLE_MAPS_ANDROID_API_KEY is empty. Set it in android/local.properties " +
+                    "for a local release build, or as the GOOGLE_MAPS_ANDROID_API_KEY secret " +
+                    "(exported to ORG_GRADLE_PROJECT_GOOGLE_MAPS_ANDROID_API_KEY) in CI.",
+            )
+        }
     }
 
     // ---------------------------------------------------------------------

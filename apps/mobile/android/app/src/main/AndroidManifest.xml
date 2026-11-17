@@ -86,10 +86,14 @@
             android:name="com.pravera.flutter_foreground_task.service.ForegroundTaskService"
             android:foregroundServiceType="location|microphone"
             android:stopWithTask="false" />
-        <!-- Google Maps API key (required by google_maps_flutter) -->
+        <!-- Google Maps API key (required by google_maps_flutter).
+             Supplied at build time from local.properties or the
+             GOOGLE_MAPS_ANDROID_API_KEY Gradle property — see the
+             manifestPlaceholders block in app/build.gradle.kts. Never commit
+             a real key here: it is compiled into the published AAB. -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyAv91WjwKikxh9ILasbAOl1cIWrOQIdCOk"/>
+            android:value="${googleMapsApiKey}"/>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
