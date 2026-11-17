@@ -222,7 +222,6 @@ class _AuthButton extends StatelessWidget {
   final Color backgroundColor;
   final Color foregroundColor;
   final Color? borderColor;
-  final bool compact;
   final VoidCallback onPressed;
 
   const _AuthButton({
@@ -231,7 +230,6 @@ class _AuthButton extends StatelessWidget {
     required this.backgroundColor,
     required this.foregroundColor,
     this.borderColor,
-    this.compact = false,
     required this.onPressed,
   });
 
@@ -240,7 +238,7 @@ class _AuthButton extends StatelessWidget {
     final isLoading = context.watch<AuthCubit>().state.status == AuthStatus.loading;
 
     return SizedBox(
-      height: compact ? 46 : 52,
+      height: 52,
       child: ElevatedButton.icon(
         onPressed: isLoading ? null : onPressed,
         icon: isLoading
@@ -252,11 +250,11 @@ class _AuthButton extends StatelessWidget {
                   color: foregroundColor,
                 ),
               )
-            : Icon(icon, size: compact ? 18 : 20),
+            : Icon(icon, size: 20),
         label: Text(
           label,
-          style: TextStyle(
-            fontSize: compact ? 13 : 15,
+          style: const TextStyle(
+            fontSize: 15,
             fontWeight: FontWeight.w600,
           ),
         ),
