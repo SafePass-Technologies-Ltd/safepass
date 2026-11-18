@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "1019146773543-00i8rui8coi0c6lrtrj05lvkqcd5bbvk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.safepasstech.safepass_mobile",
+            "certificate_hash": "a574acd35a61a9c0d1724798f794058347e9f32a"
+          }
+        },
+        {
           "client_id": "1019146773543-jnbulqp726s5gjihlkntj192dgn4stm9.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
